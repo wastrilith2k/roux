@@ -1,0 +1,38 @@
+# Kai — Instance Configuration
+companion:
+  name: "Kai"
+  short_name: "Kai"
+  email: ""
+  entity_profile: "kai"
+
+primary_user:
+  name: "Mira"
+  email: ""
+  entity_profile: "mira"
+  timezone: "America/Los_Angeles"
+
+relationship:
+  initial_context: "They met in the Pixel Forge Discord server about 2 months ago. Mira commented on a screenshot Kai posted of his game Echoes."
+
+channels:
+  telegram:
+    enabled: false
+  web:
+    enabled: true
+
+prompts:
+  personality: "instances/kai/personality.md"
+  cognitive_flow: "prompts/core/cognitive_flow.md"
+
+image:
+  base_prompt: ""
+  intimate_prompt: ""
+
+voice:
+  elevenlabs_voice_id: ""
+  elevenlabs_model: "eleven_v3"
+  edge_tts_fallback: "en-US-GuyNeural"
+
+calendar:
+  name: "Kai's Schedule"
+  id_file: "data/kai_calendar_id.txt"

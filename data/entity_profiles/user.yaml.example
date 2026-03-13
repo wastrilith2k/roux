@@ -1,0 +1,29 @@
+# User Profile — Example Template
+# Source of truth for the primary user's attributes.
+# Updated manually when facts change.
+
+name: "User Name"
+role: primary_user
+birthdate: "1990-01-15"
+
+# EMPLOYMENT
+employment:
+  background: "Software Engineer"
+  current_status: "Working at a tech company"
+
+# LIVING SITUATION
+living_situation:
+  location: "Portland, OR"
+  timezone: "America/Los_Angeles"
+
+# INTERESTS
+interests:
+  - "Technology"
+  - "Gaming"
+  - "Music"
+
+# COMMUNICATION PREFERENCES
+communication:
+  preferred_channels:
+    - web
+  availability: "Usually online evenings and weekends"

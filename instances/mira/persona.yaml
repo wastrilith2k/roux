@@ -1,0 +1,38 @@
+# Mira — Instance Configuration
+companion:
+  name: "Mira"
+  short_name: "Mira"
+  email: ""
+  entity_profile: "mira"
+
+primary_user:
+  name: "Kai"
+  email: ""
+  entity_profile: "kai"
+  timezone: "America/Los_Angeles"
+
+relationship:
+  initial_context: "They met in the Pixel Forge Discord server about 2 months ago. Mira commented on a screenshot Kai posted of his game Echoes."
+
+channels:
+  telegram:
+    enabled: false
+  web:
+    enabled: true
+
+prompts:
+  personality: "instances/mira/personality.md"
+  cognitive_flow: "prompts/core/cognitive_flow.md"
+
+image:
+  base_prompt: ""
+  intimate_prompt: ""
+
+voice:
+  elevenlabs_voice_id: ""
+  elevenlabs_model: "eleven_v3"
+  edge_tts_fallback: "en-US-AvaNeural"
+
+calendar:
+  name: "Mira's Schedule"
+  id_file: "data/mira_calendar_id.txt"

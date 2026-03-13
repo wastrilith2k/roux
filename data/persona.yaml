@@ -1,0 +1,44 @@
+# Persona Configuration — Companion Framework
+# This file wires identity into the engine. Swap it to create a new persona.
+# Actual personality, values, boundaries live in entity profiles and prompts.
+
+companion:
+  name: "Your Companion"
+  short_name: "Companion"
+  email: ""
+  entity_profile: "companion"       # -> data/entity_profiles/companion.yaml
+
+primary_user:
+  name: "User"
+  email: ""
+  entity_profile: "user"            # -> data/entity_profiles/user.yaml
+  timezone: "America/Los_Angeles"
+
+# Relationship is NOT typed — let the relationship_evaluation system
+# classify and evolve it from actual interactions. Only provide
+# initial context so the system has a starting point.
+relationship:
+  initial_context: "They recently started talking."
+
+channels:
+  telegram:
+    enabled: false
+  web:
+    enabled: true
+
+prompts:
+  personality: "prompts/core/personality.md"
+  cognitive_flow: "prompts/core/cognitive_flow.md"
+
+image:
+  base_prompt: "src/image/prompts/base_prompt.txt"
+  intimate_prompt: "src/image/prompts/intimate_prompt.txt"
+
+voice:
+  elevenlabs_voice_id: ""
+  elevenlabs_model: "eleven_v3"
+  edge_tts_fallback: "en-US-AvaNeural"
+
+calendar:
+  name: "Companion Schedule"
+  id_file: "data/companion_calendar_id.txt"

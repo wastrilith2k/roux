@@ -1,0 +1,75 @@
+# Caddy reverse proxy configuration for Companion Framework
+# Provides automatic HTTPS with Let's Encrypt
+# Replace {$DOMAIN} with your actual domain or set the DOMAIN env var
+
+{$DOMAIN:localhost} {
+    # Backend API routes (with WebSocket support)
+    handle /api/* {
+        reverse_proxy companion-backend:{$BACKEND_PORT:5010}
+    }
+
+    # OAuth handler routes
+    handle /oauth/* {
+        reverse_proxy companion-backend:{$BACKEND_PORT:5010}
+    }
+
+    # Socket.IO endpoint (WebSocket support)
+    handle /socket.io/* {
+        reverse_proxy companion-backend:{$BACKEND_PORT:5010} {
+            transport http {
+                read_timeout 5m
+                write_timeout 5m
+            }
+        }
+    }
+
+    # Avatar images
+    handle /img/* {
+        reverse_proxy companion-backend:{$BACKEND_PORT:5010}
+    }
+
+    # Webhooks
+    handle /webhook/* {
+        reverse_proxy companion-backend:{$BACKEND_PORT:5010}
+    }
+
+    # Everything else goes to backend
+    handle /* {
+        reverse_proxy companion-backend:{$BACKEND_PORT:5010}
+    }
+
+    # Security headers
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    log {
+        output file /data/access.log
+        format json
+    }
+}
+
+# n8n workflow automation (optional)
+n8n.{$DOMAIN:localhost} {
+    reverse_proxy companion-n8n:5678
+
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    log {
+        output file /data/n8n-access.log
+        format json
+    }
+}
+
+# Reject all other domains
+:80, :443 {
+    respond "Not Found" 404
+}

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Companion Observation Dashboard</title>
+    <link rel="stylesheet" href="/observe.css">
+</head>
+<body>
+
+<div class="header">
+    <h1>Companion Observation Dashboard</h1>
+    <div class="status">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Connecting...</span>
+        <span id="sim-clock" style="margin-left: 12px; color: #8b949e;"></span>
+    </div>
+</div>
+
+<div class="dashboard">
+
+    <!-- Left: Kai's state -->
+    <div class="side-panel" id="panel-kai">
+        <div class="panel-title kai">Kai</div>
+
+        <div class="state-card">
+            <h3>Mood</h3>
+            <div class="state-value"><span class="mood-tag" id="kai-mood">--</span></div>
+        </div>
+
+        <div class="state-card">
+            <h3>Energy</h3>
+            <div class="state-value" id="kai-energy-label">--</div>
+            <div class="bar-container">
+                <div class="bar-fill energy" id="kai-energy-bar" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div class="state-card">
+            <h3>Mode</h3>
+            <div class="state-value" id="kai-mode">--</div>
+        </div>
+
+        <div class="state-card">
+            <h3>Scene</h3>
+            <div class="state-value" id="kai-scene">--</div>
+        </div>
+
+        <div class="state-card">
+            <h3>Closeness</h3>
+            <div class="state-value" id="kai-closeness-label">--</div>
+            <div class="bar-container">
+                <div class="bar-fill closeness" id="kai-closeness-bar" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div class="state-card">
+            <h3>Emotion Profile</h3>
+            <div class="state-value" id="kai-emotion">--</div>
+        </div>
+    </div>
+
+    <!-- Center: Conversation feed -->
+    <div class="feed-container">
+        <div class="feed" id="feed"></div>
+    </div>
+
+    <!-- Right: Mira's state -->
+    <div class="side-panel" id="panel-mira">
+        <div class="panel-title mira">Mira</div>
+
+        <div class="state-card">
+            <h3>Mood</h3>
+            <div class="state-value"><span class="mood-tag" id="mira-mood">--</span></div>
+        </div>
+
+        <div class="state-card">
+            <h3>Energy</h3>
+            <div class="state-value" id="mira-energy-label">--</div>
+            <div class="bar-container">
+                <div class="bar-fill energy" id="mira-energy-bar" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div class="state-card">
+            <h3>Mode</h3>
+            <div class="state-value" id="mira-mode">--</div>
+        </div>
+
+        <div class="state-card">
+            <h3>Scene</h3>
+            <div class="state-value" id="mira-scene">--</div>
+        </div>
+
+        <div class="state-card">
+            <h3>Closeness</h3>
+            <div class="state-value" id="mira-closeness-label">--</div>
+            <div class="bar-container">
+                <div class="bar-fill closeness" id="mira-closeness-bar" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div class="state-card">
+            <h3>Emotion Profile</h3>
+            <div class="state-value" id="mira-emotion">--</div>
+        </div>
+    </div>
+
+    <!-- Bottom tabs -->
+    <div class="tabs-container">
+        <div class="tab-bar">
+            <button class="active" data-tab="facts">Facts</button>
+            <button data-tab="opinions">Opinions</button>
+            <button data-tab="curiosity">Curiosity</button>
+            <button data-tab="goals">Goals</button>
+            <button data-tab="episodes">Episodes</button>
+            <button data-tab="relationship">Relationship</button>
+        </div>
+        <div class="tab-companion-toggle">
+            <button class="active-kai" id="tab-cid-kai" onclick="setTabCompanion('kai')">Kai</button>
+            <button id="tab-cid-mira" onclick="setTabCompanion('mira')">Mira</button>
+        </div>
+        <div class="tab-content active" id="tab-facts">
+            <div class="empty-state">No facts yet</div>
+        </div>
+        <div class="tab-content" id="tab-opinions">
+            <div class="empty-state">No opinions yet</div>
+        </div>
+        <div class="tab-content" id="tab-curiosity">
+            <div class="empty-state">No curiosity threads yet</div>
+        </div>
+        <div class="tab-content" id="tab-goals">
+            <div class="empty-state">No goals yet</div>
+        </div>
+        <div class="tab-content" id="tab-episodes">
+            <div class="empty-state">No episodes yet</div>
+        </div>
+        <div class="tab-content" id="tab-relationship">
+            <div class="empty-state">No relationship data yet</div>
+        </div>
+    </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+<script src="/observe.js"></script>
+</body>
+</html>

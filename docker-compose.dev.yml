@@ -1,0 +1,166 @@
+# Companion Framework - Development Environment
+# Pared down to essential services only
+# Uses separate ports and volumes to avoid conflicts with production
+
+services:
+  # --- 1. Neo4j Graph Database (Knowledge Graph Memory) ---
+  neo4j:
+    image: neo4j:5-community
+    container_name: companion-neo4j-dev
+    restart: "no"
+    ports:
+      - '7475:7474' # HTTP browser UI (DEV PORT)
+      - '7688:7687' # Bolt protocol (DEV PORT)
+    volumes:
+      - neo4j_dev_data:/data
+      - neo4j_dev_logs:/logs
+    environment:
+      - NEO4J_AUTH=none
+      - NEO4J_server_memory_heap_initial__size=512m
+      - NEO4J_server_memory_heap_max__size=1g
+      - NEO4J_server_memory_pagecache_size=512m
+
+  # --- 2. PostgreSQL Database (Messages, Users, Sessions) ---
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: companion-postgres-dev
+    restart: "no"
+    ports:
+      - '5433:5432' # DEV PORT
+    environment:
+      POSTGRES_DB: companion_dev
+      POSTGRES_USER: companion
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-companion_dev_password}
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    command: postgres -c max_connections=200
+
+  # --- 3. Redis (Message Broker for Celery) ---
+  redis:
+    image: redis:7-alpine
+    container_name: companion-redis-dev
+    restart: "no"
+    ports:
+      - '6380:6379' # DEV PORT (6380 external)
+    volumes:
+      - redis_dev_data:/data
+    command: redis-server --appendonly yes
+
+  # --- 4. Flask Backend (Core Chat & Memory) ---
+  agent-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: companion-backend-dev
+    restart: "no"
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      - neo4j
+      - redis
+      - postgres
+    ports:
+      - '5001:5000' # DEV PORT (5001 external)
+    environment:
+      # LLM Configuration
+      FIREWORKS_API_KEY: '${FIREWORKS_API_KEY}'
+      FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2-instruct-0905'
+      ANTHROPIC_API_KEY: '${ANTHROPIC_API_KEY}'
+      OPENAI_API_KEY: '${OPENAI_API_KEY}'
+      # Neo4j Configuration
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ''
+      # Entity Extraction
+      ENTITY_EXTRACTOR: 'openai'
+      # Prompt Configuration
+      USE_MODULAR_PROMPTS: 'modular'
+      USE_CONVERSATION_PREPROCESSING: 'true'
+      STRIP_EMOTIONAL_FLUFF: 'true'
+      # PostgreSQL Configuration (DEV DATABASE)
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: companion_dev
+      POSTGRES_USER: companion
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-companion_dev_password}
+      # Redis & Celery Configuration
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # Environment marker
+      ENVIRONMENT: development
+    volumes:
+      - app_dev_data:/app/data
+      - ./data/entity_profiles:/app/data/entity_profiles:ro
+      - ./prompts:/app/prompts:ro
+      - ./scripts:/app/scripts:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - ./src:/app/src
+    command: python -m src.web_chat
+
+  # --- 5. Celery Worker (Async Task Processing) ---
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: companion-celery-worker-dev
+    restart: "no"
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      - redis
+      - neo4j
+      - postgres
+    command: celery -A src.celery_app worker --loglevel=info --concurrency=4 --pool=solo
+    environment:
+      # Redis & Celery Configuration
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # PostgreSQL Configuration (DEV DATABASE)
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: companion_dev
+      POSTGRES_USER: companion
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-companion_dev_password}
+      # LLM Configuration
+      ANTHROPIC_API_KEY: '${ANTHROPIC_API_KEY}'
+      FIREWORKS_API_KEY: '${FIREWORKS_API_KEY}'
+      FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2-instruct-0905'
+      OPENAI_API_KEY: '${OPENAI_API_KEY}'
+      # Neo4j Configuration
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ''
+      ENTITY_EXTRACTOR: 'openai'
+      ENVIRONMENT: development
+    volumes:
+      - app_dev_data:/app/data
+      - ./data/entity_profiles:/app/data/entity_profiles:ro
+      - ./prompts:/app/prompts:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - ./src:/app/src
+
+  # --- 6. Companion CLI (Terminal Chat Interface) ---
+  companion-cli:
+    build:
+      context: ./cli
+      dockerfile: Dockerfile
+    image: companion-cli:latest
+    container_name: companion-cli-dev
+    stdin_open: true
+    tty: true
+    environment:
+      COMPANION_BACKEND_URL: http://agent-service:5000
+      COMPANION_API_KEY: ${COMPANION_API_KEY:-}
+    restart: 'no'
+
+# Define persistent volumes with _dev suffix
+volumes:
+  app_dev_data:
+  neo4j_dev_data:
+  neo4j_dev_logs:
+  redis_dev_data:
+  postgres_dev_data:

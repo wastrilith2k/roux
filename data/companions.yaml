@@ -1,0 +1,21 @@
+# Companion Registry
+# Each companion is a configuration — not a separate deployment.
+# One codebase, one set of containers, multiple companions.
+
+companions:
+  # Example: two-agent simulation
+  kai:
+    persona_config: instances/kai/persona.yaml
+    personality: instances/kai/personality.md
+    entity_profiles: instances/kai/entity_profiles/
+    seed_history: instances/kai/seed_history.json
+    graphiti_group_id: kai
+    enabled: true
+
+  mira:
+    persona_config: instances/mira/persona.yaml
+    personality: instances/mira/personality.md
+    entity_profiles: instances/mira/entity_profiles/
+    seed_history: instances/mira/seed_history.json
+    graphiti_group_id: mira
+    enabled: true

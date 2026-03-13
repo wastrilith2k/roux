@@ -1,0 +1,375 @@
+# Companion Framework - Production Environment
+# Pared down to essential services only
+
+services:
+  # --- DISABLED: Neo4j removed - all data migrated to PostgreSQL ---
+  # neo4j:
+  #   image: neo4j:5-community
+  #   container_name: companion-neo4j
+  #   restart: always
+  #   ports:
+  #     - '7474:7474' # HTTP browser UI
+  #     - '7687:7687' # Bolt protocol
+  #   volumes:
+  #     - neo4j_data:/data
+  #     - neo4j_logs:/logs
+  #   environment:
+  #     - NEO4J_AUTH=none
+  #     - NEO4J_server_memory_heap_initial__size=512m
+  #     - NEO4J_server_memory_heap_max__size=1g
+  #     - NEO4J_server_memory_pagecache_size=512m
+
+  # --- 2. Graphiti Neo4j (Knowledge Graph Memory) ---
+  # Re-enabled for memory overhaul - dedicated instance for Graphiti
+  graphiti-neo4j:
+    image: neo4j:5.26-community
+    container_name: companion-graphiti-neo4j
+    restart: unless-stopped
+    ports:
+      - '7475:7474'  # HTTP browser UI
+      - '7688:7687'  # Bolt protocol
+    volumes:
+      - graphiti_neo4j_data:/data
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_GRAPHITI_PASSWORD:-graphiti_password}
+      - NEO4J_server_memory_heap_initial__size=512m
+      - NEO4J_server_memory_heap_max__size=1g
+      - NEO4J_server_memory_pagecache_size=256m
+      - NEO4J_PLUGINS=["apoc"]
+
+  # --- 3. PostgreSQL Database (Messages, Users, Sessions) ---
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: companion-postgres
+    restart: always
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_DB: companion
+      POSTGRES_USER: companion
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-companion_change_me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    command: postgres -c max_connections=200
+
+  # --- 3. Redis (Message Broker for Celery) ---
+  redis:
+    image: redis:7-alpine
+    container_name: companion-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  # --- 4. Flask Backend (Core Chat & Memory) ---
+  agent-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: companion-backend
+    restart: on-failure
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      - graphiti-neo4j
+      - redis
+      - postgres
+    ports:
+      - '5000:5000'
+    environment:
+      # LLM Configuration
+      FIREWORKS_API_KEY: '${FIREWORKS_API_KEY}'
+      # FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3'  # 404 as of 2026-02-09
+      # FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2-instruct-0905'
+      # FIREWORKS_MODEL: 'accounts/fireworks/models/qwen3-235b-a22b-instruct-2507'  # 404 as of 2026-02-15
+      # FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3p2'  # timing out as of 2026-02-18
+      FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3p1'
+      FIREWORKS_FALLBACK_MODEL: 'accounts/fireworks/models/deepseek-v3p2'
+      DEEPSEEK_API_KEY: '${DEEPSEEK_API_KEY}'
+      ANTHROPIC_API_KEY: '${ANTHROPIC_API_KEY}'
+      OPENAI_API_KEY: '${OPENAI_API_KEY}'
+      # Graphiti Neo4j (Knowledge Graph Memory)
+      NEO4J_GRAPHITI_URI: bolt://graphiti-neo4j:7687
+      NEO4J_GRAPHITI_USER: neo4j
+      NEO4J_GRAPHITI_PASSWORD: '${NEO4J_GRAPHITI_PASSWORD:-graphiti_password}'
+      # Entity Extraction
+      ENTITY_EXTRACTOR: 'openai'
+      EMBEDDING_PROVIDER: 'openai'  # 'openai' (prod) or 'ollama' (local dev)
+      # Prompt Configuration
+      USE_MODULAR_PROMPTS: 'modular'
+      USE_CONVERSATION_PREPROCESSING: 'true'
+      STRIP_EMOTIONAL_FLUFF: 'true'
+      # Message history options:
+      # SKIP_CONVERSATION_HISTORY=true -> no history at all
+      # USE_CONDENSED_HISTORY=true -> condense verbose messages via GPT-4o-mini
+      SKIP_CONVERSATION_HISTORY: 'false'
+      USE_CONDENSED_HISTORY: 'true'
+      # PostgreSQL Configuration
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: companion
+      POSTGRES_USER: companion
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-companion_change_me}
+      # Redis & Celery Configuration
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # Telegram Bot for autonomous messaging
+      TELEGRAM_BOT_TOKEN: '${TELEGRAM_BOT_TOKEN}'
+      # TELEGRAM_CHAT_ID is auto-saved when James sends /start
+      # Telegram Ops Bot for system notifications (separate from the companion)
+      TELEGRAM_OPS_BOT_TOKEN: '${TELEGRAM_OPS_BOT_TOKEN}'
+      TELEGRAM_OPS_CHAT_ID: '${TELEGRAM_OPS_CHAT_ID}'
+      COMPANION_REACH_OUT_INTERVAL: '${COMPANION_REACH_OUT_INTERVAL:-15}'
+      COMPANION_AUTONOMY_ENABLED: '${COMPANION_AUTONOMY_ENABLED:-true}'
+      COMPANION_TELEGRAM_ENABLED: '${COMPANION_TELEGRAM_ENABLED:-true}'
+      COMPANION_CALENDAR_SCHEDULE_ENABLED: '${COMPANION_CALENDAR_SCHEDULE_ENABLED:-false}'
+      COMPANION_PRIMARY_USER_EMAIL: '${PRIMARY_USER_EMAIL:-user@example.com}'
+      PRIMARY_USER_EMAIL: '${PRIMARY_USER_EMAIL:-user@example.com}'
+      # Web Search (for autonomous research)
+      TAVILY_API_KEY: '${TAVILY_API_KEY}'
+      # RunComfy Image Generation
+      RUNCOMFY_API_KEY: '${RUNCOMFY_API_KEY}'
+      RUNCOMFY_PERSONAL_DEPLOYMENT_ID: '${RUNCOMFY_PERSONAL_DEPLOYMENT_ID}'
+      RUNCOMFY_GENERAL_DEPLOYMENT_ID: '${RUNCOMFY_GENERAL_DEPLOYMENT_ID}'
+      RUNCOMFY_SKETCH_DEPLOYMENT_ID: '${RUNCOMFY_SKETCH_DEPLOYMENT_ID}'
+      IMAGE_GENERATION_DAILY_LIMIT: '15'
+      # Cloudinary Backup
+      CLOUDINARY_CLOUD_NAME: '${CLOUDINARY_CLOUD_NAME}'
+      CLOUDINARY_API_KEY: '${CLOUDINARY_API_KEY}'
+      CLOUDINARY_API_SECRET: '${CLOUDINARY_API_SECRET}'
+      # Voice Chat (Telegram voice notes)
+      DEEPGRAM_API_KEY: '${DEEPGRAM_API_KEY}'
+      COMPANION_VOICE_ENABLED: '${COMPANION_VOICE_ENABLED:-true}'
+      # ElevenLabs TTS (expressive voice — optional, falls back to Edge TTS)
+      ELEVENLABS_API_KEY: '${ELEVENLABS_API_KEY:-}'
+      ELEVENLABS_VOICE_ID: '${ELEVENLABS_VOICE_ID:-JBFqnCBsd6RMkjVDRZzb}'
+      ELEVENLABS_MODEL: '${ELEVENLABS_MODEL:-eleven_v3}'
+      # Code Execution Feature
+      COMPANION_CODE_EXECUTION_ENABLED: 'true'
+      CODE_EXECUTOR_URL: 'http://companion-code-executor:5001'
+      # Calendar Awareness (Google Calendar via n8n)
+      COMPANION_CALENDAR_AWARENESS_ENABLED: 'true'
+      # Production settings
+      FLASK_ENV: 'production'
+      SENTRY_DSN: '${SENTRY_DSN}'
+    volumes:
+      - app_data:/app/data
+      - ./data/entity_profiles:/app/data/entity_profiles:ro
+      - ./scripts:/app/scripts:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - ./src:/app/src
+      - ./credentials:/app/credentials
+    command: python -m src.web_chat
+
+  # --- 5. Celery Worker (Async Task Processing) ---
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: companion-celery-worker
+    restart: on-failure
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      - redis
+      - graphiti-neo4j
+      - postgres
+    command: celery -A src.celery_app worker --loglevel=info --concurrency=4 --pool=solo
+    environment:
+      # Redis & Celery Configuration
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # PostgreSQL Configuration
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: companion
+      POSTGRES_USER: companion
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-companion_change_me}
+      # LLM Configuration
+      ANTHROPIC_API_KEY: '${ANTHROPIC_API_KEY}'
+      FIREWORKS_API_KEY: '${FIREWORKS_API_KEY}'
+      # FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3'  # 404 as of 2026-02-09
+      # FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2-instruct-0905'
+      # FIREWORKS_MODEL: 'accounts/fireworks/models/qwen3-235b-a22b-instruct-2507'  # 404 as of 2026-02-15
+      # FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3p2'  # timing out as of 2026-02-18
+      FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3p1'
+      FIREWORKS_FALLBACK_MODEL: 'accounts/fireworks/models/deepseek-v3p2'
+      DEEPSEEK_API_KEY: '${DEEPSEEK_API_KEY}'
+      OPENAI_API_KEY: '${OPENAI_API_KEY}'
+      # Graphiti Neo4j (Knowledge Graph Memory)
+      NEO4J_GRAPHITI_URI: bolt://graphiti-neo4j:7687
+      NEO4J_GRAPHITI_USER: neo4j
+      NEO4J_GRAPHITI_PASSWORD: '${NEO4J_GRAPHITI_PASSWORD:-graphiti_password}'
+      ENTITY_EXTRACTOR: 'openai'
+      EMBEDDING_PROVIDER: 'openai'  # 'openai' (prod) or 'ollama' (local dev)
+      # Web Search (for autonomous research)
+      TAVILY_API_KEY: '${TAVILY_API_KEY}'
+      # RunComfy Image Generation
+      RUNCOMFY_API_KEY: '${RUNCOMFY_API_KEY}'
+      RUNCOMFY_PERSONAL_DEPLOYMENT_ID: '${RUNCOMFY_PERSONAL_DEPLOYMENT_ID}'
+      RUNCOMFY_GENERAL_DEPLOYMENT_ID: '${RUNCOMFY_GENERAL_DEPLOYMENT_ID}'
+      RUNCOMFY_SKETCH_DEPLOYMENT_ID: '${RUNCOMFY_SKETCH_DEPLOYMENT_ID}'
+      # Cloudinary Backup
+      CLOUDINARY_CLOUD_NAME: '${CLOUDINARY_CLOUD_NAME}'
+      CLOUDINARY_API_KEY: '${CLOUDINARY_API_KEY}'
+      CLOUDINARY_API_SECRET: '${CLOUDINARY_API_SECRET}'
+      # Telegram (for image delivery from recovery task)
+      TELEGRAM_BOT_TOKEN: '${TELEGRAM_BOT_TOKEN}'
+      # Voice Chat (Telegram voice notes)
+      DEEPGRAM_API_KEY: '${DEEPGRAM_API_KEY}'
+      COMPANION_VOICE_ENABLED: '${COMPANION_VOICE_ENABLED:-true}'
+      # Calendar Awareness (Google Calendar via n8n)
+      COMPANION_CALENDAR_AWARENESS_ENABLED: 'true'
+      # Calendar Schedule (the companion's own daily schedule on Google Calendar)
+      COMPANION_CALENDAR_SCHEDULE_ENABLED: '${COMPANION_CALENDAR_SCHEDULE_ENABLED:-false}'
+      # Google OAuth token path
+      GOOGLE_TOKEN_PATH: '/app/credentials/google_token.json'
+      # Autonomy feature flags
+      COMPANION_REMINDER_CHECK_ENABLED: '${COMPANION_REMINDER_CHECK_ENABLED:-true}'
+      COMPANION_GMAIL_CHECK_ENABLED: '${COMPANION_GMAIL_CHECK_ENABLED:-false}'
+      # Production settings
+      FLASK_ENV: 'production'
+      SENTRY_DSN: '${SENTRY_DSN}'
+      TZ: America/Los_Angeles
+    volumes:
+      - app_data:/app/data
+      - ./data/entity_profiles:/app/data/entity_profiles:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - ./src:/app/src
+      - ./credentials:/app/credentials
+
+  # --- 5b. Celery Beat (Scheduled Task Scheduler) ---
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: companion-celery-beat
+    restart: on-failure
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      - redis
+      - celery-worker
+    command: bash -c "rm -f /app/celerybeat-schedule /app/celerybeat-schedule.db /app/celerybeat-schedule.dir /app/celerybeat-schedule.bak && celery -A src.celery_app beat --loglevel=info --schedule /tmp/celerybeat-schedule"
+    environment:
+      # Redis & Celery Configuration
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      # PostgreSQL Configuration
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: companion
+      POSTGRES_USER: companion
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-companion_change_me}
+      # Timezone
+      TZ: 'America/Los_Angeles'
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - ./src:/app/src
+
+  # --- 6. Companion CLI (Terminal Chat Interface) ---
+  companion-cli:
+    build:
+      context: ./cli
+      dockerfile: Dockerfile
+    image: companion-cli:latest
+    container_name: companion-cli
+    stdin_open: true
+    tty: true
+    networks:
+      - default
+    environment:
+      COMPANION_BACKEND_URL: ${COMPANION_BACKEND_URL:-http://agent-service:5000}
+      COMPANION_API_KEY: ${COMPANION_API_KEY:-}
+    restart: 'no'
+
+  # --- 7. n8n Workflow Automation ---
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: companion-n8n
+    restart: unless-stopped
+    # No external ports - accessed via Caddy proxy
+    environment:
+      - N8N_HOST=${N8N_DOMAIN:-n8n.localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - NODE_ENV=production
+      - WEBHOOK_URL=https://${N8N_DOMAIN:-n8n.localhost}/
+      - GENERIC_TIMEZONE=America/Los_Angeles
+      # Security
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+
+  # --- 8. Caddy Reverse Proxy (SSL + Routing) ---
+  caddy:
+    image: caddy:2-alpine
+    container_name: companion-caddy
+    restart: unless-stopped
+    depends_on:
+      - agent-service
+      - n8n
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # --- 9. Code Executor (Sandboxed Python for the companion's tools) ---
+  code-executor:
+    build:
+      context: ./executor
+      dockerfile: Dockerfile
+    container_name: companion-code-executor
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      EXECUTOR_PORT: 5001
+      EXECUTION_TIMEOUT: 30
+      MAX_MEMORY_MB: 512
+      # Image generation
+      RUNCOMFY_API_KEY: '${RUNCOMFY_API_KEY}'
+      RUNCOMFY_PERSONAL_DEPLOYMENT_ID: '${RUNCOMFY_PERSONAL_DEPLOYMENT_ID}'
+      GOOGLE_GEMINI_API_KEY: '${GOOGLE_GEMINI_API_KEY}'
+      # Web search
+      TAVILY_API_KEY: '${TAVILY_API_KEY}'
+      # Database (for memory + reminders)
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: companion
+      POSTGRES_USER: companion
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-companion_change_me}
+    volumes:
+      - ./executor/tools:/app/tools:ro
+      - ./credentials:/app/credentials:ro
+      - /etc/localtime:/etc/localtime:ro
+    cap_drop:
+      - NET_ADMIN
+      - SYS_ADMIN
+    mem_limit: 1g
+    cpus: 1
+
+# Define persistent volumes
+volumes:
+  app_data:
+  redis_data:
+  postgres_data:
+  graphiti_neo4j_data:  # Graphiti knowledge graph storage
+  n8n_data:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,63 @@
+# Base dependencies (most stable - rarely changes)
+anthropic>=0.13.0  # Claude API for autonomous task narratives (Phase 2)
+openai>=1.0.0  # OpenAI API for tool calling with gpt-4o-mini
+langchain
+langchain-community
+langchain-core
+langchain-anthropic  # Claude/Anthropic LLM provider for LangChain
+# langchain-ollama  # REMOVED - Replaced with OpenAI for cloud independence
+langchain-fireworks
+langchain-openai
+langchain-mcp-adapters
+mcp
+textblob
+nltk
+requests
+urllib3<2.0,>=1.26.0  # Pin to 1.x to avoid SSL RecursionError in 2.x
+pandas
+arrow
+apscheduler
+langgraph>=0.2.0
+langgraph-checkpoint-postgres>=3.0.0  # PostgresCheckpointer for Phase 0 Memory
+psycopg-binary>=3.2.0  # PostgreSQL driver with compiled binaries (for checkpointer)
+packaging  # Required by google.api_core
+google-auth
+google-auth-oauthlib
+google-api-python-client
+nest-asyncio  # Fix for event loop conflicts with eventlet
+celery[redis]>=5.3.0
+redis>=5.0.0
+statsig>=0.66.0  # Feature flags for phased rollouts
+tenacity>=8.0.0  # Retry logic for LLM API resilience
+httpx>=0.27.0  # HTTP client for Graphiti MCP server communication
+sentry-sdk
+
+# Web/Socket dependencies
+flask<3.1  # 3.1+ breaks flask-socketio (RequestContext.session no setter)
+flask-cors
+flask-socketio
+python-socketio
+eventlet  # For WebSocket support
+twilio
+PyJWT>=2.8.0  # For Firebase ID token validation
+cryptography>=41.0.0  # For parsing X509 certificates from Firebase
+pika>=1.3.0  # RabbitMQ client library
+cloudinary>=1.44.0  # Cloudinary image hosting and CDN
+discord.py>=2.3.0  # Discord bot for autonomous messaging
+python-telegram-bot>=21.0  # Telegram bot for autonomous messaging
+
+# Database
+neo4j>=5.26.0  # Neo4j Python driver (5.26+ required for Graphiti)
+psycopg2-binary  # PostgreSQL driver
+alembic  # Database migrations
+SQLAlchemy>=2.0.0  # ORM for PostgreSQL
+
+# Knowledge Graph
+graphiti-core>=0.24.0  # Temporal knowledge graph library
+nest_asyncio
+
+# Voice chat (Telegram voice notes)
+deepgram-sdk>=3.0.0  # Speech-to-text via Deepgram Nova-2
+edge-tts>=6.1.0  # Text-to-speech fallback (free, no API key needed)
+elevenlabs>=1.0.0  # Text-to-speech with expressive voice (sighs, laughs)
+pydub>=0.25.1  # Audio format conversion (ogg/mp3)
