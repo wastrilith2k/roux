@@ -445,6 +445,15 @@ class AlwaysOnService:
             suppression_type = classify_suppression(reason) if not should else "none"
 
             if should:
+                # Check if the reach-out engine specified a preferred channel
+                # Morning greeting behavior: if they were together, don't Telegram
+                preferred_channel = engine._last_context.get('preferred_channel', 'telegram') if hasattr(engine, '_last_context') else 'telegram'
+
+                if preferred_channel == 'chat':
+                    # They were together — defer to interjection path (wait for user to come online)
+                    logger.info("Morning greeting deferred — were together recently, waiting for user to come online")
+                    return
+
                 # Telegram = not physically together. Clear scene before generating.
                 self._clear_physical_presence_for_telegram()
 

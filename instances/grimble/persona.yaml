@@ -1,0 +1,25 @@
+# Grimble Ironbark — Instance Configuration
+companion:
+  name: "Grimble Ironbark"
+  short_name: "Grimble"
+  email: ""
+  entity_profile: "grimble"
+
+primary_user:
+  name: "The Party"
+  email: ""
+  entity_profile: ""
+  timezone: "America/Los_Angeles"
+
+relationship:
+  initial_context: "Thrown together three months ago in the Crypts of Vel'Kora. Grimble was hired to disarm traps. The job went sideways and they barely survived. Now they're stuck together by circumstance and, reluctantly, something like friendship."
+
+channels:
+  web:
+    enabled: true
+
+prompts:
+  personality: "instances/grimble/personality.md"
+
+voice:
+  edge_tts_fallback: "en-US-GuyNeural"

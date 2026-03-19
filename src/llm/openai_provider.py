@@ -151,7 +151,22 @@ class OpenAIProvider(LLMProvider):
 
 
 def get_openai_tool_provider() -> Optional[OpenAIProvider]:
-    """Get an OpenAI provider for tool calling, or None if not configured."""
+    """Get an OpenAI-compatible provider for tool calling, or None if not configured.
+
+    Prefers OpenRouter (free Hunter Alpha) over OpenAI when configured.
+    """
+    # Prefer OpenRouter if configured
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+    if openrouter_key:
+        model = os.environ.get("OPENROUTER_TOOL_MODEL", "openrouter/hunter-alpha")
+        return OpenAIProvider(
+            api_key=openrouter_key,
+            model=model,
+            base_url="https://openrouter.ai/api/v1",
+            context_limit=1000000
+        )
+
+    # Fall back to OpenAI
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         return None

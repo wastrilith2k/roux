@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Companion Chat</title>
+    <link rel="stylesheet" href="/chat.css">
+</head>
+<body>
+
+<div class="header">
+    <div class="header-left">
+        <span class="status-dot" id="status-dot"></span>
+        <h1 id="companion-name">Companion</h1>
+        <select class="companion-selector" id="companion-selector" title="Switch companion">
+            <option value="">--</option>
+        </select>
+    </div>
+    <div class="header-right">
+        <span class="status-text" id="status-text">Connecting...</span>
+        <button class="settings-btn" id="settings-toggle" title="Settings">&#9881;</button>
+    </div>
+</div>
+
+<!-- Settings overlay -->
+<div class="settings-overlay" id="settings-overlay">
+    <div class="settings-backdrop" id="settings-backdrop"></div>
+    <div class="settings-panel">
+        <h2>
+            Settings
+            <button class="settings-close" id="settings-close">&times;</button>
+        </h2>
+        <div class="settings-group">
+            <label for="setting-email">Auth Email</label>
+            <input type="email" id="setting-email" placeholder="user@example.com">
+        </div>
+        <div class="settings-group">
+            <label for="setting-companion">Companion Name</label>
+            <input type="text" id="setting-companion" placeholder="Kai">
+        </div>
+        <div class="settings-group">
+            <label for="setting-speed">Typewriter Speed</label>
+            <input type="range" id="setting-speed" min="5" max="80" value="30">
+            <div class="speed-value" id="speed-value">30ms per character</div>
+        </div>
+        <div class="settings-group">
+            <label for="setting-history">History Count</label>
+            <input type="range" id="setting-history" min="5" max="50" value="30" step="5">
+            <div class="speed-value" id="history-value">30 messages</div>
+        </div>
+        <div class="settings-group" style="margin-top: 24px;">
+            <button class="settings-btn-primary" id="settings-reconnect">Reconnect</button>
+        </div>
+    </div>
+</div>
+
+<!-- Companion info bar (scene + schedule) -->
+<div class="companion-info-bar" id="companion-info-bar">
+    <div class="info-item" id="info-scene">
+        <span class="info-label">Scene</span>
+        <span class="info-value" id="scene-value">--</span>
+    </div>
+    <div class="info-item" id="info-mood">
+        <span class="info-label">Mood</span>
+        <span class="info-value" id="mood-value">--</span>
+    </div>
+    <div class="info-item" id="info-energy">
+        <span class="info-label">Energy</span>
+        <span class="info-value" id="energy-value">--</span>
+    </div>
+    <div class="info-item info-schedule" id="info-schedule">
+        <span class="info-label">Schedule</span>
+        <span class="info-value" id="schedule-value">--</span>
+    </div>
+</div>
+
+<!-- Chat area -->
+<div class="chat-container">
+    <div class="messages" id="messages">
+        <!-- Messages rendered here -->
+    </div>
+    <div class="typing-indicator" id="typing-indicator">
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+    </div>
+    <div class="input-area">
+        <div class="input-row">
+            <textarea id="msg-input" rows="1" placeholder="Type a message..." autocomplete="off"></textarea>
+            <button class="send-btn" id="send-btn" title="Send">&#9654;</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+<script src="/chat.js"></script>
+</body>
+</html>

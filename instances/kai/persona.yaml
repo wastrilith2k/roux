@@ -25,8 +25,16 @@ prompts:
   cognitive_flow: "prompts/core/cognitive_flow.md"
 
 image:
+  # Provider: 'nanobanana' (default, free) or 'runcomfy' (LoRA/custom workflows)
+  # If no runcomfy_deployment_id is set, NanoBanana is used automatically
+  provider: nanobanana
+  # runcomfy_deployment_id: ""  # Set this to use RunComfy for this companion
   base_prompt: ""
   intimate_prompt: ""
+  # Content rules — what this companion's image provider can/can't generate
+  # NanoBanana (Gemini): no NSFW, limited violence, no real people likenesses
+  # RunComfy (custom): depends on your workflow and LoRA training
+  content_rules: "gemini"  # 'gemini' (NanoBanana restrictions) or 'unrestricted' (RunComfy)
 
 voice:
   elevenlabs_voice_id: ""

@@ -69,12 +69,82 @@ body {
     50% { opacity: 0.4; }
 }
 
+/* Character selector bar */
+.character-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+}
+
+.selector-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.selector-buttons {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.selector-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text-primary);
+    padding: 3px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    border-left-width: 3px;
+}
+
+.selector-btn {
+    transition: all 0.15s ease;
+}
+
+.selector-btn:hover {
+    opacity: 0.85;
+    transform: scale(1.02);
+}
+
+.selector-all {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text-secondary);
+    padding: 3px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    margin-left: auto;
+}
+
+.selector-all:hover, .selector-all.active { background: var(--bg-tertiary); color: var(--text-primary); }
+
 /* Main layout */
 .dashboard {
     display: grid;
-    grid-template-columns: 280px 1fr 280px;
+    grid-template-columns: minmax(200px, 1fr) 3fr;
     grid-template-rows: 1fr auto;
-    height: calc(100vh - 48px);
+    height: calc(100vh - 82px);
+}
+
+/* State panels container — scrollable column of character panels */
+.state-panels {
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 0;
+}
+
+.state-panels .side-panel {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
 }
 
 /* Side panels */
@@ -99,8 +169,80 @@ body {
     gap: 6px;
 }
 
-.panel-title.kai { color: var(--kai-color); }
-.panel-title.mira { color: var(--mira-color); }
+.collapse-arrow {
+    font-size: 10px;
+    display: inline-block;
+    transition: transform 0.15s;
+}
+
+.panel-body {
+    transition: all 0.15s;
+}
+
+/* State editing controls */
+.edit-state-btn {
+    width: 100%;
+    margin-top: 8px;
+    padding: 4px 8px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-muted);
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.edit-state-btn:hover {
+    color: var(--text-secondary);
+    border-color: var(--text-muted);
+}
+
+.edit-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.save-state-btn, .cancel-state-btn {
+    flex: 1;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+}
+
+.save-state-btn {
+    background: var(--green);
+    color: #0d1117;
+    border-color: var(--green);
+}
+
+.cancel-state-btn {
+    background: transparent;
+    color: var(--text-secondary);
+}
+
+.state-slider {
+    width: 100%;
+    margin-top: 4px;
+    accent-color: var(--accent);
+}
+
+.state-input {
+    width: 100%;
+    margin-top: 4px;
+    padding: 4px 6px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 12px;
+}
+
+.state-card.editable {
+    cursor: default;
+}
 
 /* State cards */
 .state-card {
@@ -203,17 +345,11 @@ body {
     position: relative;
 }
 
-.message.kai {
-    align-self: flex-start;
-    background: var(--kai-bg);
-    border: 1px solid var(--kai-border);
-    border-bottom-left-radius: 4px;
-}
-
-.message.mira {
-    align-self: flex-end;
-    background: var(--mira-bg);
-    border: 1px solid var(--mira-border);
+/* Dynamic message colors via inline border-left-color from JS */
+.message {
+    border-left: 3px solid var(--border);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 6px;
     border-bottom-right-radius: 4px;
 }
 
@@ -223,8 +359,7 @@ body {
     margin-bottom: 2px;
 }
 
-.message.kai .speaker { color: var(--kai-color); }
-.message.mira .speaker { color: var(--mira-color); }
+/* Speaker color set inline by JS */
 
 .message .timestamp {
     font-size: 10px;
@@ -353,16 +488,9 @@ body {
     cursor: pointer;
 }
 
-.tab-companion-toggle button.active-kai {
-    background: var(--kai-bg);
-    border-color: var(--kai-border);
-    color: var(--kai-color);
-}
-
-.tab-companion-toggle button.active-mira {
-    background: var(--mira-bg);
-    border-color: var(--mira-border);
-    color: var(--mira-color);
+.tab-companion-toggle button.active-companion {
+    background: var(--bg-tertiary);
+    border-color: var(--text-secondary);
 }
 
 /* Empty state */

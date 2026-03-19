@@ -32,8 +32,6 @@ except ImportError:
     pass  # Will fall back to thread pool approach
 
 from .provider_interface import LLMProvider
-from .fireworks_provider import FireworksProvider
-from .anthropic_provider import AnthropicProvider
 from .openai_provider import OpenAIProvider
 
 logger = logging.getLogger(__name__)
@@ -226,7 +224,7 @@ def get_resilient_provider_chain(
     """
     Create a resilient provider chain with failover capability.
 
-    Default order: Fireworks primary → Fireworks Kimi fallback → DeepSeek direct → Anthropic (if configured)
+    Default order: OpenRouter (free) → Fireworks → DeepSeek direct → OpenAI → Anthropic
 
     Args:
         primary: Override primary provider ('fireworks' or 'anthropic')
@@ -241,9 +239,22 @@ def get_resilient_provider_chain(
     if primary is None:
         primary = os.getenv("LLM_PROVIDER", "fireworks").lower()
 
+    # Primary: OpenRouter (free, tried first when configured)
+    openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+    if openrouter_api_key:
+        openrouter_model = os.getenv("OPENROUTER_MODEL", "openrouter/free")
+        providers.append(OpenAIProvider(
+            api_key=openrouter_api_key,
+            model=openrouter_model,
+            base_url="https://openrouter.ai/api/v1",
+            context_limit=131072
+        ))
+        logger.debug(f"Added OpenRouter primary: {openrouter_model}")
+
     fireworks_api_key = os.getenv("FIREWORKS_API_KEY")
 
     if primary == "fireworks" and fireworks_api_key:
+        from .fireworks_provider import FireworksProvider
         # Primary: Fireworks with configured model (e.g. DeepSeek v3)
         model = os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2-instruct-0905")
         providers.append(FireworksProvider(api_key=fireworks_api_key, model=model))
@@ -258,6 +269,7 @@ def get_resilient_provider_chain(
     elif primary == "anthropic":
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if api_key:
+            from .anthropic_provider import AnthropicProvider
             model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
             providers.append(AnthropicProvider(api_key=api_key, model=model))
             logger.debug(f"Added Anthropic primary: {model}")
@@ -285,13 +297,14 @@ def get_resilient_provider_chain(
     if primary != "anthropic":
         anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
         if anthropic_api_key:
+            from .anthropic_provider import AnthropicProvider
             anthropic_model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
             providers.append(AnthropicProvider(api_key=anthropic_api_key, model=anthropic_model))
             logger.debug(f"Added Anthropic last-resort: {anthropic_model}")
 
     if not providers:
         raise ValueError(
-            "No LLM providers configured. Set FIREWORKS_API_KEY, DEEPSEEK_API_KEY, or ANTHROPIC_API_KEY."
+            "No LLM providers configured. Set FIREWORKS_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY, or ANTHROPIC_API_KEY."
         )
 
     logger.info(f"Created resilient provider chain: {[p.get_model_name() for p in providers]}")
@@ -368,6 +381,7 @@ def get_llm_provider(
                 "accounts/fireworks/models/kimi-k2-instruct-0905"
             )
 
+        from .fireworks_provider import FireworksProvider
         return FireworksProvider(api_key=api_key, model=model)
 
     elif provider_name == "anthropic":
@@ -379,6 +393,7 @@ def get_llm_provider(
         if model is None:
             model = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-20250514")
 
+        from .anthropic_provider import AnthropicProvider
         return AnthropicProvider(api_key=api_key, model=model)
 
     else:

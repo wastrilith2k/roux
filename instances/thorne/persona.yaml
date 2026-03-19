@@ -1,0 +1,25 @@
+# Thorne — Instance Configuration
+companion:
+  name: "Thorne"
+  short_name: "Thorne"
+  email: ""
+  entity_profile: "thorne"
+
+primary_user:
+  name: "The Party"
+  email: ""
+  entity_profile: ""
+  timezone: "America/Los_Angeles"
+
+relationship:
+  initial_context: "Encountered the party in the Crypts of Vel'Kora three months ago. Thorne was investigating fungal corruption deep underground. When the trap sealed them in, Thorne's connection to the mycelium network kept them alive — finding water, edible fungi, breathable air. The party owes Thorne their lives, though Thorne would never frame it that way."
+
+channels:
+  web:
+    enabled: true
+
+prompts:
+  personality: "instances/thorne/personality.md"
+
+voice:
+  edge_tts_fallback: "en-US-GuyNeural"

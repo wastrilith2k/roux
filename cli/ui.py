@@ -21,6 +21,7 @@ HOW:  ANSI escape codes via the Colors class. `sanitize_output()` replaces
 import sys
 import os
 import shutil
+import time
 from typing import Optional
 from datetime import datetime
 
@@ -85,6 +86,9 @@ def sanitize_output(text: str) -> str:
 class CliUI:
     """Minimal terminal-based CLI UI"""
 
+    # Typewriter speed: seconds per character (0 = instant)
+    TYPEWRITER_DELAY = 0.025  # ~40 chars/sec
+
     def __init__(self, show_timestamps: bool = False):
         self.show_timestamps = show_timestamps
         self.use_color = supports_color()
@@ -92,6 +96,7 @@ class CliUI:
         self.current_status = None
         self.last_mood = None
         self._prompt_session = None
+        self.typewriter_enabled = True
 
         # Set up prompt_toolkit session with multi-line key bindings
         if HAS_PROMPT_TOOLKIT:
@@ -158,7 +163,7 @@ class CliUI:
             return None
 
     def print_companion(self, message: str, mood: Optional[str] = None):
-        """Print the companion's response"""
+        """Print the companion's response with typewriter effect"""
         # Clear any thinking indicator
         self.clear_line()
 
@@ -168,20 +173,57 @@ class CliUI:
         # Sanitize message
         message = sanitize_output(message)
 
-        # Print message with subtle formatting (white text)
         print()
-        lines = message.split('\n')
-        for line in lines:
-            if line.strip():
-                print(self.c(Colors.WHITE, f"  {line}"))
-            else:
-                print()
+
+        if self.typewriter_enabled and self.TYPEWRITER_DELAY > 0:
+            self._typewriter_print(message)
+        else:
+            # Instant mode
+            lines = message.split('\n')
+            for line in lines:
+                if line.strip():
+                    print(self.c(Colors.WHITE, f"  {line}"))
+                else:
+                    print()
 
         # Subtle mood indicator if present and notable
         if mood and mood.lower() not in ['neutral', 'normal', 'calm']:
             print(self.c(Colors.DIM, f"  [{mood}]"))
 
         print()
+
+    def _typewriter_print(self, message: str):
+        """Print message character by character with typewriter effect."""
+        lines = message.split('\n')
+        for line_idx, line in enumerate(lines):
+            if not line.strip():
+                print()
+                continue
+
+            # Start the line with indent and color
+            if self.use_color:
+                sys.stdout.write(f"  {Colors.WHITE}")
+            else:
+                sys.stdout.write("  ")
+
+            for i, char in enumerate(line):
+                sys.stdout.write(char)
+                sys.stdout.flush()
+
+                # Variable speed: punctuation gets a longer pause
+                if char in '.!?':
+                    time.sleep(self.TYPEWRITER_DELAY * 6)
+                elif char in ',;:—':
+                    time.sleep(self.TYPEWRITER_DELAY * 3)
+                elif char == ' ':
+                    time.sleep(self.TYPEWRITER_DELAY * 0.5)
+                else:
+                    time.sleep(self.TYPEWRITER_DELAY)
+
+            # End color and newline
+            if self.use_color:
+                sys.stdout.write(Colors.RESET)
+            print()
 
     def print_user(self, message: str):
         """Print user message (for history/echo)"""
@@ -251,6 +293,8 @@ class CliUI:
             ("/autopilot", "james's current routine status"),
             ("/img [n]", "recent image URLs (default 20)"),
             ("/state", "full debug state dump"),
+            ("/typewriter", "toggle typewriter effect (or /tw <ms>)"),
+            ("/timestamps", "toggle timestamp display"),
             ("/quit", "exit"),
         ]
         for cmd, desc in commands:

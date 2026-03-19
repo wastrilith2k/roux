@@ -47,6 +47,22 @@ def _companion_email(companion_id: str) -> str:
 # REST endpoints (all GET, no auth)
 # ---------------------------------------------------------------------------
 
+@observe_bp.route('/companions')
+def observe_companions():
+    """List all companions that have messages in the database."""
+    try:
+        db = _get_db()
+        result = db.execute(
+            "SELECT DISTINCT companion_id FROM messages ORDER BY companion_id"
+        )
+        rows = result.fetchall() or []
+        companions = [r['companion_id'] for r in rows if r.get('companion_id')]
+        return jsonify(companions)
+    except Exception as e:
+        logger.error(f"observe_companions error: {e}")
+        return jsonify([])
+
+
 @observe_bp.route('/status')
 def observe_status():
     """Simulation status — clock time, day, running state from Redis."""
@@ -67,28 +83,45 @@ def observe_status():
 
 @observe_bp.route('/messages')
 def observe_messages():
-    """Recent messages for a companion."""
-    companion_id = request.args.get('companion_id', 'kai')
+    """Recent messages — supports filtering by multiple companion_ids."""
+    companion_ids = request.args.getlist('companion_id')  # Supports multiple
     since = request.args.get('since')
-    limit = min(int(request.args.get('limit', 50)), 200)
+    limit = min(int(request.args.get('limit', 100)), 500)
 
     try:
         db = _get_db()
-        if since:
+        if since and companion_ids:
+            placeholders = ','.join(['%s'] * len(companion_ids))
+            result = db.execute(
+                f"""SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
+                   FROM messages
+                   WHERE companion_id IN ({placeholders}) AND timestamp > %s
+                   ORDER BY timestamp DESC LIMIT %s""",
+                tuple(companion_ids) + (since, limit)
+            )
+        elif since:
             result = db.execute(
                 """SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
                    FROM messages
-                   WHERE companion_id = %s AND timestamp > %s
+                   WHERE timestamp > %s
                    ORDER BY timestamp DESC LIMIT %s""",
-                (companion_id, since, limit)
+                (since, limit)
+            )
+        elif companion_ids:
+            placeholders = ','.join(['%s'] * len(companion_ids))
+            result = db.execute(
+                f"""SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
+                   FROM messages
+                   WHERE companion_id IN ({placeholders})
+                   ORDER BY timestamp DESC LIMIT %s""",
+                tuple(companion_ids) + (limit,)
             )
         else:
             result = db.execute(
                 """SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
                    FROM messages
-                   WHERE companion_id = %s
                    ORDER BY timestamp DESC LIMIT %s""",
-                (companion_id, limit)
+                (limit,)
             )
         rows = result.fetchall() or []
         messages = []
@@ -104,6 +137,55 @@ def observe_messages():
     except Exception as e:
         logger.error(f"observe_messages error: {e}")
         return jsonify([])
+
+
+@observe_bp.route('/state', methods=['POST'])
+def update_state():
+    """Update emotional/relationship state for a companion."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    companion_id = data.get('companion_id')
+    if not companion_id:
+        return jsonify({'error': 'companion_id required'}), 400
+
+    try:
+        db = _get_db()
+        updates = []
+        params = []
+
+        # Updatable fields
+        if 'closeness_score' in data:
+            updates.append('closeness_score = %s')
+            params.append(int(data['closeness_score']))
+        if 'emotion_profile' in data:
+            updates.append('emotion_profile = %s')
+            params.append(data['emotion_profile'])
+        if 'romance_level' in data:
+            updates.append('romance_level = %s')
+            params.append(float(data['romance_level']))
+        if 'cooldown_active' in data:
+            updates.append('cooldown_active = %s')
+            params.append(bool(data['cooldown_active']))
+        if 'internal_state' in data:
+            updates.append('internal_state = %s')
+            params.append(json.dumps(data['internal_state']))
+
+        if not updates:
+            return jsonify({'error': 'No valid fields to update'}), 400
+
+        params.append(companion_id)
+        db.execute(
+            f"UPDATE user_state SET {', '.join(updates)} WHERE companion_id = %s",
+            tuple(params)
+        )
+
+        logger.info(f"State updated for {companion_id}: {list(data.keys())}")
+        return jsonify({'success': True, 'updated': list(data.keys())})
+    except Exception as e:
+        logger.error(f"update_state error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @observe_bp.route('/state')

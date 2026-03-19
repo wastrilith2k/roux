@@ -1,0 +1,80 @@
+# Simulation configuration — Fantasy / D&D setting
+# The Unlikely Alliance communicating via Sending Stones
+
+setting: "instances/settings/fantasy_tavern.yaml"
+
+models:
+  - nvidia/nemotron-3-super-120b-a12b:free
+
+opener_seeds:
+  - "Share something weird that happened to you today."
+  - "Ask someone for advice about a problem you're dealing with."
+  - "Complain about something in Thornwall that annoyed you."
+  - "Share a rumor or piece of gossip you picked up."
+  - "Mention something that reminded you of the Crypts."
+  - "Ask about someone's magical item — what's it been doing lately?"
+  - "Share a small victory or frustrating setback."
+  - "Bring up the Bleakwood disappearances — you've been thinking about it."
+  - "Tell someone about a weird dream you had."
+  - "Ask what everyone's doing tonight."
+  - "Share something you saw at the market or around Thornwall."
+  - "Mention a new skill you've been practicing."
+  - "React to the weather — it's always doing something in Thornwall."
+  - "Ask someone how they're REALLY doing. Not the surface answer."
+  - "Bring up a hypothetical: 'if we had to go back to the Crypts...'"
+
+tone_modifiers:
+  - ""
+  - ""
+  - ""
+  - "You're in a teasing mood — give someone a hard time (affectionately)."
+  - "You're worried about the party. Check in on someone specific."
+  - "You're feeling competitive — challenge someone or brag about something small."
+  - "You're nostalgic — bring up an old memory or reference shared history."
+  - "You're feeling philosophical — say something unexpectedly deep."
+  - "You're grumpy. Everything is annoying. Especially people."
+  - "You're feeling generous — offer to help with something or share something."
+  - "You're suspicious — something feels off today. Trust your instincts."
+  - "You're feeling reckless — suggest something dumb and fun."
+
+activities:
+  - tinkering in the workshop
+  - performing at the tavern
+  - meditating in the garden
+  - training with weapons
+  - browsing the market
+  - reading by candlelight
+  - cooking something questionable
+  - practicing spells
+  - writing letters
+  - walking the city walls
+  - people-watching at the square
+  - visiting the temple
+  - foraging herbs outside the walls
+  - repairing equipment
+  - napping
+
+moods:
+  - relaxed
+  - focused
+  - playful
+  - content
+  - restless
+  - thoughtful
+  - tired
+  - energetic
+  - nostalgic
+  - creative
+  - irritated
+  - anxious
+  - melancholy
+  - giddy
+  - suspicious
+  - protective
+
+life_event_probability: 0.65
+
+max_tokens: 2000
+temperature: 0.95
+summary_max_tokens: 200
+summary_temperature: 0.3

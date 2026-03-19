@@ -70,6 +70,9 @@ class CommandHandler:
             'autopilot': self.cmd_autopilot,
             'where': self.cmd_autopilot,
             'james': self.cmd_autopilot,
+            # Display settings
+            'typewriter': self.cmd_typewriter,
+            'tw': self.cmd_typewriter,
         }
 
     def is_command(self, text: str) -> bool:
@@ -160,6 +163,30 @@ class CommandHandler:
         self.cli.ui.show_timestamps = not self.cli.ui.show_timestamps
         state = "on" if self.cli.ui.show_timestamps else "off"
         self.cli.ui.print_info(f"timestamps: {state}")
+        return CommandResult(handled=True)
+
+    async def cmd_typewriter(self, args: str) -> CommandResult:
+        """Toggle typewriter effect or set speed"""
+        args = args.strip()
+        if args in ('on', 'true', '1'):
+            self.cli.ui.typewriter_enabled = True
+            self.cli.ui.print_info("typewriter: on")
+        elif args in ('off', 'false', '0'):
+            self.cli.ui.typewriter_enabled = False
+            self.cli.ui.print_info("typewriter: off")
+        elif args:
+            # Set speed (ms per char)
+            try:
+                ms = int(args)
+                self.cli.ui.TYPEWRITER_DELAY = ms / 1000.0
+                self.cli.ui.typewriter_enabled = True
+                self.cli.ui.print_info(f"typewriter: {ms}ms per char")
+            except ValueError:
+                self.cli.ui.print_error("usage: /typewriter [on|off|<ms>]")
+        else:
+            self.cli.ui.typewriter_enabled = not self.cli.ui.typewriter_enabled
+            state = "on" if self.cli.ui.typewriter_enabled else "off"
+            self.cli.ui.print_info(f"typewriter: {state}")
         return CommandResult(handled=True)
 
     async def cmd_test(self, args: str) -> CommandResult:

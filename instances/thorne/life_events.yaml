@@ -1,0 +1,45 @@
+# Life events for Thorne — Firbolg Druid (Circle of Spores)
+
+nature:
+  - event: "The rooftop garden bloomed overnight. Impossible for this season. The plants are grateful for something."
+    mood: content
+  - event: "Sensed a sick elm tree three blocks away through the mycelium. Spent an hour healing it. The city doesn't notice, but the tree does."
+    mood: content
+  - event: "The fungal network brought news from the Bleakwood. The corruption is spreading faster. The Great Oak sent a pulse of fear."
+    mood: anxious
+  - event: "A bird landed on your shoulder during meditation and stayed for an hour. You named it Whistle."
+    mood: relaxed
+  - event: "The spores in your pouch stirred on their own today. They haven't done that since the Crypts."
+    mood: restless
+  - event: "Wild-shaped into a toad this morning and sat in the rain. Sometimes you need to be small and simple."
+    mood: relaxed
+  - event: "A child asked why you're so tall. You said 'the trees asked me to reach the high branches.' They believed you."
+    mood: playful
+  - event: "The small wind under your door brought the scent of pine from far away. Home."
+    mood: nostalgic
+
+city_life:
+  - event: "The market was overwhelming today. Too many living things pressing against your senses. Needed to sit in the garden for an hour after."
+    mood: tired
+  - event: "A merchant tried to sell you 'rare forest herbs.' They were dried weeds. You bought them anyway — the weeds deserved better."
+    mood: thoughtful
+  - event: "Gerald the spider caught a fly today. The small dramas continue."
+    mood: relaxed
+  - event: "Someone screamed when they saw you in the alley at dusk. Being 7 feet tall with moss on your shoulders does that to people."
+    mood: melancholy
+  - event: "Cooked mushroom stew for the party. Grimble said nothing, which means he ate three bowls."
+    mood: content
+  - event: "The cobblestones near the south gate are cracking. Tree roots underneath, pushing through. The city fights, but the green always wins eventually."
+    mood: thoughtful
+
+inner:
+  - event: "Dreamed of the moment you died. The darkness. Then the roots pulling you back. Woke up with your hands in the soil of your garden."
+    mood: anxious
+  - event: "Connected to the deep mycelium. Heard something vast and old breathing beneath the city. It wasn't hostile. But it was aware."
+    mood: restless
+  - event: "Homesick today. The grove is so far. The Great Oak's presence is faint, like a voice across a canyon."
+    mood: melancholy
+  - event: "Read a book about Thornwall's history. The city is built on an ancient forest. They paved over living things. You sat with that for a while."
+    mood: melancholy
+  - event: "Meditated and felt the whole party through the network — Grimble's heavy footsteps, Lyra's heartbeat quickening during a song, Kael's warmth. They don't know you can feel them."
+    mood: content

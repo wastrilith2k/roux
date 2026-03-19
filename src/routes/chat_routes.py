@@ -64,8 +64,27 @@ from src.utils.message_bundler import bundle_messages as _bundle_messages
 # Blueprint for HTTP chat endpoints (WebSocket handlers registered separately)
 chat_bp = Blueprint('chat', __name__)
 
-# Maps Socket.IO session ID -> user email for all live connections
+# Maps Socket.IO session ID -> {'email': str, 'companion_id': str} for all live connections
+# (Legacy callers may still store bare email strings; helpers handle both.)
 connected_users = {}
+
+
+def _get_user_email(sid):
+    """Extract email from connected_users (handles both dict and legacy string)."""
+    entry = connected_users.get(sid)
+    if entry is None:
+        return None
+    if isinstance(entry, dict):
+        return entry.get('email')
+    return entry  # legacy string
+
+
+def _get_user_companion_id(sid):
+    """Extract companion_id from connected_users (returns '' if not set)."""
+    entry = connected_users.get(sid)
+    if isinstance(entry, dict):
+        return entry.get('companion_id', '')
+    return ''
 
 # ---------- Message bundling state ----------
 # When user sends a message while the companion is still generating a response,
@@ -225,8 +244,14 @@ def register_socketio_handlers(socketio):
 
             email = user_info['email']
 
-            # Store user connection
-            connected_users[request.sid] = email
+            # Read companion_id from auth (optional, defaults to COMPANION_ID env var)
+            selected_companion_id = (auth.get('companion_id') if auth else None) or os.environ.get('COMPANION_ID', '')
+
+            # Store user connection with companion_id
+            connected_users[request.sid] = {
+                'email': email,
+                'companion_id': selected_companion_id,
+            }
             join_room(email)
 
             # Mark user as online in Redis (1h TTL) so autonomy tasks can
@@ -240,12 +265,23 @@ def register_socketio_handlers(socketio):
 
             print(f'✅ {email} connected via WebSocket ({auth_type} auth, sid: {request.sid})')
 
-            # Send initial status
+            # Send initial status with companion identity
             state = _get_default_state(email)
+            try:
+                from src.config.persona_config import get_persona_config
+                pc = get_persona_config(companion_id=selected_companion_id or None)
+                companion_name = pc.companion_short_name
+                companion_id_resolved = selected_companion_id or pc.companion_entity_profile
+            except Exception:
+                companion_name = 'Companion'
+                companion_id_resolved = selected_companion_id or ''
+
             emit('status', {
                 'closeness_score': state['closeness_score'],
                 'profile': state['emotion_profile'],
-                'connected': True
+                'connected': True,
+                'companion_name': companion_name,
+                'companion_id': companion_id_resolved,
             })
 
             # REMOVED: Presence greetings disabled - was causing spam
@@ -262,7 +298,8 @@ def register_socketio_handlers(socketio):
     @socketio.on('disconnect')
     def handle_disconnect(reason=None):
         """Handle WebSocket disconnection and cleanup."""
-        email = connected_users.pop(request.sid, None)
+        user_data = connected_users.pop(request.sid, None)
+        email = user_data['email'] if isinstance(user_data, dict) else user_data
         if email:
             leave_room(email)
 
@@ -310,7 +347,7 @@ def register_socketio_handlers(socketio):
             - /test: Process message but don't save to database (dry run)
         """
         # Get authenticated user
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return
@@ -350,6 +387,11 @@ def register_socketio_handlers(socketio):
             data['message_type'] = 'test'
             print(f"🧪 TEST MODE: {email} - message will not be saved")
 
+        # Inject companion_id into data so message handler can use it
+        companion_id = _get_user_companion_id(request.sid)
+        if companion_id:
+            data['companion_id'] = companion_id
+
         # --- Message bundling: if companion is already processing for this user,
         #     queue this message and cancel the in-flight pipeline ---
         if email in _user_processing:
@@ -375,7 +417,7 @@ def register_socketio_handlers(socketio):
             - mime_type (optional): e.g. 'image/jpeg' (default), 'image/png'
             - caption (optional): text message accompanying the image
         """
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return
@@ -432,7 +474,7 @@ def register_socketio_handlers(socketio):
 
         Returns current closeness score, emotional profile, and state information.
         """
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return
@@ -470,7 +512,7 @@ def register_socketio_handlers(socketio):
         Data can contain:
             - limit: Number of messages to return (default: 5)
         """
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return
@@ -479,22 +521,42 @@ def register_socketio_handlers(socketio):
         if data and isinstance(data, dict):
             limit = min(data.get('limit', 5), 50)  # Cap at 50
 
+        companion_id = _get_user_companion_id(request.sid)
+
         try:
             from src.database.db import get_db
             db = get_db()
-            messages = db.get_recent_messages(email, limit=limit)
+
+            if companion_id:
+                # Filter messages by companion_id
+                from psycopg2.extras import RealDictCursor
+                with db._get_connection() as conn:
+                    cursor = conn.cursor(cursor_factory=RealDictCursor)
+                    cursor.execute('''
+                        SELECT sender_name, message_text, timestamp
+                        FROM messages
+                        WHERE email = %s AND companion_id = %s
+                        ORDER BY timestamp DESC, id DESC
+                        LIMIT %s
+                    ''', (email, companion_id, limit))
+                    rows = list(cursor.fetchall())
+                rows.reverse()  # Chronological order
+                messages = rows
+            else:
+                messages = db.get_recent_messages(email, limit=limit)
 
             # Format for client (oldest first for display)
-            # Note: get_recent_messages already returns oldest first (chronological)
             formatted = []
             for msg in messages:
-                # Map sender_name to role
                 sender = msg.get('sender_name', '')
                 role = 'companion' if sender.lower() in ('companion',) else 'user'
+                ts = msg.get('timestamp', '')
+                if hasattr(ts, 'isoformat'):
+                    ts = ts.isoformat()
                 formatted.append({
                     'role': role,
                     'content': msg.get('message_text', ''),
-                    'timestamp': msg.get('timestamp', '')
+                    'timestamp': ts
                 })
 
             emit('history', {'messages': formatted})
@@ -508,7 +570,7 @@ def register_socketio_handlers(socketio):
         Handle state request from client - returns scene state and internal state.
         This is a debug/info command, doesn't affect conversation.
         """
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return
@@ -543,7 +605,7 @@ def register_socketio_handlers(socketio):
         """
         Handle image list request from client - returns recent generated images.
         """
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return
@@ -591,7 +653,7 @@ def register_socketio_handlers(socketio):
         Handle activity request from client - returns current and upcoming activities.
         This is an info command, doesn't affect conversation.
         """
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return
@@ -653,7 +715,7 @@ def register_socketio_handlers(socketio):
         Handle autopilot status request - returns James's current routine status.
         This is an info command, doesn't affect conversation.
         """
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return
@@ -695,7 +757,7 @@ def register_socketio_handlers(socketio):
 
         data: {'enabled': true/false} or empty to toggle
         """
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return
@@ -732,7 +794,7 @@ def register_socketio_handlers(socketio):
 
         data: {'enabled': true/false} or empty to toggle
         """
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return
@@ -765,7 +827,7 @@ def register_socketio_handlers(socketio):
     @socketio.on('request_autonomy_status')
     def handle_request_autonomy_status(data=None):
         """Get current autonomy status."""
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return
@@ -783,7 +845,7 @@ def register_socketio_handlers(socketio):
         Handle /costs command - returns API cost tracking information.
         Shows daily and weekly costs for tool calls and main responses.
         """
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return
@@ -840,7 +902,7 @@ def register_socketio_handlers(socketio):
         Data should contain:
             - message: The user's silent message
         """
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return
@@ -919,7 +981,7 @@ def register_socketio_handlers(socketio):
     @socketio.on('request_pending_facts')
     def handle_request_pending_facts(data=None):
         """Get pending facts awaiting approval."""
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return
@@ -946,7 +1008,7 @@ def register_socketio_handlers(socketio):
     @socketio.on('approve_fact')
     def handle_approve_fact(data):
         """Approve a pending fact."""
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return
@@ -972,7 +1034,7 @@ def register_socketio_handlers(socketio):
     @socketio.on('reject_fact')
     def handle_reject_fact(data):
         """Reject a pending fact."""
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return
@@ -1000,7 +1062,7 @@ def register_socketio_handlers(socketio):
     @socketio.on('edit_fact')
     def handle_edit_fact(data):
         """Edit and approve a pending fact."""
-        email = connected_users.get(request.sid)
+        email = _get_user_email(request.sid)
         if not email:
             emit('error', {'message': 'Not authenticated'})
             return

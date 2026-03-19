@@ -322,12 +322,45 @@ class ReachOutEngine:
         is_working = context.get('is_working', False)
         has_queued_thought = bool(context.get('queued_thoughts'))
 
+        # Check physical presence state for morning greeting behavior
+        # If they were "together" (scene has physical_presence=True) and user
+        # is now offline, they likely slept in together — don't send a morning
+        # text, just wait for them to come online. If they were apart, send
+        # the morning greeting via Telegram (if available).
+        were_together = False
+        user_is_online = context.get('user_is_online', False)
+        try:
+            from src.core.scene_tracker import get_scene_tracker
+            scene = get_scene_tracker().get_scene_state(context.get('user_email', ''))
+            were_together = scene.physical_presence if scene else False
+        except Exception:
+            pass
+
+        # Also check internal state departed_at — if user hasn't "left", they're still present
+        try:
+            from src.core.internal_state import get_internal_state_manager
+            internal = get_internal_state_manager().get_state(context.get('user_email', ''))
+            if internal and not internal.departed_at:
+                # User never explicitly left — they might still be "here"
+                if were_together:
+                    were_together = True
+        except Exception:
+            pass
+
+        # Morning greeting logic:
+        # - Together + offline → defer (they slept in, wait for them to wake up)
+        # - Apart + offline → send via Telegram if available
+        # - Together + online → greet in chat (they woke up)
+        # - Apart + online → greet in chat
+        morning_should_fire = (
+            hours_since > 8 and
+            not is_waiting and
+            not (were_together and not user_is_online)  # Don't text if sleeping beside them
+        )
+
         # Build trigger conditions
         trigger_checks = {
-            'morning_greeting': (
-                hours_since > 8 and  # Haven't talked overnight
-                not is_waiting  # Not waiting for response
-            ),
+            'morning_greeting': morning_should_fire,
             'end_of_workday': (
                 context.get('activity_status') in ['off', 'transitioning'] and
                 hours_since > 4 and
@@ -384,7 +417,21 @@ class ReachOutEngine:
             if trigger_name == 'high_urgency_followup' and high_urgency_curiosity:
                 opener_hint = f"following up on: {high_urgency_curiosity.topic}"
 
-            logger.info(f"Natural trigger: {trigger_name} - {trigger['description']}")
+            # Morning greeting: adjust hint based on presence
+            if trigger_name == 'morning_greeting':
+                if were_together and user_is_online:
+                    opener_hint = 'you were hanging out together recently and they just came online — greet them naturally based on your relationship (could be casual roommate check-in, friendly hello, or whatever fits)'
+                elif not user_is_online:
+                    opener_hint = 'morning text — you haven\'t been in the same place recently, so reach out casually'
+
+            # Channel hint: store in context for the caller
+            # If apart and offline, prefer Telegram for the morning greeting
+            if trigger_name == 'morning_greeting' and not user_is_online and not were_together:
+                context['preferred_channel'] = 'telegram'
+            elif trigger_name == 'morning_greeting' and were_together:
+                context['preferred_channel'] = 'chat'
+
+            logger.info(f"Natural trigger: {trigger_name} - {trigger['description']} [together={were_together}, online={user_is_online}]")
             return True, trigger_name, opener_hint
 
         return False, None, None
@@ -611,6 +658,7 @@ class ReachOutEngine:
             return False, "autonomy disabled", None
 
         context = self.get_context()
+        self._last_context = context  # Store for callers to inspect preferred_channel
 
         # Hard guards based on her actual state
         if context.get('is_asleep', False):
