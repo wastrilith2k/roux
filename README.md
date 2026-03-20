@@ -239,18 +239,40 @@ Content rules are injected into the image generation prompt so the LLM crafts ap
 </details>
 
 <details>
-<summary><strong>Cloudinary (Image CDN)</strong></summary>
+<summary><strong>Image Storage (Cloudinary or AWS S3)</strong></summary>
 
-Persistent image hosting for generated images. Images are uploaded automatically after generation completes, ensuring URLs don't expire.
+Persistent image hosting for generated images. Images are uploaded automatically after generation completes, ensuring URLs don't expire. Choose either Cloudinary or AWS S3.
+
+**Option A: Cloudinary (default)**
 
 1. Sign up at [cloudinary.com](https://cloudinary.com/)
 2. Go to Dashboard > API Keys
 3. Set in `.env`:
    ```
+   IMAGE_STORAGE_PROVIDER=cloudinary
    CLOUDINARY_CLOUD_NAME=your_cloud_name
    CLOUDINARY_API_KEY=your_api_key
    CLOUDINARY_API_SECRET=your_api_secret
    ```
+
+**Option B: AWS S3**
+
+1. Sign in to the [AWS Console](https://console.aws.amazon.com/)
+2. Go to **S3** > **Create bucket** (uncheck "Block all public access" so images are readable)
+3. Go to **IAM > Users** > create a user with `AmazonS3FullAccess` > **Security credentials** > **Create access key** > choose "Application running outside AWS" > copy both keys
+4. Set in `.env`:
+   ```
+   IMAGE_STORAGE_PROVIDER=s3
+   AWS_S3_BUCKET=your-bucket-name
+   AWS_S3_REGION=us-east-1
+   AWS_ACCESS_KEY_ID=AKIAxxxxxxxxxxxxxxxx
+   AWS_SECRET_ACCESS_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   ```
+
+For S3-compatible services (MinIO, DigitalOcean Spaces, Backblaze B2), also set:
+```
+AWS_S3_ENDPOINT_URL=https://nyc3.digitaloceanspaces.com
+```
 </details>
 
 <details>

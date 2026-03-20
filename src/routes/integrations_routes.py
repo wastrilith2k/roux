@@ -307,7 +307,7 @@ def manage_avatar():
     """
     try:
         from src.database.simple_auth import verify_session
-        from src.auth.firebase_auth import verify_firebase_token
+        from src.auth.auth_provider import verify_token as verify_auth_token
 
         # Get token from Authorization header
         auth_header = request.headers.get('Authorization', '')
@@ -316,8 +316,8 @@ def manage_avatar():
 
         token = auth_header[7:]  # Remove "Bearer " prefix
 
-        # Try Firebase first
-        user_info = verify_firebase_token(token)
+        # Try configured auth provider first (Firebase or Cognito)
+        user_info = verify_auth_token(token)
         if not user_info:
             # Fall back to legacy session token
             user_info = verify_session(token)

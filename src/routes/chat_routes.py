@@ -206,19 +206,19 @@ def register_socketio_handlers(socketio):
                     print(f"❌ No token or email provided")
                     return False
 
-                # Try Firebase first
+                # Try configured auth provider first (Firebase or Cognito)
                 try:
-                    from src.auth.firebase_auth import verify_firebase_token
+                    from src.auth.auth_provider import verify_token as verify_auth_token
 
-                    firebase_claims = verify_firebase_token(token)
+                    firebase_claims = verify_auth_token(token)
                     if firebase_claims:
                         email = firebase_claims.get('email')
                         if email:
                             user_info = {'email': email, 'uid': firebase_claims.get('uid')}
-                            auth_type = 'Firebase'
-                            print(f"✅ Firebase token verified for: {email}")
+                            auth_type = 'Token'
+                            print(f"✅ Auth token verified for: {email}")
                 except Exception as e:
-                    print(f"⚠️  Firebase verification failed: {e}")
+                    print(f"⚠️  Auth token verification failed: {e}")
 
                 # Fall back to legacy session token
                 if not user_info:
@@ -1165,7 +1165,7 @@ def get_history():
     """
     try:
         from src.database.simple_auth import verify_session
-        from src.auth.firebase_auth import verify_firebase_token
+        from src.auth.auth_provider import verify_token as verify_auth_token
 
         # Try Authorization header first (standard REST pattern), then query param (fallback)
         token = None
@@ -1178,8 +1178,8 @@ def get_history():
         if not token:
             return {'error': 'No session token provided'}, 401
 
-        # Try Firebase first
-        user_info = verify_firebase_token(token)
+        # Try configured auth provider first (Firebase or Cognito)
+        user_info = verify_auth_token(token)
         if not user_info:
             # Fall back to legacy session token
             user_info = verify_session(token)

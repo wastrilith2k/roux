@@ -39,21 +39,24 @@ class RunComfyManager:
     def get_result(self, request_id, deployment_id):
         return None
 
-    def backup_to_cloudinary(self, image_url, task_id):
+    def backup_to_persistent_storage(self, image_url, task_id):
+        """Upload an image to the configured persistent storage provider.
+
+        Uses IMAGE_STORAGE_PROVIDER env var to select backend (cloudinary or s3).
+        """
         try:
-            import cloudinary
-            import cloudinary.uploader
-            cloud_name = os.environ.get('CLOUDINARY_CLOUD_NAME')
-            api_key = os.environ.get('CLOUDINARY_API_KEY')
-            api_secret = os.environ.get('CLOUDINARY_API_SECRET')
-            if not all([cloud_name, api_key, api_secret]):
+            from src.image.storage_provider import get_image_storage_provider
+            provider = get_image_storage_provider()
+            if not provider.is_configured():
                 return None
-            cloudinary.config(cloud_name=cloud_name, api_key=api_key, api_secret=api_secret)
-            result = cloudinary.uploader.upload(image_url, public_id=f"companion/{task_id}")
-            return result.get('secure_url')
+            return provider.upload(image_url, task_id)
         except Exception as e:
-            logger.warning(f"Cloudinary backup failed: {e}")
+            logger.warning(f"Persistent storage backup failed: {e}")
             return None
+
+    def backup_to_cloudinary(self, image_url, task_id):
+        """Backwards-compatible alias for backup_to_persistent_storage."""
+        return self.backup_to_persistent_storage(image_url, task_id)
 
 
 _manager = None
