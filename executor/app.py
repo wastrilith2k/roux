@@ -146,6 +146,142 @@ def execute_code():
     })
 
 
+# ==========================================================================
+# Browser endpoints — persistent Playwright session
+# ==========================================================================
+
+from browser_manager import get_browser_manager
+
+
+def _browser_response(result: dict):
+    """Format browser result for JSON response."""
+    return jsonify(result)
+
+
+def _browser_error(msg: str, status: int = 400):
+    return jsonify({'error': msg}), status
+
+
+@app.route('/browser/go', methods=['POST'])
+def browser_go():
+    """Navigate to a URL."""
+    data = request.get_json() or {}
+    url = data.get('url', '')
+    if not url:
+        return _browser_error('Missing "url"')
+    try:
+        result = get_browser_manager().go(url)
+        return _browser_response(result)
+    except Exception as e:
+        return _browser_error(str(e), 500)
+
+
+@app.route('/browser/click', methods=['POST'])
+def browser_click():
+    """Click an element by text or CSS selector."""
+    data = request.get_json() or {}
+    text = data.get('text', '')
+    selector = data.get('selector', '')
+    if not text and not selector:
+        return _browser_error('Provide "text" or "selector"')
+    try:
+        result = get_browser_manager().click(text=text, selector=selector)
+        return _browser_response(result)
+    except Exception as e:
+        return _browser_error(str(e), 500)
+
+
+@app.route('/browser/fill', methods=['POST'])
+def browser_fill():
+    """Fill a form field by name or selector."""
+    data = request.get_json() or {}
+    value = data.get('value', '')
+    name = data.get('name', '')
+    selector = data.get('selector', '')
+    if not value:
+        return _browser_error('Missing "value"')
+    if not name and not selector:
+        return _browser_error('Provide "name" or "selector"')
+    try:
+        result = get_browser_manager().fill(value=value, name=name, selector=selector)
+        return _browser_response(result)
+    except Exception as e:
+        return _browser_error(str(e), 500)
+
+
+@app.route('/browser/submit', methods=['POST'])
+def browser_submit():
+    """Auto-find and click a submit button."""
+    try:
+        result = get_browser_manager().submit()
+        return _browser_response(result)
+    except Exception as e:
+        return _browser_error(str(e), 500)
+
+
+@app.route('/browser/type', methods=['POST'])
+def browser_type():
+    """Type text into a field (keystroke simulation)."""
+    data = request.get_json() or {}
+    text = data.get('text', '')
+    name = data.get('name', '')
+    selector = data.get('selector', '')
+    press_enter = data.get('press_enter', False)
+    if not text:
+        return _browser_error('Missing "text"')
+    try:
+        result = get_browser_manager().type_text(text=text, name=name, selector=selector, press_enter=press_enter)
+        return _browser_response(result)
+    except Exception as e:
+        return _browser_error(str(e), 500)
+
+
+@app.route('/browser/back', methods=['POST'])
+def browser_back():
+    """Go back in browser history."""
+    try:
+        result = get_browser_manager().back()
+        return _browser_response(result)
+    except Exception as e:
+        return _browser_error(str(e), 500)
+
+
+@app.route('/browser/scroll', methods=['POST'])
+def browser_scroll():
+    """Scroll down or up one viewport."""
+    data = request.get_json() or {}
+    direction = data.get('direction', 'down')
+    try:
+        result = get_browser_manager().scroll(direction=direction)
+        return _browser_response(result)
+    except Exception as e:
+        return _browser_error(str(e), 500)
+
+
+@app.route('/browser/read', methods=['GET'])
+def browser_read():
+    """Read the current page without navigating."""
+    try:
+        result = get_browser_manager().read()
+        return _browser_response(result)
+    except Exception as e:
+        return _browser_error(str(e), 500)
+
+
+@app.route('/browser/close', methods=['POST'])
+def browser_close():
+    """Close the browser session and free resources."""
+    try:
+        result = get_browser_manager().close()
+        return _browser_response(result)
+    except Exception as e:
+        return _browser_error(str(e), 500)
+
+
+# ==========================================================================
+# Test endpoints
+# ==========================================================================
+
 @app.route('/execute/test', methods=['GET'])
 def test_execution():
     """Test endpoint to verify execution works."""
@@ -174,4 +310,4 @@ except ImportError as e:
 
 if __name__ == '__main__':
     logger.info(f"Starting Companion Code Executor on port {EXECUTOR_PORT}")
-    app.run(host='0.0.0.0', port=EXECUTOR_PORT, debug=False)
+    app.run(host='0.0.0.0', port=EXECUTOR_PORT, debug=False, threaded=True)

@@ -142,7 +142,7 @@ EXECUTE_CODE_TOOL = {
     "name": "execute_code",
     "description": """Execute Python code. ALWAYS start with: from tools import <module>
 
-Available modules: weather, search, web, google, memory, reminders, image
+Available modules: weather, search, web, google, memory, reminders, image, browser
 
 WEATHER:
   from tools import weather
@@ -181,6 +181,22 @@ IMAGE:
   from tools import image
   print(image.generate_companion_image("prompt"))
   print(image.generate_image("prompt"))
+
+BROWSER (persistent session — navigate, click, fill forms, search):
+  from tools.browser import go, click, fill, submit, type_text, back, scroll, read, close
+  page = go("https://news.ycombinator.com")
+  print(page['title'], page['links'][:5])
+  page = click("Show HN")                          # Click by link text
+  page = go("https://google.com")
+  page = type_text("python tutorial", press_enter=True)  # Search
+  page = fill("user@email.com", name="email")       # Fill form field
+  page = submit()                                    # Submit form
+  page = scroll()                                    # Scroll down
+  page = back()                                      # Go back
+  page = read()                                      # Read current page
+  close()                                            # End session
+  # Session persists between calls — cookies, history, page state maintained.
+  # Every function returns: {title, url, text, links [{text,href}], forms [{action,method,inputs}]}
 
 ALWAYS print() results so output is captured.""",
     "input_schema": {
