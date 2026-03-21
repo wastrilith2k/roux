@@ -23,6 +23,7 @@ from typing import Optional, List, Dict
 from dataclasses import dataclass
 
 from .correction_detector import Correction
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +80,8 @@ class CorrectionStore:
 
             with db._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO corrections
+                cursor.execute(f"""
+                    INSERT INTO {T.CORRECTIONS}
                     (email, subject, wrong_claim, correct_info, correction_type, importance, confidence)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
@@ -139,10 +140,10 @@ class CorrectionStore:
                 cursor = conn.cursor()
 
                 if email:
-                    cursor.execute("""
+                    cursor.execute(f"""
                         SELECT subject, wrong_claim, correct_info, correction_type,
                                importance, confidence, created_at
-                        FROM corrections
+                        FROM {T.CORRECTIONS}
                         WHERE email = %s
                           AND (LOWER(subject) LIKE LOWER(%s)
                                OR LOWER(wrong_claim) LIKE LOWER(%s)
@@ -151,10 +152,10 @@ class CorrectionStore:
                         LIMIT %s
                     """, (email, f"%{subject}%", f"%{subject}%", f"%{subject}%", limit))
                 else:
-                    cursor.execute("""
+                    cursor.execute(f"""
                         SELECT subject, wrong_claim, correct_info, correction_type,
                                importance, confidence, created_at
-                        FROM corrections
+                        FROM {T.CORRECTIONS}
                         WHERE LOWER(subject) LIKE LOWER(%s)
                            OR LOWER(wrong_claim) LIKE LOWER(%s)
                            OR LOWER(correct_info) LIKE LOWER(%s)

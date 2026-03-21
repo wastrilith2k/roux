@@ -20,6 +20,8 @@ import os
 import logging
 from typing import Dict, List, Any, Optional
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,7 +47,7 @@ def get_outcome_patterns(user_email: str, days: int = 30) -> Dict[str, Any]:
         conn = _get_connection()
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT
                     companion_action_type,
                     COUNT(*) as count,
@@ -55,7 +57,7 @@ def get_outcome_patterns(user_email: str, days: int = 30) -> Dict[str, Any]:
                     COUNT(*) FILTER (WHERE engagement_level = 'brief') as brief,
                     COUNT(*) FILTER (WHERE engagement_level = 'deflected') as deflected,
                     COUNT(*) FILTER (WHERE engagement_level = 'ignored') as ignored
-                FROM interaction_outcomes
+                FROM {T.INTERACTION_OUTCOMES}
                 WHERE user_email = %s
                 AND created_at >= NOW() - INTERVAL '%s days'
                 GROUP BY companion_action_type
@@ -92,10 +94,10 @@ def get_topics_that_land(user_email: str, days: int = 30) -> List[str]:
         conn = _get_connection()
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT companion_topic, AVG(emotional_resonance) as avg_res,
                        COUNT(*) as cnt
-                FROM interaction_outcomes
+                FROM {T.INTERACTION_OUTCOMES}
                 WHERE user_email = %s
                 AND created_at >= NOW() - INTERVAL '%s days'
                 AND engagement_level IN ('enthusiastic', 'engaged')
@@ -122,10 +124,10 @@ def get_topics_that_miss(user_email: str, days: int = 30) -> List[str]:
         conn = _get_connection()
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT companion_topic, AVG(emotional_resonance) as avg_res,
                        COUNT(*) as cnt
-                FROM interaction_outcomes
+                FROM {T.INTERACTION_OUTCOMES}
                 WHERE user_email = %s
                 AND created_at >= NOW() - INTERVAL '%s days'
                 AND engagement_level IN ('deflected', 'ignored', 'brief')

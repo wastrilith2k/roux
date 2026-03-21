@@ -28,6 +28,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
 from src.utils.timezone_utils import now_pacific_naive
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +153,7 @@ class SceneTracker:
                 from psycopg2.extras import RealDictCursor
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
                 cursor.execute(
-                    'SELECT scene_state FROM user_state WHERE email = %s',
+                    f'SELECT scene_state FROM {T.USER_STATE} WHERE email = %s',
                     (user_email,)
                 )
                 row = cursor.fetchone()
@@ -211,8 +212,8 @@ class SceneTracker:
 
             with self.db._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
-                    UPDATE user_state
+                cursor.execute(f'''
+                    UPDATE {T.USER_STATE}
                     SET scene_state = %s
                     WHERE email = %s
                 ''', (json.dumps(scene.to_dict()), user_email))
@@ -234,7 +235,7 @@ class SceneTracker:
             with self.db._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    'UPDATE user_state SET scene_state = NULL WHERE email = %s',
+                    f'UPDATE {T.USER_STATE} SET scene_state = NULL WHERE email = %s',
                     (user_email,)
                 )
             logger.info(f"🎬 Scene state fully cleared for {user_email}")

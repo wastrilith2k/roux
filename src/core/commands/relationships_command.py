@@ -12,6 +12,8 @@ Relationships are explicit, typed connections between entities
 
 import logging
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,10 +52,10 @@ def _show_all_relationships(user_email: str = None) -> dict:
         from psycopg2.extras import RealDictCursor
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT source_entity, relationship_type, target_entity,
                        confidence, mention_count
-                FROM relationships
+                FROM {T.RELATIONSHIPS}
                 WHERE valid_until IS NULL
                 ORDER BY source_entity, confidence DESC
                 LIMIT 50

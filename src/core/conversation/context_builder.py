@@ -33,6 +33,7 @@ from typing import Dict, Any, Optional, Callable, Tuple
 from dataclasses import dataclass, field
 
 from src.core.clock import now as clock_now
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -790,8 +791,8 @@ don't force them, but don't ignore them either."""
             try:
                 with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                     # Get exact match first
-                    cursor.execute("""
-                        SELECT * FROM episode_patterns
+                    cursor.execute(f"""
+                        SELECT * FROM {T.EPISODE_PATTERNS}
                         WHERE topic_category = %s
                           AND (emotional_context = %s OR emotional_context = 'neutral')
                           AND episode_count > 0
@@ -803,8 +804,8 @@ don't force them, but don't ignore them either."""
 
                     # If no exact match, try just topic category
                     if not patterns and topic_category != 'general':
-                        cursor.execute("""
-                            SELECT * FROM episode_patterns
+                        cursor.execute(f"""
+                            SELECT * FROM {T.EPISODE_PATTERNS}
                             WHERE topic_category = %s
                               AND episode_count > 0
                             ORDER BY episode_count DESC
