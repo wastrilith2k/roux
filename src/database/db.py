@@ -117,11 +117,14 @@ class CompanionDB:
         env_marker = "[DEV]" if environment == 'development' else "[PROD]"
         print(f"{env_marker} CompanionDB connecting to: {self.pg_db} @ {self.pg_host}:{self.pg_port}")
 
-        self._init_db()
-
     @contextmanager
-    def _get_connection(self):
-        """Context manager for database connections"""
+    def _get_connection(self, user_email: str = None):
+        """Context manager for database connections.
+
+        Args:
+            user_email: If provided, sets the PostgreSQL search_path to the
+                        user's schema so all queries resolve to that schema first.
+        """
         conn = psycopg2.connect(
             host=self.pg_host,
             port=self.pg_port,
@@ -129,8 +132,10 @@ class CompanionDB:
             user=self.pg_user,
             password=self.pg_pass
         )
-
         try:
+            if user_email:
+                from src.database.schema_manager import set_search_path
+                set_search_path(conn, user_email)
             yield conn
             conn.commit()
         except Exception:
@@ -139,13 +144,19 @@ class CompanionDB:
         finally:
             conn.close()
 
-    def execute(self, query: str, params: tuple = None):
+    def execute(self, query: str, params: tuple = None, user_email: str = None):
         """
         Execute a raw SQL query and return a wrapper that holds the results.
         The connection is maintained within the context manager while data is fetched.
         Returns a cursor-like object that provides fetchone() and fetchall() methods.
+
+        Args:
+            query: SQL query string with %s placeholders.
+            params: Optional tuple of query parameters.
+            user_email: If provided, sets the search_path to the user's schema
+                        before executing the query.
         """
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=user_email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(query, params or ())
             # CRITICAL: Fetch data while connection is still open
@@ -156,381 +167,6 @@ class CompanionDB:
     def commit(self):
         """No-op for compatibility with raw SQL code patterns"""
         pass
-
-    def _init_db(self):
-        """Initialize database schema (tables already created by migration, but this ensures they exist)"""
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-
-            # User profiles table (already exists from migration)
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_profiles (
-                    email TEXT PRIMARY KEY,
-                    display_name TEXT NOT NULL,
-                    is_admin BOOLEAN DEFAULT FALSE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_seen TIMESTAMP
-                )
-            ''')
-
-            # User state table (already exists from migration)
-            # companion_id enables multi-agent: each companion has separate state per user
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_state (
-                    email TEXT NOT NULL,
-                    companion_id TEXT DEFAULT 'default',
-                    closeness_score INTEGER DEFAULT 15,
-                    romance_level REAL DEFAULT 0,
-                    romance_enabled BOOLEAN DEFAULT FALSE,
-                    romance_decision TEXT,
-                    emotion_profile TEXT DEFAULT 'Guarded',
-                    last_negative_event TIMESTAMP,
-                    cooldown_active BOOLEAN DEFAULT FALSE,
-                    badgering_count INTEGER DEFAULT 0,
-                    last_message_time TIMESTAMP,
-                    attraction_cue_count INTEGER DEFAULT 0,
-                    attraction_latent_state BOOLEAN DEFAULT FALSE,
-                    sms_preference TEXT DEFAULT 'good_morning',
-                    PRIMARY KEY (email, companion_id),
-                    FOREIGN KEY (email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            # Messages table - stores all conversation messages
-            # companion_id enables multi-agent: messages scoped per companion
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS messages (
-                    id SERIAL PRIMARY KEY,
-                    email TEXT NOT NULL,
-                    companion_id TEXT DEFAULT 'default',
-                    sender_name TEXT NOT NULL,
-                    message_text TEXT NOT NULL,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    sentiment_score FLOAT,
-                    closeness_after INTEGER,
-                    model_used TEXT,
-                    romance_level FLOAT,
-                    source TEXT DEFAULT 'chat',
-                    message_type TEXT DEFAULT 'normal',
-                    conversation_id INTEGER,
-                    FOREIGN KEY (email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_email ON messages(email)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp DESC)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_companion_id ON messages(companion_id)')
-
-            # Microblog/feed table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS feed_posts (
-                    id SERIAL PRIMARY KEY,
-                    content TEXT NOT NULL,
-                    timestamp TIMESTAMP NOT NULL,
-                    mood TEXT,
-                    tags TEXT,
-                    is_public BOOLEAN DEFAULT TRUE
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_feed_posts_timestamp ON feed_posts(timestamp DESC)')
-
-            # Generic state table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS state (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL,
-                    updated_at TIMESTAMP NOT NULL
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_state_key ON state(key)')
-
-            # Upcoming events table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS upcoming_events (
-                    id SERIAL PRIMARY KEY,
-                    user_email TEXT NOT NULL,
-                    event_type TEXT NOT NULL,
-                    description TEXT NOT NULL,
-                    scheduled_time TIMESTAMP,
-                    created_at TIMESTAMP NOT NULL,
-                    status TEXT DEFAULT 'planned',
-                    participants TEXT,
-                    location TEXT,
-                    notes TEXT,
-                    FOREIGN KEY (user_email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_events_user_status ON upcoming_events(user_email, status)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_events_scheduled_time ON upcoming_events(scheduled_time)')
-
-            # Conversation patterns table - tracks user's conversation style
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS conversation_patterns (
-                    id SERIAL PRIMARY KEY,
-                    email TEXT NOT NULL,
-                    user_length INTEGER,
-                    response_length INTEGER,
-                    closeness INTEGER,
-                    pattern_type TEXT DEFAULT 'exchange',
-                    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_patterns_email ON conversation_patterns(email)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_patterns_recorded_at ON conversation_patterns(recorded_at DESC)')
-
-            # Conversation patterns statistics table - aggregated statistics
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS conversation_patterns_stats (
-                    email TEXT PRIMARY KEY,
-                    total_exchanges INTEGER DEFAULT 0,
-                    avg_user_length FLOAT DEFAULT 0,
-                    avg_response_length FLOAT DEFAULT 0,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            # Emotion analytics table - tracks emotional states over time
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS emotion_analytics (
-                    id SERIAL PRIMARY KEY,
-                    email TEXT NOT NULL,
-                    emotion TEXT,
-                    confidence FLOAT,
-                    intensity FLOAT,
-                    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_emotion_email ON emotion_analytics(email)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_emotion_recorded_at ON emotion_analytics(recorded_at DESC)')
-
-            # User preferences table - learned preferences
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_preferences (
-                    id SERIAL PRIMARY KEY,
-                    email TEXT NOT NULL,
-                    preference_type TEXT,
-                    preference_value TEXT,
-                    learned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_prefs_email ON user_preferences(email)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_prefs_type ON user_preferences(preference_type)')
-
-            # Episodes table - structured conversation episodes for enhanced episodic memory
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS episodes (
-                    id SERIAL PRIMARY KEY,
-                    episode_id UUID UNIQUE NOT NULL,
-                    user_email TEXT NOT NULL,
-                    started_at TIMESTAMP NOT NULL,
-                    ended_at TIMESTAMP,
-                    topic TEXT,
-                    trigger TEXT,
-                    emotional_state TEXT,
-                    resolution TEXT,
-                    user_satisfaction FLOAT,
-                    companion_approach TEXT,
-                    summary_embedding JSONB,
-                    pattern_id UUID,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_episodes_user_email ON episodes(user_email)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_episodes_started_at ON episodes(started_at DESC)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_episodes_topic ON episodes(topic)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_episodes_pattern_id ON episodes(pattern_id)')
-
-            # Episode messages - links messages to episodes
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS episode_messages (
-                    id SERIAL PRIMARY KEY,
-                    episode_id UUID NOT NULL,
-                    message_id INTEGER NOT NULL,
-                    turn_number INTEGER NOT NULL,
-                    speaker TEXT NOT NULL,
-                    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_episode_messages_episode_id ON episode_messages(episode_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_episode_messages_message_id ON episode_messages(message_id)')
-
-            # Episode patterns - consolidated learnings from similar episodes
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS episode_patterns (
-                    id SERIAL PRIMARY KEY,
-                    pattern_id UUID UNIQUE NOT NULL,
-                    pattern_name TEXT NOT NULL,
-                    description TEXT,
-                    successful_approach TEXT,
-                    pitfalls_to_avoid TEXT,
-                    topic_category TEXT,
-                    emotional_context TEXT,
-                    episode_count INTEGER DEFAULT 0,
-                    avg_satisfaction FLOAT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_episode_patterns_topic ON episode_patterns(topic_category)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_episode_patterns_emotional ON episode_patterns(emotional_context)')
-
-            # ==================== BENCHMARK TABLES ====================
-
-            # Benchmark questions - curated test questions with expected answers
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS benchmark_questions (
-                    id SERIAL PRIMARY KEY,
-                    question TEXT NOT NULL,
-                    expected_answer TEXT NOT NULL,
-                    expected_keywords TEXT,
-                    negative_keywords TEXT,
-                    category TEXT NOT NULL,
-                    difficulty TEXT DEFAULT 'medium',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_benchmark_questions_category ON benchmark_questions(category)')
-
-            # Benchmark runs - metadata for each benchmark execution
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS benchmark_runs (
-                    id SERIAL PRIMARY KEY,
-                    run_type TEXT NOT NULL,
-                    config_snapshot JSONB,
-                    overall_score FLOAT,
-                    category_scores JSONB,
-                    total_cost FLOAT DEFAULT 0,
-                    total_time_seconds FLOAT DEFAULT 0,
-                    question_count INTEGER DEFAULT 0,
-                    observations_enabled BOOLEAN DEFAULT FALSE,
-                    notes TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-
-            # Benchmark results - per-question results for each run
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS benchmark_results (
-                    id SERIAL PRIMARY KEY,
-                    run_id INTEGER NOT NULL REFERENCES benchmark_runs(id) ON DELETE CASCADE,
-                    question_id INTEGER NOT NULL REFERENCES benchmark_questions(id),
-                    context_retrieved TEXT,
-                    context_sources JSONB,
-                    response TEXT,
-                    accuracy_score FLOAT,
-                    confabulation_score FLOAT,
-                    completeness_score FLOAT,
-                    context_utilization_score FLOAT,
-                    keyword_hits INTEGER DEFAULT 0,
-                    keyword_misses INTEGER DEFAULT 0,
-                    negative_keyword_hits INTEGER DEFAULT 0,
-                    context_build_time_ms INTEGER,
-                    response_time_ms INTEGER,
-                    judge_time_ms INTEGER,
-                    cost_estimate FLOAT DEFAULT 0,
-                    judge_reasoning TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_benchmark_results_run ON benchmark_results(run_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_benchmark_results_question ON benchmark_results(question_id)')
-
-            # ==================== OBSERVATIONAL MEMORY TABLES ====================
-
-            # Observations - compressed dated conversation summaries
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS observations (
-                    id SERIAL PRIMARY KEY,
-                    user_email TEXT NOT NULL,
-                    observation_date DATE NOT NULL,
-                    time_range TEXT,
-                    content TEXT NOT NULL,
-                    message_count INTEGER DEFAULT 0,
-                    raw_token_count INTEGER DEFAULT 0,
-                    compressed_token_count INTEGER DEFAULT 0,
-                    compression_ratio FLOAT DEFAULT 0,
-                    topics TEXT,
-                    emotional_tone TEXT,
-                    first_message_id INTEGER,
-                    last_message_id INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_observations_user_date ON observations(user_email, observation_date DESC)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_observations_date ON observations(observation_date DESC)')
-
-            # Observation reflections - weekly/monthly consolidations
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS observation_reflections (
-                    id SERIAL PRIMARY KEY,
-                    user_email TEXT NOT NULL,
-                    period_type TEXT NOT NULL DEFAULT 'weekly',
-                    period_start DATE NOT NULL,
-                    period_end DATE NOT NULL,
-                    content TEXT NOT NULL,
-                    themes TEXT,
-                    observation_ids TEXT,
-                    observation_count INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_reflections_user_period ON observation_reflections(user_email, period_end DESC)')
-
-            # ==================== MULTI-AGENT TABLES ====================
-
-            # Companion reminders - scoped per companion instance
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS companion_reminders (
-                    id SERIAL PRIMARY KEY,
-                    companion_id TEXT NOT NULL DEFAULT 'default',
-                    user_email TEXT NOT NULL,
-                    reminder_text TEXT NOT NULL,
-                    remind_at TIMESTAMP NOT NULL,
-                    status TEXT DEFAULT 'pending',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    completed_at TIMESTAMP,
-                    FOREIGN KEY (user_email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_companion_reminders_status ON companion_reminders(companion_id, status)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_companion_reminders_remind_at ON companion_reminders(remind_at)')
-
-            # Companion observations - scoped per companion instance
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS companion_observations (
-                    id SERIAL PRIMARY KEY,
-                    companion_id TEXT NOT NULL DEFAULT 'default',
-                    user_email TEXT NOT NULL,
-                    observation_type TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    metadata JSONB,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_companion_observations_cid ON companion_observations(companion_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_companion_observations_user ON companion_observations(user_email, companion_id)')
 
     # ==================== USER PROFILE METHODS ====================
 

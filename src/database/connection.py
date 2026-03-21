@@ -37,3 +37,11 @@ def get_connection():
     """Create and return a new psycopg2 connection using environment config."""
     import psycopg2
     return psycopg2.connect(**get_connection_params())
+
+
+def get_user_connection(email: str):
+    """Create connection with search_path set to user's schema."""
+    conn = get_connection()
+    from src.database.schema_manager import set_search_path
+    set_search_path(conn, email)
+    return conn
