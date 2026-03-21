@@ -20,6 +20,7 @@ import logging
 from typing import Optional
 
 from src.celery_app import celery_app
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +101,8 @@ def decay_weak_opinions(self, user_email: str = _get_default_user_email()):
                 # be reinforced back to full strength if new evidence appears.
                 cutoff = datetime.now() - timedelta(days=14)
 
-                cursor.execute("""
-                    UPDATE companion_opinions
+                cursor.execute(f"""
+                    UPDATE {T.COMPANION_OPINIONS}
                     SET confidence = GREATEST(0.1, confidence - 0.1),
                         last_updated = CURRENT_TIMESTAMP
                     WHERE user_email = %s

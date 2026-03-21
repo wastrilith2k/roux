@@ -23,6 +23,7 @@ import json
 from typing import Optional, Dict, Any
 
 from src.celery_app import celery_app
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -32,51 +33,6 @@ def _get_default_user_email():
     from src.config.persona_config import get_persona_config
     return get_persona_config().primary_user_email
 
-
-def _ensure_table():
-    """Create the interaction_outcomes table if it doesn't exist."""
-    import psycopg2
-    conn = psycopg2.connect(
-        host=os.environ.get('POSTGRES_HOST', 'postgres'),
-        port=os.environ.get('POSTGRES_PORT', '5432'),
-        dbname=os.environ.get('POSTGRES_DB', 'companion'),
-        user=os.environ.get('POSTGRES_USER', 'companion'),
-        password=os.environ.get('POSTGRES_PASSWORD', '')
-    )
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS interaction_outcomes (
-                    id SERIAL PRIMARY KEY,
-                    user_email VARCHAR(255) NOT NULL,
-                    companion_message_id INTEGER,
-                    user_response_id INTEGER,
-                    companion_message_text TEXT,
-                    user_response_text TEXT,
-                    companion_action_type VARCHAR(50),
-                    companion_topic VARCHAR(255),
-                    engagement_level VARCHAR(20),
-                    topic_continued BOOLEAN DEFAULT FALSE,
-                    emotional_resonance FLOAT,
-                    analysis_notes TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_outcomes_email
-                ON interaction_outcomes(user_email)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_outcomes_action
-                ON interaction_outcomes(companion_action_type)
-            """)
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_outcomes_date
-                ON interaction_outcomes(created_at DESC)
-            """)
-            conn.commit()
-    finally:
-        conn.close()
 
 
 @celery_app.task(
@@ -111,8 +67,6 @@ def analyze_interaction_outcome(
         return {'status': 'skipped', 'reason': 'missing messages'}
 
     try:
-        _ensure_table()
-
         from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
 
         prompt = f"""Analyze this conversation exchange:
@@ -193,8 +147,8 @@ NOTES: ..."""
 
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO interaction_outcomes (
+                cursor.execute(f"""
+                    INSERT INTO {T.INTERACTION_OUTCOMES} (
                         user_email, companion_message_id, user_response_id,
                         companion_message_text, user_response_text,
                         companion_action_type, companion_topic, engagement_level,

@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 from src.celery_app import celery_app
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -151,9 +152,9 @@ def _get_messages_for_date(user_email: str, date) -> List[Dict[str, Any]]:
         db = get_db()
         with db._get_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT id, sender_name, message_text, timestamp, sentiment_score
-                    FROM messages
+                    FROM {T.MESSAGES}
                     WHERE email = %s
                     AND DATE(timestamp AT TIME ZONE 'America/Los_Angeles') = %s
                     ORDER BY timestamp ASC
@@ -183,9 +184,9 @@ def _get_facts_for_date(user_email: str, date) -> List[Dict[str, Any]]:
         db = get_db()
         with db._get_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT id, subject, predicate, object, importance, confidence
-                    FROM facts
+                    FROM {T.FACTS}
                     WHERE user_email = %s
                     AND DATE(created_at AT TIME ZONE 'America/Los_Angeles') = %s
                     AND archived_at IS NULL
@@ -217,9 +218,9 @@ def _get_episodes_for_date(user_email: str, date) -> List[Dict[str, Any]]:
         db = get_db()
         with db._get_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT episode_id, topic, trigger, emotional_state, resolution, message_count
-                    FROM episodes
+                    FROM {T.EPISODES}
                     WHERE user_email = %s
                     AND DATE(started_at AT TIME ZONE 'America/Los_Angeles') = %s
                     ORDER BY started_at ASC
@@ -373,37 +374,9 @@ def _store_daily_summary_db(
         db = get_db()
         with db._get_connection() as conn:
             with conn.cursor() as cursor:
-                # Check if daily_summaries table exists
-                cursor.execute("""
-                    SELECT EXISTS (
-                        SELECT FROM information_schema.tables
-                        WHERE table_name = 'daily_summaries'
-                    )
-                """)
-                table_exists = cursor.fetchone()[0]
-
-                if not table_exists:
-                    logger.warning("daily_summaries table does not exist - creating it")
-                    cursor.execute("""
-                        CREATE TABLE IF NOT EXISTS daily_summaries (
-                            id SERIAL PRIMARY KEY,
-                            user_email VARCHAR(255) NOT NULL,
-                            summary_date DATE NOT NULL,
-                            content TEXT NOT NULL,
-                            message_count INTEGER,
-                            facts_learned INTEGER,
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            UNIQUE(user_email, summary_date)
-                        )
-                    """)
-                    cursor.execute("""
-                        CREATE INDEX IF NOT EXISTS idx_daily_summaries_date
-                        ON daily_summaries(summary_date DESC)
-                    """)
-
                 # Upsert summary
-                cursor.execute("""
-                    INSERT INTO daily_summaries
+                cursor.execute(f"""
+                    INSERT INTO {T.DAILY_SUMMARIES}
                         (user_email, summary_date, content, message_count, facts_learned)
                     VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (user_email, summary_date)
@@ -444,8 +417,8 @@ def get_yesterday_summary(user_email: str = _get_default_user_email()) -> Option
         db = get_db()
         with db._get_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT content FROM daily_summaries
+                cursor.execute(f"""
+                    SELECT content FROM {T.DAILY_SUMMARIES}
                     WHERE user_email = %s AND summary_date = %s
                 """, (user_email, yesterday))
 

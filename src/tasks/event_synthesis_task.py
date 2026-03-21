@@ -29,6 +29,7 @@ sys.path.insert(0, '/app')
 logger = logging.getLogger(__name__)
 
 from src.celery_app import celery_app
+from src.database import tables as T
 
 PST = ZoneInfo('America/Los_Angeles')
 
@@ -101,9 +102,9 @@ def get_related_messages(
             # Build keyword patterns for LIKE query
             patterns = [f'%{kw}%' for kw in keywords]
 
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT id, sender_name, message_text, timestamp
-                FROM messages
+                FROM {T.MESSAGES}
                 WHERE email = %s
                   AND timestamp > %s
                   AND LOWER(message_text) LIKE ANY(%s)
@@ -302,9 +303,9 @@ def batch_process_events(self, user_email: str, days_back: int = 7):
             from psycopg2.extras import RealDictCursor
             cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT id, sender_name, message_text, timestamp
-                FROM messages
+                FROM {T.MESSAGES}
                 WHERE email = %s
                   AND timestamp > %s
                   AND sender_name = 'User'

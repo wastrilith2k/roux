@@ -24,6 +24,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from src.celery_app import celery_app
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +62,9 @@ def check_due_reminders(user_email: str = None):
 
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Reminders due within 1 hour (upcoming + overdue)
-            cur.execute("""
+            cur.execute(f"""
                 SELECT id, title, due_date, notes
-                FROM companion_reminders
+                FROM {T.COMPANION_REMINDERS}
                 WHERE completed = FALSE
                   AND due_date IS NOT NULL
                   AND due_date <= NOW() + INTERVAL '1 hour'

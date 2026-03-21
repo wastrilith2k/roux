@@ -29,6 +29,7 @@ from datetime import datetime
 from typing import Dict, List, Any
 
 from src.celery_app import celery_app
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -88,10 +89,10 @@ def prune_stale_facts(self, dry_run: bool = True):
 
         # Step 1: Get all active facts older than 30 days
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT id, subject, predicate, object, importance,
                        mention_count, last_mentioned, created_at
-                FROM facts
+                FROM {T.FACTS}
                 WHERE archived_at IS NULL
                   AND created_at < NOW() - INTERVAL '30 days'
                 ORDER BY created_at ASC
@@ -195,8 +196,8 @@ def prune_stale_facts(self, dry_run: bool = True):
 
             with conn.cursor() as cursor:
                 # Archive the facts
-                cursor.execute("""
-                    UPDATE facts
+                cursor.execute(f"""
+                    UPDATE {T.FACTS}
                     SET archived_at = CURRENT_TIMESTAMP,
                         archive_reason = 'pruned_low_retention'
                     WHERE id = ANY(%s)
@@ -204,13 +205,13 @@ def prune_stale_facts(self, dry_run: bool = True):
                 pruned_count = cursor.rowcount
 
                 # Clean up orphaned fact_links (where both facts are archived)
-                cursor.execute("""
-                    DELETE FROM fact_links
+                cursor.execute(f"""
+                    DELETE FROM {T.FACT_LINKS}
                     WHERE source_fact_id IN (
-                        SELECT id FROM facts WHERE archived_at IS NOT NULL
+                        SELECT id FROM {T.FACTS} WHERE archived_at IS NOT NULL
                     )
                     AND target_fact_id IN (
-                        SELECT id FROM facts WHERE archived_at IS NOT NULL
+                        SELECT id FROM {T.FACTS} WHERE archived_at IS NOT NULL
                     )
                 """)
                 orphaned_links = cursor.rowcount
@@ -219,7 +220,7 @@ def prune_stale_facts(self, dry_run: bool = True):
 
         # Step 4: Get total active count
         with conn.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) FROM facts WHERE archived_at IS NULL")
+            cursor.execute(f"SELECT COUNT(*) FROM {T.FACTS} WHERE archived_at IS NULL")
             active_remaining = cursor.fetchone()[0]
 
         conn.close()

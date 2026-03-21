@@ -21,6 +21,8 @@ from celery import shared_task
 from datetime import datetime
 import logging
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,9 +48,9 @@ def embed_recent_messages(user_email: str, message_ids: list[int] = None):
         # Get messages to embed (skip already-embedded and too-short messages)
         if message_ids:
             # Targeted: embed specific message IDs (e.g., just-stored messages)
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT id, message_text, sender_name
-                FROM messages
+                FROM {T.MESSAGES}
                 WHERE id = ANY(%s)
                 AND embedding_vec IS NULL
                 AND message_text IS NOT NULL
@@ -56,9 +58,9 @@ def embed_recent_messages(user_email: str, message_ids: list[int] = None):
             """, (message_ids,))
         else:
             # Batch: find recent unembedded messages for this user
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT id, message_text, sender_name
-                FROM messages
+                FROM {T.MESSAGES}
                 WHERE email = %s
                 AND embedding_vec IS NULL
                 AND message_text IS NOT NULL

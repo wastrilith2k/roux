@@ -21,6 +21,7 @@ import logging
 import redis
 import json
 from celery import shared_task
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -229,8 +230,8 @@ def _save_request(task_id: str, email: str, prompt: str, workflow_type: str, wid
     try:
         conn = _get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO image_generation_requests
+        cursor.execute(f'''
+            INSERT INTO {T.IMAGE_GENERATION_REQUESTS}
             (task_id, email, prompt, workflow_type, width, height, status)
             VALUES (%s, %s, %s, %s, %s, %s, 'pending')
             ON CONFLICT (task_id) DO NOTHING
@@ -248,8 +249,8 @@ def _update_request_runcomfy_id(task_id: str, runcomfy_request_id: str):
     try:
         conn = _get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE image_generation_requests
+        cursor.execute(f'''
+            UPDATE {T.IMAGE_GENERATION_REQUESTS}
             SET runcomfy_request_id = %s, status = 'processing'
             WHERE task_id = %s
         ''', (runcomfy_request_id, task_id))
@@ -265,8 +266,8 @@ def _update_request_success(task_id: str, runcomfy_url: str, cloudinary_url: str
     try:
         conn = _get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE image_generation_requests
+        cursor.execute(f'''
+            UPDATE {T.IMAGE_GENERATION_REQUESTS}
             SET runcomfy_url = %s, cloudinary_url = %s, status = 'completed',
                 downloaded_at = CURRENT_TIMESTAMP,
                 uploaded_at = CASE WHEN %s IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END
@@ -285,8 +286,8 @@ def _update_request_error(task_id: str, error_message: str):
     try:
         conn = _get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE image_generation_requests
+        cursor.execute(f'''
+            UPDATE {T.IMAGE_GENERATION_REQUESTS}
             SET status = 'failed', error_message = %s
             WHERE task_id = %s
         ''', (error_message, task_id))
@@ -317,10 +318,10 @@ def recover_orphaned_images(self):
 
         # Find orphaned requests: processing for > 2 minutes
         # (normal generation takes 30-300s, so 2 min pending = orphaned)
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT task_id, email, runcomfy_request_id, workflow_type, status,
                    EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - requested_at)) as age_seconds
-            FROM image_generation_requests
+            FROM {T.IMAGE_GENERATION_REQUESTS}
             WHERE status IN ('pending', 'processing')
             AND requested_at < CURRENT_TIMESTAMP - INTERVAL '2 minutes'
             ORDER BY requested_at DESC

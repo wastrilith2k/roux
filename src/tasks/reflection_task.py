@@ -24,6 +24,7 @@ from typing import Dict, List, Any, Optional
 import json
 
 from src.celery_app import celery_app
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -167,8 +168,8 @@ def _get_daily_summary(user_email: str, date) -> Optional[str]:
         db = get_db()
         with db._get_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT content FROM daily_summaries
+                cursor.execute(f"""
+                    SELECT content FROM {T.DAILY_SUMMARIES}
                     WHERE user_email = %s AND summary_date = %s
                 """, (user_email, date))
 
@@ -314,26 +315,9 @@ def _store_journal_entry(user_email: str, date, reflection: Dict[str, Any]) -> N
         db = get_db()
         with db._get_connection() as conn:
             with conn.cursor() as cursor:
-                # Ensure table exists
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS companion_journal (
-                        id SERIAL PRIMARY KEY,
-                        user_email VARCHAR(255),
-                        entry_date DATE,
-                        entry_type VARCHAR(50),
-                        content TEXT,
-                        insights JSONB,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_journal_date
-                    ON companion_journal(entry_date DESC)
-                """)
-
                 # Store the reflection
-                cursor.execute("""
-                    INSERT INTO companion_journal (user_email, entry_date, entry_type, content, insights)
+                cursor.execute(f"""
+                    INSERT INTO {T.COMPANION_JOURNAL} (user_email, entry_date, entry_type, content, insights)
                     VALUES (%s, %s, %s, %s, %s)
                 """, (
                     user_email,
@@ -420,9 +404,9 @@ def get_recent_reflections(user_email: str = _get_default_user_email(), days: in
         db = get_db()
         with db._get_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT entry_date, content, insights
-                    FROM companion_journal
+                    FROM {T.COMPANION_JOURNAL}
                     WHERE user_email = %s
                     AND entry_type = 'daily_reflection'
                     AND entry_date >= CURRENT_DATE - INTERVAL '%s days'
