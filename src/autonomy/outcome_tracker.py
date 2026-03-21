@@ -29,6 +29,8 @@ from datetime import datetime
 from typing import Optional, Dict, List
 from zoneinfo import ZoneInfo
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 PST = ZoneInfo('America/Los_Angeles')
@@ -154,8 +156,8 @@ Respond with ONLY one word: good, neutral, or poor"""
         try:
             conn = self._get_connection()
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE companion_goal_steps
+                cursor.execute(f"""
+                    UPDATE {T.COMPANION_GOAL_STEPS}
                     SET outcome_quality = %s,
                         outcome = COALESCE(outcome, '') || ' [Conversation: ' || %s || ']'
                     WHERE id = %s
@@ -186,21 +188,21 @@ Respond with ONLY one word: good, neutral, or poor"""
             conn = self._get_connection()
             with conn.cursor() as cursor:
                 if goal_id:
-                    cursor.execute("""
+                    cursor.execute(f"""
                         SELECT s.action_type, s.outcome_quality, s.description,
                                g.category, g.goal_mode
-                        FROM companion_goal_steps s
-                        JOIN companion_goals g ON s.goal_id = g.id
+                        FROM {T.COMPANION_GOAL_STEPS} s
+                        JOIN {T.COMPANION_GOALS} g ON s.goal_id = g.id
                         WHERE s.goal_id = %s AND s.status = 'completed'
                         ORDER BY s.completed_at DESC
                         LIMIT 10
                     """, (goal_id,))
                 else:
-                    cursor.execute("""
+                    cursor.execute(f"""
                         SELECT s.action_type, s.outcome_quality, s.description,
                                g.category, g.goal_mode
-                        FROM companion_goal_steps s
-                        JOIN companion_goals g ON s.goal_id = g.id
+                        FROM {T.COMPANION_GOAL_STEPS} s
+                        JOIN {T.COMPANION_GOALS} g ON s.goal_id = g.id
                         WHERE s.user_email = %s AND s.status = 'completed'
                         AND s.outcome_quality IS NOT NULL
                         ORDER BY s.completed_at DESC
@@ -248,11 +250,11 @@ Respond with ONLY one word: good, neutral, or poor"""
         try:
             conn = self._get_connection()
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT s.action_type, s.description, s.outcome, s.outcome_quality,
                            s.completed_at, g.goal
-                    FROM companion_goal_steps s
-                    JOIN companion_goals g ON s.goal_id = g.id
+                    FROM {T.COMPANION_GOAL_STEPS} s
+                    JOIN {T.COMPANION_GOALS} g ON s.goal_id = g.id
                     WHERE s.user_email = %s
                     AND s.status = 'completed'
                     AND s.outcome IS NOT NULL

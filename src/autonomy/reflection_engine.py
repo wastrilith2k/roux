@@ -29,6 +29,8 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 
@@ -202,8 +204,8 @@ class ReflectionEngine:
             db = get_db()
             with db._get_connection() as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute("""
-                        SELECT content FROM daily_summaries
+                    cursor.execute(f"""
+                        SELECT content FROM {T.DAILY_SUMMARIES}
                         WHERE user_email = %s AND summary_date = %s
                     """, (self.user_email, date))
                     row = cursor.fetchone()
@@ -219,9 +221,9 @@ class ReflectionEngine:
             db = get_db()
             with db._get_connection() as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute("""
+                    cursor.execute(f"""
                         SELECT summary_date, content, message_count
-                        FROM daily_summaries
+                        FROM {T.DAILY_SUMMARIES}
                         WHERE user_email = %s
                         AND summary_date BETWEEN %s AND %s
                         ORDER BY summary_date

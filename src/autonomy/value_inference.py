@@ -37,6 +37,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from src.config.persona_config import get_persona_config
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -71,37 +72,10 @@ class ValueInference:
     def __init__(self):
         self._conn = None
         self._client = None
-        self._table_ensured = False
 
     # -----------------------------------------------------------------
     # Database & LLM connections
     # -----------------------------------------------------------------
-
-    def _ensure_table(self):
-        """Create the hidden values table if it doesn't exist."""
-        if self._table_ensured:
-            return
-        conn = self._get_connection()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS _companion_internal_state_v (
-                        id SERIAL PRIMARY KEY,
-                        category VARCHAR(50) NOT NULL,
-                        key_hash VARCHAR(16) NOT NULL,
-                        value_data JSONB NOT NULL,
-                        confidence FLOAT DEFAULT 0.7,
-                        evidence_count INTEGER DEFAULT 1,
-                        last_updated TIMESTAMP DEFAULT NOW(),
-                        UNIQUE(category, key_hash)
-                    )
-                """)
-                conn.commit()
-            self._table_ensured = True
-            logger.debug("Ensured _companion_internal_state_v table exists")
-        except Exception as e:
-            logger.error(f"Error ensuring table: {e}")
-            conn.rollback()
 
     def _get_connection(self):
         """Get database connection (lazy, auto-reconnect)."""
@@ -143,9 +117,9 @@ class ValueInference:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 _pc = get_persona_config()
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT message_text, timestamp
-                    FROM messages
+                    FROM {T.MESSAGES}
                     WHERE sender_name = %s
                     AND timestamp > NOW() - INTERVAL '%s hours'
                     ORDER BY timestamp DESC
@@ -177,12 +151,12 @@ class ValueInference:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 _pc = get_persona_config()
                 # Evenly sample across the full history
-                cursor.execute("""
+                cursor.execute(f"""
                     WITH numbered AS (
                         SELECT message_text, timestamp,
                                ROW_NUMBER() OVER (ORDER BY timestamp) as rn,
                                COUNT(*) OVER () as total
-                        FROM messages
+                        FROM {T.MESSAGES}
                         WHERE sender_name = %s
                         AND message_text IS NOT NULL
                         AND LENGTH(message_text) > 50
@@ -308,7 +282,6 @@ Return ONLY the JSON:"""
 
         Returns count of values stored/updated.
         """
-        self._ensure_table()
         conn = self._get_connection()
         stored = 0
 
@@ -333,14 +306,14 @@ Return ONLY the JSON:"""
                         key_hash = self._hash_key(f"{category}:{value}")
                         value_data = {'v': value, 'e': evidence}
 
-                        cursor.execute("""
-                            INSERT INTO _companion_internal_state_v
+                        cursor.execute(f"""
+                            INSERT INTO {T.INTERNAL_STATE_VALUES}
                             (category, key_hash, value_data, confidence, evidence_count, last_updated)
                             VALUES (%s, %s, %s, %s, 1, NOW())
                             ON CONFLICT (category, key_hash) DO UPDATE SET
                                 value_data = %s,
-                                confidence = GREATEST(_companion_internal_state_v.confidence, %s),
-                                evidence_count = _companion_internal_state_v.evidence_count + 1,
+                                confidence = GREATEST({T.INTERNAL_STATE_VALUES}.confidence, %s),
+                                evidence_count = {T.INTERNAL_STATE_VALUES}.evidence_count + 1,
                                 last_updated = NOW()
                         """, (category, key_hash, json.dumps(value_data), confidence,
                               json.dumps(value_data), confidence))
@@ -367,7 +340,6 @@ Return ONLY the JSON:"""
         context, not raw data.  Filters to confidence >= 0.6 and shows
         top 10 per category.
         """
-        self._ensure_table()
         conn = self._get_connection()
 
         if categories is None:
@@ -375,9 +347,9 @@ Return ONLY the JSON:"""
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT category, value_data, confidence
-                    FROM _companion_internal_state_v
+                    FROM {T.INTERNAL_STATE_VALUES}
                     WHERE category = ANY(%s)
                     AND confidence >= 0.6
                     ORDER BY confidence DESC, last_updated DESC
@@ -435,17 +407,16 @@ Return ONLY the JSON:"""
 
     def get_stats(self) -> Dict[str, Any]:
         """Get per-category statistics about stored values."""
-        self._ensure_table()
         conn = self._get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT
                         category,
                         COUNT(*) as count,
                         AVG(confidence) as avg_confidence,
                         MAX(last_updated) as last_updated
-                    FROM _companion_internal_state_v
+                    FROM {T.INTERNAL_STATE_VALUES}
                     GROUP BY category
                     ORDER BY count DESC
                 """)

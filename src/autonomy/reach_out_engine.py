@@ -48,6 +48,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from src.config.persona_config import get_persona_config
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -460,9 +461,9 @@ class ReachOutEngine:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 # Last message exchange
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT sender_name, message_text, timestamp
-                    FROM messages
+                    FROM {T.MESSAGES}
                     ORDER BY timestamp DESC
                     LIMIT 5
                 """)
@@ -937,8 +938,8 @@ Respond with JSON only:
             conn = self._get_connection()
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 _pc = get_persona_config()
-                cursor.execute("""
-                    SELECT message_text FROM messages
+                cursor.execute(f"""
+                    SELECT message_text FROM {T.MESSAGES}
                     WHERE sender_name = %s AND source LIKE '%%proactive%%'
                     ORDER BY timestamp DESC LIMIT %s
                 """, (_pc.companion_short_name, limit,))
@@ -1004,8 +1005,8 @@ Respond with JSON only:
         try:
             conn = self._get_connection()
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
-                    SELECT sender_name, message_text FROM messages
+                cursor.execute(f"""
+                    SELECT sender_name, message_text FROM {T.MESSAGES}
                     WHERE timestamp > NOW() - INTERVAL '24 hours'
                     ORDER BY timestamp DESC LIMIT 20
                 """)

@@ -35,6 +35,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from src.core.clock import now as clock_now
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,6 @@ class RelationshipEvaluator:
     def __init__(self):
         self._conn = None
         self._client = None
-        self._table_ensured = False
 
     # -----------------------------------------------------------------
     # Database & LLM connections
@@ -105,31 +105,6 @@ class RelationshipEvaluator:
                 password=os.environ.get('POSTGRES_PASSWORD', '')
             )
         return self._conn
-
-    def _ensure_table(self):
-        """Create the hidden evaluation table if it doesn't exist."""
-        if self._table_ensured:
-            return
-
-        conn = self._get_connection()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS _companion_relationship_eval (
-                        id SERIAL PRIMARY KEY,
-                        user_email VARCHAR(255) UNIQUE NOT NULL,
-                        evaluation JSONB NOT NULL,
-                        previous_evaluation JSONB,
-                        evaluated_at TIMESTAMP DEFAULT NOW(),
-                        evaluation_count INTEGER DEFAULT 1
-                    )
-                """)
-                conn.commit()
-            self._table_ensured = True
-            logger.debug("Ensured _companion_relationship_eval table exists")
-        except Exception as e:
-            logger.error(f"Error ensuring table: {e}")
-            conn.rollback()
 
     def _get_client(self):
         """Get Fireworks LLM client (lazy init)."""
@@ -152,8 +127,6 @@ class RelationshipEvaluator:
         Flow: gather_context -> get previous eval -> LLM -> validate -> store.
         Returns the new evaluation, or None if evaluation failed.
         """
-        self._ensure_table()
-
         try:
             # Gather all context
             context = self._gather_context(user_email)
@@ -194,14 +167,13 @@ class RelationshipEvaluator:
 
     def get_current(self, user_email: str) -> Optional[RelationshipEvaluation]:
         """Read the current evaluation from DB for a given user."""
-        self._ensure_table()
         conn = self._get_connection()
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT evaluation, evaluated_at
-                    FROM _companion_relationship_eval
+                    FROM {T.RELATIONSHIP_EVAL}
                     WHERE user_email = %s
                 """, (user_email,))
 
@@ -295,12 +267,12 @@ class RelationshipEvaluator:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 # Sample ~20 messages from the last 2 weeks
-                cursor.execute("""
+                cursor.execute(f"""
                     WITH recent AS (
                         SELECT sender_name, message_text, timestamp,
                                ROW_NUMBER() OVER (ORDER BY timestamp DESC) as rn,
                                COUNT(*) OVER () as total
-                        FROM messages
+                        FROM {T.MESSAGES}
                         WHERE email = %s
                           AND timestamp > NOW() - INTERVAL '14 days'
                           AND message_text IS NOT NULL
@@ -365,9 +337,9 @@ class RelationshipEvaluator:
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT entry_date, content, insights
-                    FROM companion_journal
+                    FROM {T.COMPANION_JOURNAL}
                     WHERE user_email = %s
                       AND entry_type = 'daily_reflection'
                       AND entry_date >= CURRENT_DATE - INTERVAL '7 days'
@@ -588,15 +560,15 @@ Return ONLY the JSON:"""
             prev_json = json.dumps(previous.to_dict()) if previous else None
 
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO _companion_relationship_eval
+                cursor.execute(f"""
+                    INSERT INTO {T.RELATIONSHIP_EVAL}
                     (user_email, evaluation, previous_evaluation, evaluated_at, evaluation_count)
                     VALUES (%s, %s, %s, NOW(), 1)
                     ON CONFLICT (user_email) DO UPDATE SET
-                        previous_evaluation = _companion_relationship_eval.evaluation,
+                        previous_evaluation = {T.RELATIONSHIP_EVAL}.evaluation,
                         evaluation = %s,
                         evaluated_at = NOW(),
-                        evaluation_count = _companion_relationship_eval.evaluation_count + 1
+                        evaluation_count = {T.RELATIONSHIP_EVAL}.evaluation_count + 1
                 """, (user_email, eval_json, prev_json, eval_json))
 
                 conn.commit()

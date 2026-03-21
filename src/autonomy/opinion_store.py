@@ -28,6 +28,8 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, asdict
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 
@@ -97,39 +99,6 @@ class OpinionStore:
             )
         return self._conn
 
-    def _ensure_table(self):
-        """Create companion_opinions table and indexes if they don't exist."""
-        conn = self._get_connection()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS companion_opinions (
-                        id SERIAL PRIMARY KEY,
-                        user_email VARCHAR(255),
-                        topic VARCHAR(255),
-                        opinion TEXT,
-                        confidence REAL,
-                        evidence_count INTEGER DEFAULT 1,
-                        category VARCHAR(50),
-                        evidence_summary TEXT,
-                        formed_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE(user_email, topic)
-                    )
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_opinions_category
-                    ON companion_opinions(user_email, category)
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_opinions_confidence
-                    ON companion_opinions(user_email, confidence DESC)
-                """)
-            conn.commit()
-        except Exception as e:
-            logger.error(f"Error ensuring opinions table: {e}")
-            conn.rollback()
-
     # -----------------------------------------------------------------
     # Write
     # -----------------------------------------------------------------
@@ -150,15 +119,14 @@ class OpinionStore:
 
         Returns the opinion ID if stored successfully, None on error.
         """
-        self._ensure_table()
         confidence = max(0.0, min(1.0, confidence))
 
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
                 # Try to update existing opinion (case-insensitive topic match)
-                cursor.execute("""
-                    UPDATE companion_opinions
+                cursor.execute(f"""
+                    UPDATE {T.COMPANION_OPINIONS}
                     SET opinion = %s,
                         confidence = %s,
                         evidence_count = evidence_count + 1,
@@ -179,8 +147,8 @@ class OpinionStore:
                     return result[0]
 
                 # No existing opinion -- insert new
-                cursor.execute("""
-                    INSERT INTO companion_opinions
+                cursor.execute(f"""
+                    INSERT INTO {T.COMPANION_OPINIONS}
                     (user_email, topic, opinion, confidence, category, evidence_summary)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING id
@@ -206,8 +174,8 @@ class OpinionStore:
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE companion_opinions
+                cursor.execute(f"""
+                    UPDATE {T.COMPANION_OPINIONS}
                     SET confidence = GREATEST(0.0, LEAST(1.0, confidence + %s)),
                         last_updated = CURRENT_TIMESTAMP
                     WHERE user_email = %s AND LOWER(topic) = LOWER(%s)
@@ -227,14 +195,13 @@ class OpinionStore:
 
     def get_opinion(self, topic: str) -> Optional[Opinion]:
         """Get a single opinion by topic (case-insensitive)."""
-        self._ensure_table()
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT topic, opinion, confidence, evidence_count, formed_date,
                            last_updated, category, evidence_summary
-                    FROM companion_opinions
+                    FROM {T.COMPANION_OPINIONS}
                     WHERE user_email = %s AND LOWER(topic) = LOWER(%s)
                 """, (self.user_email, topic))
                 row = cursor.fetchone()
@@ -249,14 +216,13 @@ class OpinionStore:
         min_confidence: float = 0.0
     ) -> List[Opinion]:
         """Get all opinions in a category, ordered by confidence (descending)."""
-        self._ensure_table()
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT topic, opinion, confidence, evidence_count, formed_date,
                            last_updated, category, evidence_summary
-                    FROM companion_opinions
+                    FROM {T.COMPANION_OPINIONS}
                     WHERE user_email = %s AND category = %s AND confidence >= %s
                     ORDER BY confidence DESC
                 """, (self.user_email, category, min_confidence))
@@ -267,14 +233,13 @@ class OpinionStore:
 
     def get_strong_opinions(self, min_confidence: float = 0.7) -> List[Opinion]:
         """Get opinions she's confident about (top 20 by confidence)."""
-        self._ensure_table()
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT topic, opinion, confidence, evidence_count, formed_date,
                            last_updated, category, evidence_summary
-                    FROM companion_opinions
+                    FROM {T.COMPANION_OPINIONS}
                     WHERE user_email = %s AND confidence >= %s
                     ORDER BY confidence DESC
                     LIMIT 20
@@ -291,15 +256,14 @@ class OpinionStore:
         Uses simple ILIKE text matching on topic, opinion, and evidence_summary.
         Could be enhanced with embeddings in the future.
         """
-        self._ensure_table()
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
                 pattern = f'%{query}%'
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT topic, opinion, confidence, evidence_count, formed_date,
                            last_updated, category, evidence_summary
-                    FROM companion_opinions
+                    FROM {T.COMPANION_OPINIONS}
                     WHERE user_email = %s
                     AND (topic ILIKE %s OR opinion ILIKE %s OR evidence_summary ILIKE %s)
                     ORDER BY confidence DESC
