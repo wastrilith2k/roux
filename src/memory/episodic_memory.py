@@ -24,6 +24,8 @@ import os
 import logging
 from typing import List
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 
@@ -58,8 +60,8 @@ def store_episode_embedding(message_id: int, embedding: List[float]) -> bool:
         # Store in vector format for pgvector search
         embedding_str = '[' + ','.join(str(x) for x in embedding) + ']'
 
-        cursor.execute("""
-            UPDATE messages
+        cursor.execute(f"""
+            UPDATE {T.MESSAGES}
             SET embedding_vec = %s::vector
             WHERE id = %s
         """, (embedding_str, message_id))

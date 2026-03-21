@@ -35,6 +35,8 @@ from difflib import SequenceMatcher
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 
@@ -105,8 +107,8 @@ class FactStore:
                 logger.info(f"Detected {len(detected_contradictions)} contradiction(s) for {subject}")
 
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO facts (
+                cursor.execute(f"""
+                    INSERT INTO {T.FACTS} (
                         subject, predicate, object, confidence, importance,
                         temporal, context, source, user_email, message_id,
                         embedding, created_at, updated_at, mention_count, last_mentioned
@@ -184,8 +186,8 @@ class FactStore:
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
-                    SELECT id, object FROM facts
+                cursor.execute(f"""
+                    SELECT id, object FROM {T.FACTS}
                     WHERE subject = %s
                     AND predicate = %s
                     AND archived_at IS NULL
@@ -228,8 +230,8 @@ class FactStore:
         try:
             with conn.cursor() as cursor:
                 # Find the most similar existing fact
-                cursor.execute("""
-                    SELECT id, object FROM facts
+                cursor.execute(f"""
+                    SELECT id, object FROM {T.FACTS}
                     WHERE subject = %s
                     AND predicate = %s
                     AND archived_at IS NULL
@@ -239,8 +241,8 @@ class FactStore:
 
                 row = cursor.fetchone()
                 if row:
-                    cursor.execute("""
-                        UPDATE facts
+                    cursor.execute(f"""
+                        UPDATE {T.FACTS}
                         SET mention_count = mention_count + 1,
                             last_mentioned = CURRENT_TIMESTAMP,
                             updated_at = CURRENT_TIMESTAMP,
@@ -294,8 +296,8 @@ class FactStore:
                 embedding = self._get_embedding(new_obj)
 
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
-                    SELECT id, object, embedding FROM facts
+                cursor.execute(f"""
+                    SELECT id, object, embedding FROM {T.FACTS}
                     WHERE subject = %s
                     AND predicate = %s
                     AND archived_at IS NULL
@@ -338,8 +340,8 @@ class FactStore:
                         if is_semantic_contradiction and not is_string_contradiction:
                             archive_reason = 'semantically_contradicted'
 
-                        cursor.execute("""
-                            UPDATE facts
+                        cursor.execute(f"""
+                            UPDATE {T.FACTS}
                             SET archived_at = CURRENT_TIMESTAMP,
                                 archive_reason = %s
                             WHERE id = %s
@@ -388,8 +390,8 @@ class FactStore:
         try:
             with conn.cursor() as cursor:
                 for c in contradictions:
-                    cursor.execute("""
-                        INSERT INTO detected_contradictions (
+                    cursor.execute(f"""
+                        INSERT INTO {T.DETECTED_CONTRADICTIONS} (
                             subject, old_value, new_value, detection_method,
                             string_similarity, semantic_similarity, created_at, surfaced
                         ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, FALSE)
@@ -412,15 +414,15 @@ class FactStore:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 if subject:
-                    cursor.execute("""
-                        SELECT * FROM detected_contradictions
+                    cursor.execute(f"""
+                        SELECT * FROM {T.DETECTED_CONTRADICTIONS}
                         WHERE subject = %s AND surfaced = FALSE
                         ORDER BY created_at DESC
                         LIMIT %s
                     """, (subject, limit))
                 else:
-                    cursor.execute("""
-                        SELECT * FROM detected_contradictions
+                    cursor.execute(f"""
+                        SELECT * FROM {T.DETECTED_CONTRADICTIONS}
                         WHERE surfaced = FALSE
                         ORDER BY created_at DESC
                         LIMIT %s
@@ -438,8 +440,8 @@ class FactStore:
 
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE detected_contradictions
+                cursor.execute(f"""
+                    UPDATE {T.DETECTED_CONTRADICTIONS}
                     SET surfaced = TRUE, surfaced_at = CURRENT_TIMESTAMP
                     WHERE id = %s
                 """, (contradiction_id,))
@@ -460,15 +462,15 @@ class FactStore:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 if include_archived:
-                    cursor.execute("""
-                        SELECT * FROM facts
+                    cursor.execute(f"""
+                        SELECT * FROM {T.FACTS}
                         WHERE subject = %s
                         ORDER BY importance DESC, last_mentioned DESC
                         LIMIT %s
                     """, (subject, limit))
                 else:
-                    cursor.execute("""
-                        SELECT * FROM facts
+                    cursor.execute(f"""
+                        SELECT * FROM {T.FACTS}
                         WHERE subject = %s
                         AND archived_at IS NULL
                         ORDER BY importance DESC, last_mentioned DESC
@@ -501,8 +503,8 @@ class FactStore:
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
-                    SELECT * FROM facts
+                cursor.execute(f"""
+                    SELECT * FROM {T.FACTS}
                     WHERE importance >= %s
                     AND archived_at IS NULL
                     ORDER BY importance DESC, last_mentioned DESC
@@ -544,8 +546,8 @@ class FactStore:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 # Case-insensitive match on subject
-                cursor.execute("""
-                    SELECT * FROM facts
+                cursor.execute(f"""
+                    SELECT * FROM {T.FACTS}
                     WHERE archived_at IS NULL
                     AND LOWER(subject) = ANY(%s)
                     ORDER BY importance DESC, last_mentioned DESC
@@ -571,8 +573,8 @@ class FactStore:
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
-                    SELECT * FROM facts
+                cursor.execute(f"""
+                    SELECT * FROM {T.FACTS}
                     WHERE archived_at IS NULL
                     AND (
                         subject ILIKE %s
@@ -643,18 +645,18 @@ class FactStore:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 if embedding:
                     # Full hybrid search with both vector and BM25
-                    cursor.execute("""
+                    cursor.execute(f"""
                         WITH vector_scores AS (
                             SELECT id,
                                    1 - (embedding <=> %s::vector) as vector_score
-                            FROM facts
+                            FROM {T.FACTS}
                             WHERE archived_at IS NULL
                             AND embedding IS NOT NULL
                         ),
                         text_scores AS (
                             SELECT id,
                                    ts_rank_cd(search_vector, plainto_tsquery('english', %s)) as text_score
-                            FROM facts
+                            FROM {T.FACTS}
                             WHERE archived_at IS NULL
                             AND search_vector IS NOT NULL
                             AND search_vector @@ plainto_tsquery('english', %s)
@@ -664,7 +666,7 @@ class FactStore:
                                COALESCE(t.text_score, 0) as text_score,
                                COALESCE(v.vector_score, 0) * %s +
                                COALESCE(t.text_score, 0) * %s as hybrid_score
-                        FROM facts f
+                        FROM {T.FACTS} f
                         LEFT JOIN vector_scores v ON f.id = v.id
                         LEFT JOIN text_scores t ON f.id = t.id
                         WHERE f.archived_at IS NULL
@@ -681,12 +683,12 @@ class FactStore:
                     ))
                 else:
                     # BM25 only (no embedding available)
-                    cursor.execute("""
+                    cursor.execute(f"""
                         SELECT f.*,
                                0 as vector_score,
                                ts_rank_cd(search_vector, plainto_tsquery('english', %s)) as text_score,
                                ts_rank_cd(search_vector, plainto_tsquery('english', %s)) as hybrid_score
-                        FROM facts f
+                        FROM {T.FACTS} f
                         WHERE archived_at IS NULL
                         AND search_vector IS NOT NULL
                         AND search_vector @@ plainto_tsquery('english', %s)
@@ -768,8 +770,8 @@ class FactStore:
 
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE facts SET search_vector =
+                cursor.execute(f"""
+                    UPDATE {T.FACTS} SET search_vector =
                         setweight(to_tsvector('english', COALESCE(subject, '')), 'A') ||
                         setweight(to_tsvector('english', COALESCE(predicate, '')), 'B') ||
                         setweight(to_tsvector('english', COALESCE(object, '')), 'B') ||
@@ -796,8 +798,8 @@ class FactStore:
 
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE facts
+                cursor.execute(f"""
+                    UPDATE {T.FACTS}
                     SET importance = %s, updated_at = CURRENT_TIMESTAMP
                     WHERE id = %s
                 """, (importance, fact_id))
@@ -815,7 +817,7 @@ class FactStore:
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT
                         COUNT(*) as total_facts,
                         COUNT(*) FILTER (WHERE archived_at IS NULL) as active_facts,
@@ -823,7 +825,7 @@ class FactStore:
                         COUNT(DISTINCT subject) as unique_subjects,
                         AVG(importance) as avg_importance,
                         AVG(mention_count) as avg_mentions
-                    FROM facts
+                    FROM {T.FACTS}
                 """)
                 return dict(cursor.fetchone())
 

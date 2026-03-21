@@ -29,6 +29,8 @@ import json
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,36 +58,6 @@ class CompanionJournal:
             )
         return self._conn
 
-    def _ensure_table(self):
-        """Ensure journal table exists."""
-        conn = self._get_connection()
-
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS companion_journal (
-                        id SERIAL PRIMARY KEY,
-                        user_email VARCHAR(255),
-                        entry_date DATE,
-                        entry_type VARCHAR(50),
-                        content TEXT,
-                        insights JSONB,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_journal_date
-                    ON companion_journal(entry_date DESC)
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_journal_type
-                    ON companion_journal(entry_type, user_email)
-                """)
-            conn.commit()
-        except Exception as e:
-            logger.error(f"Error ensuring journal table: {e}")
-            conn.rollback()
-
     def store_reflection(
         self,
         content: str,
@@ -107,8 +79,6 @@ class CompanionJournal:
         """
         from src.utils.timezone_utils import now_pacific_naive
 
-        self._ensure_table()
-
         if entry_date is None:
             entry_date = now_pacific_naive().date()
         elif hasattr(entry_date, 'date'):
@@ -118,8 +88,8 @@ class CompanionJournal:
 
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO companion_journal (user_email, entry_date, entry_type, content, insights)
+                cursor.execute(f"""
+                    INSERT INTO {T.COMPANION_JOURNAL} (user_email, entry_date, entry_type, content, insights)
                     VALUES (%s, %s, %s, %s, %s)
                     RETURNING id
                 """, (
@@ -156,25 +126,23 @@ class CompanionJournal:
         Returns:
             List of journal entries
         """
-        self._ensure_table()
-
         conn = self._get_connection()
 
         try:
             with conn.cursor() as cursor:
                 if entry_type:
-                    cursor.execute("""
+                    cursor.execute(f"""
                         SELECT id, entry_date, entry_type, content, insights, created_at
-                        FROM companion_journal
+                        FROM {T.COMPANION_JOURNAL}
                         WHERE user_email = %s
                         AND entry_type = %s
                         AND entry_date >= CURRENT_DATE - INTERVAL '%s days'
                         ORDER BY entry_date DESC
                     """, (self.user_email, entry_type, days))
                 else:
-                    cursor.execute("""
+                    cursor.execute(f"""
                         SELECT id, entry_date, entry_type, content, insights, created_at
-                        FROM companion_journal
+                        FROM {T.COMPANION_JOURNAL}
                         WHERE user_email = %s
                         AND entry_date >= CURRENT_DATE - INTERVAL '%s days'
                         ORDER BY entry_date DESC
@@ -202,8 +170,6 @@ class CompanionJournal:
         entry_type: str = 'daily_reflection'
     ) -> Optional[Dict[str, Any]]:
         """Get a specific journal entry by date."""
-        self._ensure_table()
-
         if hasattr(date, 'date'):
             date = date.date()
 
@@ -211,9 +177,9 @@ class CompanionJournal:
 
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT id, entry_date, entry_type, content, insights, created_at
-                    FROM companion_journal
+                    FROM {T.COMPANION_JOURNAL}
                     WHERE user_email = %s
                     AND entry_date = %s
                     AND entry_type = %s
@@ -248,15 +214,13 @@ class CompanionJournal:
         Returns:
             List of matching entries
         """
-        self._ensure_table()
-
         conn = self._get_connection()
 
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT id, entry_date, content, insights
-                    FROM companion_journal
+                    FROM {T.COMPANION_JOURNAL}
                     WHERE user_email = %s
                     AND (
                         content ILIKE %s

@@ -36,6 +36,8 @@ from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, asdict, field
 from zoneinfo import ZoneInfo
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 PST = ZoneInfo('America/Los_Angeles')
@@ -473,8 +475,8 @@ class SynthesizedEventStore:
             from psycopg2.extras import Json
 
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO synthesized_events (
+                cursor.execute(f"""
+                    INSERT INTO {T.SYNTHESIZED_EVENTS} (
                         event_type, subject, title, timeline, narrative,
                         outcome, impact, source_message_ids, base_importance,
                         embedding_vec, user_email, updated_at
@@ -537,8 +539,8 @@ class SynthesizedEventStore:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 # Exclude superseded events (they've been consolidated)
                 if event_types:
-                    cursor.execute("""
-                        SELECT * FROM synthesized_events
+                    cursor.execute(f"""
+                        SELECT * FROM {T.SYNTHESIZED_EVENTS}
                         WHERE (user_email = %s OR user_email IS NULL)
                           AND created_at > %s
                           AND event_type = ANY(%s)
@@ -547,8 +549,8 @@ class SynthesizedEventStore:
                         LIMIT %s
                     """, (user_email, cutoff, event_types, max_events))
                 else:
-                    cursor.execute("""
-                        SELECT * FROM synthesized_events
+                    cursor.execute(f"""
+                        SELECT * FROM {T.SYNTHESIZED_EVENTS}
                         WHERE (user_email = %s OR user_email IS NULL)
                           AND created_at > %s
                           AND (superseded_by IS NULL OR superseded_by = 0)
@@ -594,8 +596,8 @@ class SynthesizedEventStore:
             from psycopg2.extras import RealDictCursor
 
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
-                    SELECT * FROM synthesized_events
+                cursor.execute(f"""
+                    SELECT * FROM {T.SYNTHESIZED_EVENTS}
                     WHERE title = %s
                       AND (user_email = %s OR user_email IS NULL)
                     ORDER BY created_at DESC
@@ -638,14 +640,14 @@ class SynthesizedEventStore:
         try:
             with conn.cursor() as cursor:
                 if impact:
-                    cursor.execute("""
-                        UPDATE synthesized_events
+                    cursor.execute(f"""
+                        UPDATE {T.SYNTHESIZED_EVENTS}
                         SET outcome = %s, impact = %s, updated_at = CURRENT_TIMESTAMP
                         WHERE id = %s
                     """, (outcome, impact, event_id))
                 else:
-                    cursor.execute("""
-                        UPDATE synthesized_events
+                    cursor.execute(f"""
+                        UPDATE {T.SYNTHESIZED_EVENTS}
                         SET outcome = %s, updated_at = CURRENT_TIMESTAMP
                         WHERE id = %s
                     """, (outcome, event_id))

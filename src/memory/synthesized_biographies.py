@@ -40,6 +40,8 @@ from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
 from zoneinfo import ZoneInfo
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 PST = ZoneInfo('America/Los_Angeles')
@@ -207,45 +209,6 @@ class SynthesizedBiographyStore:
             )
         return self._conn
 
-    def ensure_table(self):
-        """Create synthesized_paragraphs table if not exists."""
-        conn = self._get_connection()
-
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS synthesized_paragraphs (
-                        id SERIAL PRIMARY KEY,
-                        theme VARCHAR(100) NOT NULL,
-                        subject VARCHAR(255) NOT NULL,
-                        content TEXT NOT NULL,
-                        fact_ids INTEGER[] NOT NULL,
-                        base_importance FLOAT NOT NULL,
-                        embedding_vec VECTOR(1536),
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        user_email VARCHAR(255),
-                        UNIQUE(theme, subject, user_email)
-                    )
-                """)
-
-                # Index for efficient querying
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_synth_subject
-                    ON synthesized_paragraphs(subject)
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_synth_theme
-                    ON synthesized_paragraphs(theme)
-                """)
-
-                conn.commit()
-                logger.info("Ensured synthesized_paragraphs table exists")
-
-        except Exception as e:
-            logger.error(f"Failed to create table: {e}")
-            conn.rollback()
-
     def store_paragraph(
         self,
         theme: str,
@@ -262,8 +225,8 @@ class SynthesizedBiographyStore:
         try:
             with conn.cursor() as cursor:
                 # Upsert: update if exists, insert if not
-                cursor.execute("""
-                    INSERT INTO synthesized_paragraphs
+                cursor.execute(f"""
+                    INSERT INTO {T.SYNTHESIZED_PARAGRAPHS}
                     (theme, subject, content, fact_ids, base_importance, embedding_vec, user_email, updated_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                     ON CONFLICT (theme, subject, user_email)
@@ -301,8 +264,8 @@ class SynthesizedBiographyStore:
             from psycopg2.extras import RealDictCursor
 
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
-                    SELECT * FROM synthesized_paragraphs
+                cursor.execute(f"""
+                    SELECT * FROM {T.SYNTHESIZED_PARAGRAPHS}
                     WHERE subject = %s
                     AND (user_email = %s OR user_email IS NULL)
                     ORDER BY base_importance DESC
@@ -352,8 +315,8 @@ class SynthesizedBiographyStore:
             from psycopg2.extras import RealDictCursor
 
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
-                    SELECT * FROM synthesized_paragraphs
+                cursor.execute(f"""
+                    SELECT * FROM {T.SYNTHESIZED_PARAGRAPHS}
                     WHERE (user_email = %s OR user_email IS NULL)
                     ORDER BY base_importance DESC
                     LIMIT %s
@@ -421,7 +384,6 @@ class BiographySynthesizer:
 
     def __init__(self):
         self.store = SynthesizedBiographyStore()
-        self.store.ensure_table()
         self._llm_client = None
 
     def _get_llm_client(self):
@@ -746,8 +708,8 @@ def refresh_all_biographies(user_email: str = None):
     try:
         conn = fact_store._get_connection()
         with conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT DISTINCT subject FROM facts
+            cursor.execute(f"""
+                SELECT DISTINCT subject FROM {T.FACTS}
                 WHERE archived_at IS NULL
                 AND subject IS NOT NULL
             """)
