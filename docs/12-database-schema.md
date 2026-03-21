@@ -4,6 +4,22 @@
 
 ---
 
+## Design Principles
+
+### Per-User Schema Isolation
+
+Each user gets their own PostgreSQL schema (e.g., `user_james`, `user_alex`). Shared tables (auth, user registry) live in the `public` schema. Data isolation is physical — no `WHERE user_email = X` filtering needed for user-scoped tables. Within a user's schema, companion data is filtered by `companion_id` (a user can own multiple companions).
+
+### Table Name Constants
+
+All table names are defined in `src/database/tables.py`. Never hardcode table names in SQL queries — always import from `tables.py` and use f-strings: `f"SELECT * FROM {T.MESSAGES} WHERE ..."`.
+
+### Provider-Agnostic PostgreSQL
+
+The connection layer (`src/database/connection.py`) must stay provider-agnostic. Self-hosted PostgreSQL is the default, but the system should work with any managed provider (Neon, Supabase, Railway, etc.) by changing env vars. Do not use self-hosted-only features (direct filesystem access to PG data dirs, etc.). Stick to standard SQL + pgvector.
+
+---
+
 ## PostgreSQL Tables
 
 ### Core Tables
