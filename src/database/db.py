@@ -26,6 +26,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 from src.utils.timezone_utils import now_pacific_naive
 from src.config.persona_config import get_persona_config
+from src.database import tables as T
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +176,7 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(
-                'SELECT * FROM user_profiles WHERE email = %s',
+                f'SELECT * FROM {T.USER_PROFILES} WHERE email = %s',
                 (email,)
             )
             row = cursor.fetchone()
@@ -203,7 +204,7 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                'SELECT id FROM users WHERE email = %s',
+                f'SELECT id FROM {T.USERS} WHERE email = %s',
                 (email,)
             )
             row = cursor.fetchone()
@@ -219,15 +220,15 @@ class CompanionDB:
 
             if existing['created_at']:
                 # Update existing
-                cursor.execute('''
-                    UPDATE user_profiles
+                cursor.execute(f'''
+                    UPDATE {T.USER_PROFILES}
                     SET display_name = %s, last_seen = %s
                     WHERE email = %s
                 ''', (display_name, now_pacific_naive(), email))
             else:
                 # Create new
-                cursor.execute('''
-                    INSERT INTO user_profiles (email, display_name, is_admin, last_seen)
+                cursor.execute(f'''
+                    INSERT INTO {T.USER_PROFILES} (email, display_name, is_admin, last_seen)
                     VALUES (%s, %s, FALSE, %s)
                 ''', (email, display_name, now_pacific_naive()))
 
@@ -239,15 +240,15 @@ class CompanionDB:
 
             if existing['created_at']:
                 # Update existing
-                cursor.execute('''
-                    UPDATE user_profiles
+                cursor.execute(f'''
+                    UPDATE {T.USER_PROFILES}
                     SET is_admin = %s, last_seen = %s
                     WHERE email = %s
                 ''', (is_admin, now_pacific_naive(), email))
             else:
                 # Create new
-                cursor.execute('''
-                    INSERT INTO user_profiles (email, display_name, is_admin, last_seen)
+                cursor.execute(f'''
+                    INSERT INTO {T.USER_PROFILES} (email, display_name, is_admin, last_seen)
                     VALUES (%s, %s, %s, %s)
                 ''', (email, email.split('@')[0], is_admin, now_pacific_naive()))
 
@@ -265,8 +266,8 @@ class CompanionDB:
             if not profile['created_at']:
                 self.set_display_name(email, email.split('@')[0])
 
-            cursor.execute('''
-                UPDATE user_profiles
+            cursor.execute(f'''
+                UPDATE {T.USER_PROFILES}
                 SET last_seen = %s
                 WHERE email = %s
             ''', (now_pacific_naive(), email))
@@ -278,7 +279,7 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(
-                'SELECT * FROM user_state WHERE email = %s',
+                f'SELECT * FROM {T.USER_STATE} WHERE email = %s',
                 (email,)
             )
             row = cursor.fetchone()
@@ -326,13 +327,13 @@ class CompanionDB:
             last_message = state['last_message_time'].datetime if state.get('last_message_time') else None
 
             # Check if state exists
-            cursor.execute('SELECT email FROM user_state WHERE email = %s', (email,))
+            cursor.execute(f'SELECT email FROM {T.USER_STATE} WHERE email = %s', (email,))
             exists = cursor.fetchone() is not None
 
             if exists:
                 # Update
-                cursor.execute('''
-                    UPDATE user_state
+                cursor.execute(f'''
+                    UPDATE {T.USER_STATE}
                     SET closeness_score = %s,
                         romance_level = %s,
                         romance_enabled = %s,
@@ -363,8 +364,8 @@ class CompanionDB:
                 ))
             else:
                 # Insert
-                cursor.execute('''
-                    INSERT INTO user_state (
+                cursor.execute(f'''
+                    INSERT INTO {T.USER_STATE} (
                         email, closeness_score, romance_level, romance_enabled,
                         romance_decision, emotion_profile, last_negative_event,
                         cooldown_active, badgering_count, last_message_time,
@@ -460,8 +461,8 @@ class CompanionDB:
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO messages (email, sender_name, message_text, timestamp,
+            cursor.execute(f'''
+                INSERT INTO {T.MESSAGES} (email, sender_name, message_text, timestamp,
                                      sentiment_score, closeness_after, model_used,
                                      romance_level, source, message_type, conversation_id,
                                      emotion_state, emotion_timestamp, mood_intensity,
@@ -489,21 +490,21 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             if source:
-                cursor.execute('''
+                cursor.execute(f'''
                     SELECT id, sender_name, message_text, timestamp, sentiment_score,
                            closeness_after, model_used, romance_level, source,
                            message_type, conversation_id
-                    FROM messages
+                    FROM {T.MESSAGES}
                     WHERE email = %s AND source = %s
                     ORDER BY timestamp DESC, id DESC
                     LIMIT %s
                 ''', (email, source, limit))
             else:
-                cursor.execute('''
+                cursor.execute(f'''
                     SELECT id, sender_name, message_text, timestamp, sentiment_score,
                            closeness_after, model_used, romance_level, source,
                            message_type, conversation_id
-                    FROM messages
+                    FROM {T.MESSAGES}
                     WHERE email = %s
                     ORDER BY timestamp DESC, id DESC
                     LIMIT %s
@@ -531,7 +532,7 @@ class CompanionDB:
         """Get total message count for user"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT COUNT(*) FROM messages WHERE email = %s', (email,))
+            cursor.execute(f'SELECT COUNT(*) FROM {T.MESSAGES} WHERE email = %s', (email,))
             return cursor.fetchone()[0]
 
     def get_last_message_id(self, email: str) -> Optional[int]:
@@ -539,7 +540,7 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                'SELECT id FROM messages WHERE email = %s ORDER BY id DESC LIMIT 1',
+                f'SELECT id FROM {T.MESSAGES} WHERE email = %s ORDER BY id DESC LIMIT 1',
                 (email,)
             )
             result = cursor.fetchone()
@@ -558,11 +559,11 @@ class CompanionDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT id, sender_name, message_text, timestamp, sentiment_score,
                        closeness_after, model_used, romance_level, source,
                        message_type, conversation_id
-                FROM messages
+                FROM {T.MESSAGES}
                 WHERE email = %s
                 ORDER BY timestamp DESC, id DESC
                 LIMIT %s OFFSET %s
@@ -599,8 +600,8 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             _pc = get_persona_config()
-            cursor.execute('''
-                SELECT timestamp FROM messages
+            cursor.execute(f'''
+                SELECT timestamp FROM {T.MESSAGES}
                 WHERE email = %s AND sender_name != %s AND message_text IS NOT NULL AND message_text != ''
                 ORDER BY timestamp DESC
                 LIMIT 1
@@ -638,8 +639,8 @@ class CompanionDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            query = '''
-                SELECT timestamp FROM messages
+            query = f'''
+                SELECT timestamp FROM {T.MESSAGES}
                 WHERE email = %s AND message_text IS NOT NULL AND message_text != ''
             '''
             params = [email]
@@ -680,11 +681,11 @@ class CompanionDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT id, sender_name, message_text, timestamp, sentiment_score,
                        closeness_after, model_used, romance_level, source,
                        message_type, conversation_id
-                FROM messages
+                FROM {T.MESSAGES}
                 WHERE email = %s AND timestamp >= %s
                 ORDER BY timestamp ASC, id ASC
             ''', (email, cutoff_date))
@@ -721,11 +722,11 @@ class CompanionDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT id, sender_name, message_text, timestamp, sentiment_score,
                        closeness_after, model_used, romance_level, source,
                        message_type, conversation_id
-                FROM messages
+                FROM {T.MESSAGES}
                 WHERE email = %s AND timestamp >= %s AND timestamp < %s
                 ORDER BY timestamp ASC, id ASC
             ''', (email, start_date, end_date))
@@ -815,8 +816,8 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             tags_str = ','.join(tags) if tags else None
-            cursor.execute('''
-                INSERT INTO feed_posts (content, timestamp, mood, tags)
+            cursor.execute(f'''
+                INSERT INTO {T.FEED_POSTS} (content, timestamp, mood, tags)
                 VALUES (%s, %s, %s, %s)
                 RETURNING id
             ''', (content, now_pacific_naive(), mood, tags_str))
@@ -828,16 +829,16 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             if include_private:
-                cursor.execute('''
+                cursor.execute(f'''
                     SELECT id, content, timestamp, mood, tags, is_public
-                    FROM feed_posts
+                    FROM {T.FEED_POSTS}
                     ORDER BY timestamp DESC
                     LIMIT %s
                 ''', (limit,))
             else:
-                cursor.execute('''
+                cursor.execute(f'''
                     SELECT id, content, timestamp, mood, tags, is_public
-                    FROM feed_posts
+                    FROM {T.FEED_POSTS}
                     WHERE is_public = TRUE
                     ORDER BY timestamp DESC
                     LIMIT %s
@@ -860,7 +861,7 @@ class CompanionDB:
         """Delete a feed post"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM feed_posts WHERE id = %s', (post_id,))
+            cursor.execute(f'DELETE FROM {T.FEED_POSTS} WHERE id = %s', (post_id,))
             return cursor.rowcount > 0
 
     # ==================== GENERIC STATE METHODS ====================
@@ -869,7 +870,7 @@ class CompanionDB:
         """Get a state value by key (returns JSON string or None)"""
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute('SELECT value FROM state WHERE key = %s', (key,))
+            cursor.execute(f'SELECT value FROM {T.STATE} WHERE key = %s', (key,))
             row = cursor.fetchone()
             return row['value'] if row else None
 
@@ -877,18 +878,18 @@ class CompanionDB:
         """Set a state value (value should be JSON string)"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT key FROM state WHERE key = %s', (key,))
+            cursor.execute(f'SELECT key FROM {T.STATE} WHERE key = %s', (key,))
             exists = cursor.fetchone() is not None
 
             if exists:
-                cursor.execute('''
-                    UPDATE state
+                cursor.execute(f'''
+                    UPDATE {T.STATE}
                     SET value = %s, updated_at = %s
                     WHERE key = %s
                 ''', (value, now_pacific_naive(), key))
             else:
-                cursor.execute('''
-                    INSERT INTO state (key, value, updated_at)
+                cursor.execute(f'''
+                    INSERT INTO {T.STATE} (key, value, updated_at)
                     VALUES (%s, %s, %s)
                 ''', (key, value, now_pacific_naive()))
 
@@ -896,7 +897,7 @@ class CompanionDB:
         """Delete a state value by key"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM state WHERE key = %s', (key,))
+            cursor.execute(f'DELETE FROM {T.STATE} WHERE key = %s', (key,))
             return cursor.rowcount > 0
 
     # ==================== UPCOMING EVENTS METHODS ====================
@@ -922,8 +923,8 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             participants_str = ','.join(participants) if participants else None
-            cursor.execute('''
-                INSERT INTO upcoming_events
+            cursor.execute(f'''
+                INSERT INTO {T.UPCOMING_EVENTS}
                 (user_email, event_type, description, scheduled_time, created_at, status, participants, location, notes)
                 VALUES (%s, %s, %s, %s, %s, 'planned', %s, %s, %s)
                 RETURNING id
@@ -946,10 +947,10 @@ class CompanionDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT id, user_email, event_type, description, scheduled_time,
                        created_at, status, participants, location, notes
-                FROM upcoming_events
+                FROM {T.UPCOMING_EVENTS}
                 WHERE user_email = %s AND status = %s
                 ORDER BY scheduled_time ASC NULLS LAST, created_at DESC
                 LIMIT %s
@@ -988,10 +989,10 @@ class CompanionDB:
 
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT id, user_email, event_type, description, scheduled_time,
                        created_at, status, participants, location, notes
-                FROM upcoming_events
+                FROM {T.UPCOMING_EVENTS}
                 WHERE status = 'planned'
                   AND scheduled_time IS NOT NULL
                   AND scheduled_time < %s
@@ -1027,10 +1028,10 @@ class CompanionDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT id, user_email, event_type, description, scheduled_time,
                        created_at, status, participants, location, notes
-                FROM upcoming_events
+                FROM {T.UPCOMING_EVENTS}
                 WHERE id = %s
             ''', (event_id,))
 
@@ -1063,8 +1064,8 @@ class CompanionDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE upcoming_events
+            cursor.execute(f'''
+                UPDATE {T.UPCOMING_EVENTS}
                 SET status = %s
                 WHERE id = %s
             ''', (status, event_id))
@@ -1074,7 +1075,7 @@ class CompanionDB:
         """Delete an event"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM upcoming_events WHERE id = %s', (event_id,))
+            cursor.execute(f'DELETE FROM {T.UPCOMING_EVENTS} WHERE id = %s', (event_id,))
             return cursor.rowcount > 0
 
     def get_events_for_prompt(self, user_email: str, limit: int = 5) -> str:
@@ -1126,10 +1127,10 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(
-                """
+                f"""
                 SELECT task_id, user_id, task_name, status, narrative,
                        mood_delta, energy_delta, created_at, updated_at
-                FROM companion_autonomous_tasks
+                FROM {T.COMPANION_AUTONOMOUS_TASKS}
                 WHERE task_id = %s
                 """,
                 (task_id,)
@@ -1175,11 +1176,11 @@ class CompanionDB:
             embedding_str = '[' + ','.join(str(x) for x in query_embedding) + ']'
 
             if email:
-                cursor.execute('''
+                cursor.execute(f'''
                     SELECT
                         id, sender_name, message_text, timestamp, email,
                         1 - (embedding_vec <=> %s::vector) as similarity
-                    FROM messages
+                    FROM {T.MESSAGES}
                     WHERE embedding_vec IS NOT NULL
                       AND email = %s
                       AND 1 - (embedding_vec <=> %s::vector) >= %s
@@ -1187,11 +1188,11 @@ class CompanionDB:
                     LIMIT %s
                 ''', (embedding_str, email, embedding_str, min_similarity, embedding_str, limit))
             else:
-                cursor.execute('''
+                cursor.execute(f'''
                     SELECT
                         id, sender_name, message_text, timestamp, email,
                         1 - (embedding_vec <=> %s::vector) as similarity
-                    FROM messages
+                    FROM {T.MESSAGES}
                     WHERE embedding_vec IS NOT NULL
                       AND 1 - (embedding_vec <=> %s::vector) >= %s
                     ORDER BY embedding_vec <=> %s::vector
@@ -1216,7 +1217,7 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                'SELECT embedding_vec::text FROM messages WHERE id = %s AND embedding_vec IS NOT NULL',
+                f'SELECT embedding_vec::text FROM {T.MESSAGES} WHERE id = %s AND embedding_vec IS NOT NULL',
                 (message_id,)
             )
             row = cursor.fetchone()
@@ -1239,10 +1240,10 @@ class CompanionDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT id, subject, predicate, object, confidence, importance,
                        temporal, context, source, created_at, last_mentioned
-                FROM facts
+                FROM {T.FACTS}
                 WHERE user_email = %s AND archived_at IS NULL
                 ORDER BY last_mentioned DESC NULLS LAST, created_at DESC
                 LIMIT %s
