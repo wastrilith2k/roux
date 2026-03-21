@@ -77,7 +77,7 @@ def create_user(email: str, password: str) -> bool:
         with get_db() as conn:
             cursor = conn.cursor()
             password_hash = hash_password(password)
-            cursor.execute(f'INSERT INTO {T.USERS} (email, password_hash) VALUES (%s, %s)', (email, password_hash))
+            cursor.execute(f'INSERT INTO public.{T.USERS} (email, password_hash) VALUES (%s, %s)', (email, password_hash))
         return True
     except psycopg2.IntegrityError:
         return False  # User already exists
@@ -86,23 +86,32 @@ def authenticate_user(email: str, password: str) -> dict:
     """Authenticate a user and create a session"""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute(f'SELECT * FROM {T.USERS} WHERE email = %s', (email,))
+        cursor.execute(f'SELECT * FROM public.{T.USERS} WHERE email = %s', (email,))
         user = cursor.fetchone()
 
         if not user or not verify_password(password, user['password_hash']):
             return None
 
         # Update last login
-        cursor.execute(f'UPDATE {T.USERS} SET last_login = %s WHERE id = %s', (datetime.now(), user['id']))
+        cursor.execute(f'UPDATE public.{T.USERS} SET last_login = %s WHERE id = %s', (datetime.now(), user['id']))
 
         # Create session token
         session_token = secrets.token_urlsafe(32)
         expires_at = datetime.now() + timedelta(days=30)
 
         cursor.execute(f'''
-            INSERT INTO {T.SESSIONS} (user_id, session_token, expires_at)
+            INSERT INTO public.{T.SESSIONS} (user_id, session_token, expires_at)
             VALUES (%s, %s, %s)
         ''', (user['id'], session_token, expires_at))
+
+        # Ensure user's data schema exists
+        try:
+            from src.database.schema_manager import ensure_user_schema
+            ensure_user_schema(conn, email)
+        except Exception as e:
+            # Don't fail login if schema creation fails
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to ensure user schema: {e}")
 
         return {
             'user_id': user['id'],
@@ -117,8 +126,8 @@ def verify_session(session_token: str) -> dict:
 
         cursor.execute(f'''
             SELECT u.id, u.email, s.expires_at
-            FROM {T.SESSIONS} s
-            JOIN {T.USERS} u ON s.user_id = u.id
+            FROM public.{T.SESSIONS} s
+            JOIN public.{T.USERS} u ON s.user_id = u.id
             WHERE s.session_token = %s
         ''', (session_token,))
 
@@ -144,13 +153,13 @@ def logout_user(session_token: str):
     """Delete a session (logout)"""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute(f'DELETE FROM {T.SESSIONS} WHERE session_token = %s', (session_token,))
+        cursor.execute(f'DELETE FROM public.{T.SESSIONS} WHERE session_token = %s', (session_token,))
 
 def change_password(email: str, old_password: str, new_password: str) -> bool:
     """Change a user's password"""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute(f'SELECT * FROM {T.USERS} WHERE email = %s', (email,))
+        cursor.execute(f'SELECT * FROM public.{T.USERS} WHERE email = %s', (email,))
         user = cursor.fetchone()
 
         if not user:
@@ -162,7 +171,7 @@ def change_password(email: str, old_password: str, new_password: str) -> bool:
 
         # Update to new password
         new_hash = hash_password(new_password)
-        cursor.execute(f'UPDATE {T.USERS} SET password_hash = %s WHERE email = %s', (new_hash, email))
+        cursor.execute(f'UPDATE public.{T.USERS} SET password_hash = %s WHERE email = %s', (new_hash, email))
 
     return True
 
