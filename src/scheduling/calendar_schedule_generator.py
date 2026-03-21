@@ -30,6 +30,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 # Path to store the calendar ID
@@ -105,9 +107,9 @@ def _get_narrative_context() -> str:
         )
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             # Last few messages for conversational context
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT sender_name, message_text, timestamp
-                FROM messages
+                FROM {T.MESSAGES}
                 ORDER BY timestamp DESC
                 LIMIT 5
             """)

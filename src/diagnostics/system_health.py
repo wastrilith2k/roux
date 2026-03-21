@@ -23,6 +23,8 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Tuple
 from dataclasses import dataclass, field
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 # Try to import Sentry
@@ -206,9 +208,9 @@ class SystemHealth:
 
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 # Check for facts in the last 24 hours
-                cur.execute("""
+                cur.execute(f"""
                     SELECT COUNT(*) as count, MAX(created_at) as latest
-                    FROM facts
+                    FROM {T.FACTS}
                     WHERE created_at > NOW() - INTERVAL '24 hours'
                 """)
                 result = cur.fetchone()
@@ -235,7 +237,7 @@ class SystemHealth:
                     password=os.environ.get('POSTGRES_PASSWORD', '')
                 )
                 with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                    cur.execute("SELECT COUNT(*) as count, MAX(created_at) as latest FROM facts")
+                    cur.execute(f"SELECT COUNT(*) as count, MAX(created_at) as latest FROM {T.FACTS}")
                     total = cur.fetchone()
                 conn.close()
 
@@ -266,8 +268,8 @@ class SystemHealth:
             )
 
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("""
-                    SELECT * FROM scene_state
+                cur.execute(f"""
+                    SELECT * FROM {T.SCENE_STATE}
                     ORDER BY updated_at DESC
                     LIMIT 1
                 """)
@@ -321,9 +323,9 @@ class SystemHealth:
             )
 
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("""
+                cur.execute(f"""
                     SELECT COUNT(*) as count, MAX(timestamp) as latest
-                    FROM messages
+                    FROM {T.MESSAGES}
                     WHERE source LIKE '%proactive%'
                     AND timestamp > NOW() - INTERVAL '7 days'
                 """)
@@ -402,9 +404,9 @@ class SystemHealth:
             )
 
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("""
+                cur.execute(f"""
                     SELECT COUNT(*) as count, MAX(timestamp) as latest
-                    FROM messages
+                    FROM {T.MESSAGES}
                     WHERE timestamp > NOW() - INTERVAL '24 hours'
                 """)
                 result = cur.fetchone()

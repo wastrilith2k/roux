@@ -29,6 +29,7 @@ import threading
 from flask import Blueprint, request
 from flask_socketio import emit, join_room, leave_room
 from src.database.db import get_db
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 from src.utils.timezone_utils import now_pacific_naive
@@ -532,9 +533,9 @@ def register_socketio_handlers(socketio):
                 from psycopg2.extras import RealDictCursor
                 with db._get_connection() as conn:
                     cursor = conn.cursor(cursor_factory=RealDictCursor)
-                    cursor.execute('''
+                    cursor.execute(f'''
                         SELECT sender_name, message_text, timestamp
-                        FROM messages
+                        FROM {T.MESSAGES}
                         WHERE email = %s AND companion_id = %s
                         ORDER BY timestamp DESC, id DESC
                         LIMIT %s
@@ -584,7 +585,7 @@ def register_socketio_handlers(socketio):
                 from psycopg2.extras import RealDictCursor
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
                 cursor.execute(
-                    'SELECT scene_state, internal_state, relationship_state FROM user_state WHERE email = %s',
+                    f'SELECT scene_state, internal_state, relationship_state FROM {T.USER_STATE} WHERE email = %s',
                     (email,)
                 )
                 row = cursor.fetchone()
@@ -621,10 +622,10 @@ def register_socketio_handlers(socketio):
             with db._get_connection() as conn:
                 from psycopg2.extras import RealDictCursor
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
-                cursor.execute('''
+                cursor.execute(f'''
                     SELECT task_id, prompt, workflow_type, status,
                            cloudinary_url, runcomfy_url, requested_at
-                    FROM image_generation_requests
+                    FROM {T.IMAGE_GENERATION_REQUESTS}
                     WHERE email = %s
                     ORDER BY requested_at DESC
                     LIMIT %s
@@ -674,10 +675,10 @@ def register_socketio_handlers(socketio):
                     cursor = conn.cursor(cursor_factory=RealDictCursor)
 
                     # Get activities for today
-                    cursor.execute('''
+                    cursor.execute(f'''
                         SELECT task_name, category, scheduled_at, started_at, completed_at,
                                status, description, base_duration_minutes
-                        FROM companion_autonomous_tasks
+                        FROM {T.COMPANION_AUTONOMOUS_TASKS}
                         WHERE (user_id = %s OR user_id IS NULL)
                           AND (scheduled_at >= CURRENT_DATE OR started_at >= CURRENT_DATE)
                           AND scheduled_at < CURRENT_DATE + INTERVAL '1 day'

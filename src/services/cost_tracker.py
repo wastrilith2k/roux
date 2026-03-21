@@ -27,6 +27,8 @@ from dataclasses import dataclass, asdict
 from decimal import Decimal
 import calendar
 
+from src.database import tables as T
+
 # Cost constants (per service pricing as of October 2025)
 FIREWORKS_INPUT_COST_PER_1M = 0.90  # $0.90 per 1M input tokens
 FIREWORKS_OUTPUT_COST_PER_1M = 0.90  # $0.90 per 1M output tokens
@@ -163,8 +165,8 @@ class CostTracker:
 
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO fireworks_usage
+        cursor.execute(f"""
+            INSERT INTO {T.FIREWORKS_USAGE}
             (user_id, model, prompt_tokens, completion_tokens, total_tokens, cost_usd, response_time_ms, error)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (user_id, model, prompt_tokens, completion_tokens,
@@ -188,8 +190,8 @@ class CostTracker:
 
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO openai_usage
+        cursor.execute(f"""
+            INSERT INTO {T.OPENAI_USAGE}
             (user_id, model, service_type, prompt_tokens, completion_tokens,
              audio_seconds, characters, cost_usd, error)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -215,8 +217,8 @@ class CostTracker:
 
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO runcomfy_usage
+        cursor.execute(f"""
+            INSERT INTO {T.RUNCOMFY_USAGE}
             (user_id, workflow_id, workflow_type, prompt, image_url,
              generation_time_seconds, cost_usd, status, error_message)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -239,8 +241,8 @@ class CostTracker:
 
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO twilio_usage
+        cursor.execute(f"""
+            INSERT INTO {T.TWILIO_USAGE}
             (user_id, message_sid, direction, to_number, from_number,
              message_body, status, cost_usd, error_code)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -265,8 +267,8 @@ class CostTracker:
 
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO hedra_usage
+        cursor.execute(f"""
+            INSERT INTO {T.HEDRA_USAGE}
             (user_id, job_id, message_id, audio_input_path, portrait_image_path,
              video_output_path, duration_seconds, cost_usd, status, error_message,
              completed_at)
@@ -289,8 +291,8 @@ class CostTracker:
         """Track a Google API call (currently free, but track for quota monitoring)"""
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO google_api_usage
+        cursor.execute(f"""
+            INSERT INTO {T.GOOGLE_API_USAGE}
             (user_id, service, endpoint, method, quota_cost, response_time_ms, error)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (user_id, service, endpoint, method, quota_cost, response_time_ms, int(error)))
@@ -354,8 +356,8 @@ class CostTracker:
         cursor = conn.cursor()
 
         # Check if entry exists for today
-        cursor.execute("""
-            SELECT id FROM daily_cost_summary
+        cursor.execute(f"""
+            SELECT id FROM {T.DAILY_COST_SUMMARY}
             WHERE date = ? AND user_id = ?
         """, (today, user_id))
 
@@ -427,7 +429,7 @@ class CostTracker:
             update_values.extend([today, user_id])
 
             sql = f"""
-                UPDATE daily_cost_summary
+                UPDATE {T.DAILY_COST_SUMMARY}
                 SET {', '.join(update_parts)}
                 WHERE date = ? AND user_id = ?
             """
@@ -480,7 +482,7 @@ class CostTracker:
             placeholders = ', '.join(['?' for _ in insert_data])
 
             cursor.execute(f"""
-                INSERT INTO daily_cost_summary ({columns})
+                INSERT INTO {T.DAILY_COST_SUMMARY} ({columns})
                 VALUES ({placeholders})
             """, list(insert_data.values()))
 
@@ -529,11 +531,11 @@ class CostTracker:
         """Get costs for a specific date"""
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 fireworks_cost_usd, openai_cost_usd, hedra_cost_usd,
                 runcomfy_cost_usd, twilio_cost_usd, google_cost_usd, total_cost_usd
-            FROM daily_cost_summary
+            FROM {T.DAILY_COST_SUMMARY}
             WHERE user_id = ? AND date = ?
         """, (user_id, target_date.isoformat()))
 
@@ -560,7 +562,7 @@ class CostTracker:
         """Get costs for a specific month"""
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 SUM(fireworks_cost_usd) as fireworks,
                 SUM(openai_cost_usd) as openai,
@@ -569,7 +571,7 @@ class CostTracker:
                 SUM(twilio_cost_usd) as twilio,
                 SUM(google_cost_usd) as google,
                 SUM(total_cost_usd) as total
-            FROM daily_cost_summary
+            FROM {T.DAILY_COST_SUMMARY}
             WHERE user_id = ? AND strftime('%Y-%m', date) = ?
         """, (user_id, f"{year:04d}-{month:02d}"))
 
@@ -596,13 +598,13 @@ class CostTracker:
         """Get budget limits for user"""
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 fireworks_monthly_limit_usd, openai_monthly_limit_usd,
                 hedra_monthly_limit_usd, runcomfy_monthly_limit_usd,
                 twilio_monthly_limit_usd, google_monthly_limit_usd,
                 total_monthly_limit_usd
-            FROM budget_limits
+            FROM {T.BUDGET_LIMITS}
             WHERE user_id = ?
         """, (user_id,))
 
@@ -630,9 +632,9 @@ class CostTracker:
         """Get third-party service billing links"""
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT service_name, billing_url, usage_url, api_dashboard_url, support_url
-            FROM service_links
+            FROM {T.SERVICE_LINKS}
         """)
 
         links = {}
@@ -657,57 +659,57 @@ class CostTracker:
         cursor = conn.cursor()
 
         # Fireworks details
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 COUNT(*) as calls,
                 SUM(prompt_tokens) as tokens_in,
                 SUM(completion_tokens) as tokens_out
-            FROM fireworks_usage
+            FROM {T.FIREWORKS_USAGE}
             WHERE user_id = ? AND strftime('%Y-%m', timestamp) = strftime('%Y-%m', 'now')
         """, (user_id,))
         fw_row = cursor.fetchone()
 
         # OpenAI details
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 COUNT(*) as calls,
                 SUM(prompt_tokens) as tokens_in,
                 SUM(completion_tokens) as tokens_out
-            FROM openai_usage
+            FROM {T.OPENAI_USAGE}
             WHERE user_id = ? AND strftime('%Y-%m', timestamp) = strftime('%Y-%m', 'now')
         """, (user_id,))
         openai_row = cursor.fetchone()
 
         # RunComfy details
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 COUNT(*) as total_images,
                 SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successful,
                 SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
-            FROM runcomfy_usage
+            FROM {T.RUNCOMFY_USAGE}
             WHERE user_id = ? AND strftime('%Y-%m', timestamp) = strftime('%Y-%m', 'now')
         """, (user_id,))
         runcomfy_row = cursor.fetchone()
 
         # Twilio details
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END) as sent,
                 SUM(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END) as received
-            FROM twilio_usage
+            FROM {T.TWILIO_USAGE}
             WHERE user_id = ? AND strftime('%Y-%m', timestamp) = strftime('%Y-%m', 'now')
         """, (user_id,))
         twilio_row = cursor.fetchone()
 
         # Google details
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 COUNT(*) as total_calls,
                 SUM(quota_cost) as quota_used,
                 SUM(CASE WHEN service = 'gmail' THEN 1 ELSE 0 END) as gmail_calls,
                 SUM(CASE WHEN service = 'calendar' THEN 1 ELSE 0 END) as calendar_calls,
                 SUM(CASE WHEN service = 'drive' THEN 1 ELSE 0 END) as drive_calls
-            FROM google_api_usage
+            FROM {T.GOOGLE_API_USAGE}
             WHERE user_id = ? AND DATE(timestamp) = DATE('now')
         """, (user_id,))
         google_row = cursor.fetchone()
@@ -875,12 +877,12 @@ class CostTracker:
         """Get historical cost data for charting"""
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 date, total_cost_usd,
                 fireworks_cost_usd, openai_cost_usd, hedra_cost_usd,
                 runcomfy_cost_usd, twilio_cost_usd, google_cost_usd
-            FROM daily_cost_summary
+            FROM {T.DAILY_COST_SUMMARY}
             WHERE user_id = ? AND date >= DATE('now', ?)
             ORDER BY date ASC
         """, (user_id, f'-{days} days'))
