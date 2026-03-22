@@ -160,11 +160,43 @@ def search_memory_formatted(query: str, email: str = None, limit: int = 5) -> st
         return ""
 
     lines = ["[RELEVANT MEMORIES]"]
+    lines.append(
+        "(These are past messages. Check timestamps — older memories "
+        "may no longer reflect current reality.)"
+    )
     for r in results:
         sender = r['sender_name']
         text = r['message_text'][:200]
         sim = r['similarity']
-        lines.append(f"- ({sim:.0%}) {sender}: {text}")
+        ts = r.get('timestamp', '')
+        # Format timestamp as relative time
+        time_label = ''
+        if ts:
+            try:
+                from datetime import datetime, timezone
+                if isinstance(ts, str):
+                    msg_time = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                else:
+                    msg_time = ts
+                if msg_time.tzinfo is None:
+                    from zoneinfo import ZoneInfo
+                    msg_time = msg_time.replace(tzinfo=ZoneInfo('America/Los_Angeles'))
+                now = datetime.now(timezone.utc)
+                diff = now - msg_time.astimezone(timezone.utc)
+                if diff.days == 0:
+                    time_label = "today"
+                elif diff.days == 1:
+                    time_label = "yesterday"
+                elif diff.days < 7:
+                    time_label = f"{diff.days}d ago"
+                elif diff.days < 30:
+                    time_label = f"{diff.days // 7}w ago"
+                else:
+                    time_label = f"{diff.days // 30}mo ago"
+            except Exception:
+                pass
+        prefix = f"[{time_label}] " if time_label else ""
+        lines.append(f"- {prefix}{sender}: {text}")
 
     return "\n".join(lines)
 

@@ -171,6 +171,7 @@ async def search_graphiti_async(
                 'name': getattr(edge, 'name', ''),
                 'created_at': str(getattr(edge, 'created_at', '')),
                 'valid_at': str(getattr(edge, 'valid_at', '')),
+                'invalid_at': str(getattr(edge, 'invalid_at', '')),
             }
 
             if hasattr(edge, 'source_node_uuid') and hasattr(edge, 'target_node_uuid'):
@@ -234,21 +235,14 @@ def format_graphiti_facts_for_prompt(facts: List[Dict[str, Any]], max_facts: int
     """
     Format Graphiti search results for inclusion in the companion's prompt.
 
-    Corrections (facts tagged CORRECTION / LEARNED CORRECTION) are boosted to
-    the top so the companion does not repeat mistakes she has already been
-    corrected on. Duplicate facts are deduplicated by exact text match.
-
-    Args:
-        facts: List of fact dicts from search_graphiti
-        max_facts: Maximum facts to include
-
-    Returns:
-        Formatted string for prompt, or empty string if no facts
+    - Invalidated facts (invalid_at is set) are filtered out entirely.
+    - Corrections are boosted to the top.
+    - All facts get temporal tags so the LLM knows how old they are.
+    - Duplicates are deduplicated by exact text match.
     """
     if not facts:
         return ""
 
-    # Partition into corrections vs. regular facts so corrections appear first.
     corrections = []
     regular_facts = []
 
@@ -256,6 +250,12 @@ def format_graphiti_facts_for_prompt(facts: List[Dict[str, Any]], max_facts: int
         fact_text = fact_info.get('fact', '')
         if not fact_text:
             continue
+
+        # Skip invalidated facts — they've been superseded
+        invalid_at = fact_info.get('invalid_at', '')
+        if invalid_at and invalid_at not in ('', 'None', 'null'):
+            continue
+
         if 'CORRECTION' in fact_text or 'LEARNED CORRECTION' in fact_text:
             corrections.append(fact_info)
         else:
@@ -263,8 +263,19 @@ def format_graphiti_facts_for_prompt(facts: List[Dict[str, Any]], max_facts: int
 
     ordered_facts = corrections + regular_facts
 
+    from src.config.persona_config import get_persona_config
+    _pc = get_persona_config()
     lines = ["[KNOWLEDGE GRAPH - Temporal facts from conversations]"]
-    lines.append("(Facts reference specific people by name. Do NOT confuse James's facts with your own facts.)")
+    lines.append(
+        f"(Facts reference specific people by name. "
+        f"Do NOT confuse {_pc.primary_user_name}'s facts with your own facts.)"
+    )
+    lines.append(
+        "(Facts have timestamps showing when they were learned. "
+        "Older facts may be outdated — trust entity profiles and recent "
+        "corrections over old memories. If a fact seems wrong based on "
+        "what you know now, ignore it.)"
+    )
 
     if corrections:
         lines.append("")
@@ -280,8 +291,12 @@ def format_graphiti_facts_for_prompt(facts: List[Dict[str, Any]], max_facts: int
             continue
         seen_facts.add(fact_text)
 
+        time_tag = _format_time_ago(fact_info.get('created_at', ''))
+
         if 'CORRECTION' in fact_text:
-            lines.append(f"  ⚠️ {fact_text}")
+            lines.append(f"  \u26a0\ufe0f {fact_text}")
+        elif time_tag:
+            lines.append(f"  - [{time_tag}] {fact_text}")
         else:
             lines.append(f"  - {fact_text}")
 
@@ -382,6 +397,11 @@ def get_graphiti_context_with_importance(query: str, limit: int = 10, group_id: 
             if not fact_text:
                 continue
 
+            # Skip invalidated facts — they've been superseded by newer info
+            invalid_at = fact_info.get('invalid_at', '')
+            if invalid_at and invalid_at not in ('', 'None', 'null'):
+                continue
+
             importance = importance_map.get(fact_text, 5) or 5  # Default 5 if unscored / None
 
             # Relevance: linear decay from 1.0 (first result) to ~0.0 (last)
@@ -404,8 +424,17 @@ def get_graphiti_context_with_importance(query: str, limit: int = 10, group_id: 
         scored_facts.sort(key=lambda x: x['score'], reverse=True)
 
         # --- Format top results with temporal + importance annotations ---
+        from src.config.persona_config import get_persona_config
+        _pc = get_persona_config()
         lines = ["[CONTEXTUAL MEMORIES - Related to what you mentioned]"]
-        lines.append("(Facts reference specific people by name. Do NOT confuse James's facts with your own facts.)")
+        lines.append(
+            f"(Facts reference specific people by name. "
+            f"Do NOT confuse {_pc.primary_user_name}'s facts with your own facts.)"
+        )
+        lines.append(
+            "(Facts have timestamps. Older facts may be outdated — trust entity "
+            "profiles and recent corrections over old memories.)"
+        )
         seen: set = set()
         count = 0
 
