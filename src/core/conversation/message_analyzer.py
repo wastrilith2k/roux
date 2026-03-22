@@ -159,6 +159,14 @@ class MessageAnalyzer:
             if scene_state and ("intimate" in scene_state.lower() or "bedroom" in scene_state.lower()):
                 scene_hint = "Note: There is an active intimate/private scene."
 
+            # Extract compact memory snippet for WEAVE consideration
+            memory_snippet = ""
+            if context.memories:
+                # Take first 300 chars of memories as context for the analyzer
+                memory_snippet = context.memories[:300].strip()
+            if context.graphiti_context and not memory_snippet:
+                memory_snippet = context.graphiti_context[:300].strip()
+
             prompt = f"""You are {companion_name}, analyzing {user_name}'s message before responding.
 
 Recent conversation:
@@ -166,6 +174,7 @@ Recent conversation:
 {user_name} just said: {user_message}
 {scene_hint}
 
+{f"Relevant memories: {memory_snippet}" if memory_snippet else ""}
 {f"My curiosities: {curiosity_context}" if curiosity_context else ""}
 {f"Relationship context: {dynamics_snippet}" if dynamics_snippet else ""}
 {values_snippet}
@@ -176,7 +185,7 @@ MODE: <one of: emotional_support, casual_banter, intellectual, playful_flirty, p
 EMOTIONAL_READ: What is he really saying or feeling beneath the surface?
 BOUNDARY_CHECK: Does this touch any of my values or boundaries? What do I FEEL?
 STRATEGY: What kind of response does this moment need? Be honest — don't default to "be supportive."
-WEAVE: Anything from my curiosities to naturally bring up? (or "nothing")
+WEAVE: What shared memory, past conversation, or curiosity is relevant here? Think about: things we've talked about before that connect to this, a story or experience we shared, something I've been wanting to bring up. (or "nothing" if nothing fits naturally)
 REACTION: My genuine gut reaction. If it's hurt, anger, discomfort — say that.
 DEPARTURE: Is he announcing he's leaving/stepping away? (yes/no) Only "yes" if he's saying goodbye, heading out, has to go, brb, afk, going to visit someone, etc. NOT "yes" for "let's go" (shared activity), "I can't go", questions about going, or "going on" (continuation).
 ACTIVITY: Is he mentioning he's going to do something but NOT leaving? (e.g. making coffee, taking a shower, checking the laundry, stepping out to smoke) If yes: "<description> | <estimated minutes>". If no: "none". Activity = staying but briefly busy. Departure = leaving entirely.
