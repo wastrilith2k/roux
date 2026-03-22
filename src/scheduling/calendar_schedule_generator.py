@@ -725,6 +725,16 @@ def generate_daily_schedule(
     schedule = get_companion_schedule()
     skeleton = schedule.generate_daily_schedule(target_date, force=force)
 
+    # Step 1.5: Inject work projects into skeleton
+    try:
+        from src.autonomy.work_projects import get_work_project_manager
+        wpm = get_work_project_manager()
+        projects = wpm.format_for_schedule()
+        if projects:
+            skeleton['work_projects'] = projects
+    except Exception as e:
+        logger.debug(f"Could not load work projects for schedule: {e}")
+
     # Step 2: Get narrative context
     narrative_context = _get_narrative_context()
 

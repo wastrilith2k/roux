@@ -76,6 +76,11 @@ class TimeAwareness:
         if companion_section:
             sections.append(companion_section)
 
+        # 5. Companion's work projects
+        work_section = self._get_work_projects_section()
+        if work_section:
+            sections.append(work_section)
+
         return "[TIME & AWARENESS]\n" + "\n\n".join(sections)
 
     def _get_calendar_section(self, now: datetime) -> str:
@@ -191,4 +196,14 @@ class TimeAwareness:
 
         except Exception as e:
             logger.debug(f"Companion schedule section unavailable: {e}")
+            return ""
+
+    def _get_work_projects_section(self) -> str:
+        """Get the companion's current work projects for prompt context."""
+        try:
+            from src.autonomy.work_projects import get_work_project_manager
+            wpm = get_work_project_manager()
+            return wpm.format_for_prompt()
+        except Exception as e:
+            logger.debug(f"Work projects unavailable: {e}")
             return ""
