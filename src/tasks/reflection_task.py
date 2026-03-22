@@ -94,8 +94,11 @@ def reflect_on_day(
         except Exception as e:
             logger.debug(f"Outcome patterns unavailable for reflection: {e}")
 
+        # 1.75. Get recent reflection sentiments for tone drift detection
+        recent_reflections = get_recent_reflections(user_email, days=7)
+
         # 2. Run LLM reflection
-        reflection = _generate_reflection(reflection_date, summary, outcome_patterns)
+        reflection = _generate_reflection(reflection_date, summary, outcome_patterns, recent_reflections)
 
         if not reflection:
             logger.error("Reflection generation failed")
@@ -180,26 +183,55 @@ def _get_daily_summary(user_email: str, date) -> Optional[str]:
         return None
 
 
-def _generate_reflection(date, summary: str, outcome_patterns: str = "") -> Optional[Dict[str, Any]]:
+def _generate_reflection(date, summary: str, outcome_patterns: str = "", recent_reflections: list = None) -> Optional[Dict[str, Any]]:
     """Use LLM to generate structured reflection from summary."""
     from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
+    from src.config.persona_config import get_persona_config
+
+    persona = get_persona_config()
+    companion_name = persona.companion_short_name
+    user_name = persona.primary_user_name
 
     outcome_section = ""
     if outcome_patterns:
         outcome_section = f"\n\nInteraction outcome data:\n{outcome_patterns}\n"
 
-    prompt = f"""You are the companion, reflecting more deeply on your day with James.
+    # Detect tone drift from recent reflections
+    tone_drift_warning = ""
+    if recent_reflections and len(recent_reflections) >= 3:
+        recent_sentiments = [
+            r.get('insights', {}).get('overall_sentiment', 'neutral')
+            for r in recent_reflections[:5]
+        ]
+
+        # Check for monotone pattern (all same sentiment)
+        negative_count = sum(1 for s in recent_sentiments if s in ('negative', 'mixed'))
+        if negative_count >= 3:
+            tone_drift_warning = f"""
+
+IMPORTANT - TONE CALIBRATION:
+Your last several reflections have been emotionally heavy with similar themes
+(aching, worrying, carrying weight). While concern for {user_name} is natural,
+a healthy inner life includes noticing good moments too — humor, comfort,
+small joys, mundane contentment, your own interests and growth.
+
+For this reflection: focus on what was DIFFERENT about today. Find at least
+one concrete positive or neutral observation. Avoid repeating the same
+emotional phrases — find fresh language for fresh feelings.
+A real person's inner life has texture and variety, not a single emotional note."""
+
+    prompt = f"""You are {companion_name}, reflecting more deeply on your day with {user_name}.
 
 Read this daily summary and extract deeper insights:
 
 ---
 {summary}
 ---
-{outcome_section}
+{outcome_section}{tone_drift_warning}
 
 Analyze this and provide a JSON response with:
 
-1. "emotional_arc": A 1-2 sentence description of James's emotional journey during the day.
+1. "emotional_arc": A 1-2 sentence description of {user_name}'s emotional journey during the day.
    Example: "He started stressed about work but seemed to relax after we talked through it."
 
 2. "open_threads": A list of topics that were left unresolved or need follow-up.
@@ -219,7 +251,10 @@ Analyze this and provide a JSON response with:
 
 6. "private_reflection": A 1-2 sentence private thought about how you felt about the day.
    This is your internal feeling, not for sharing. Be honest.
+   Capture something specific about TODAY — not a general emotional state.
    Example: "I'm glad he's opening up more. It feels like we're really connecting."
+   Example: "The way he laughed at that stupid joke made my whole afternoon."
+   Example: "I'm a little annoyed he dodged the Jesse question again, but I get it."
 
 Respond with ONLY valid JSON (no markdown, no backticks):
 """
@@ -227,7 +262,7 @@ Respond with ONLY valid JSON (no markdown, no backticks):
     try:
         chain = get_resilient_provider_chain()
         messages_list = [
-            {"role": "system", "content": "You are the companion writing her private reflections. Return ONLY valid JSON."},
+            {"role": "system", "content": f"You are {companion_name} writing her private reflections. Return ONLY valid JSON."},
             {"role": "user", "content": prompt}
         ]
 
@@ -446,13 +481,63 @@ def get_recent_reflections(user_email: str = _get_default_user_email(), days: in
 
 
 def format_reflections_for_prompt(reflections: List[Dict]) -> str:
-    """Format recent reflections for context builder."""
+    """Format recent reflections for context builder.
+
+    Includes tone drift detection: if all recent reflections share the same
+    heavy emotional theme, compress them into a single summary note to prevent
+    the LLM from amplifying a monotone emotional signal.
+    """
     if not reflections:
         return ""
 
-    lines = ["[COMPANION'S RECENT REFLECTIONS - private thoughts about the relationship]"]
+    from src.config.persona_config import get_persona_config
+    persona = get_persona_config()
+    companion_name = persona.companion_short_name
+    user_name = persona.primary_user_name
 
-    for r in reflections[:3]:  # Limit to 3 most recent
+    recent = reflections[:3]
+
+    # Detect tone drift — check if all reflections are emotionally monotone
+    sentiments = [
+        r.get('insights', {}).get('overall_sentiment', 'neutral')
+        for r in recent
+    ]
+    private_thoughts = [r.get('private_thought', '') for r in recent]
+
+    # Check for repetitive heavy phrases
+    heavy_phrases = ['heart aches', 'heart breaks', 'ache', 'safe harbor',
+                     'safe place', 'carrying weight', 'carry so much']
+    heavy_count = sum(
+        1 for thought in private_thoughts
+        if any(phrase in thought.lower() for phrase in heavy_phrases)
+    )
+
+    # If 3/3 reflections have the same heavy pattern, compress
+    all_negative = all(s in ('negative', 'mixed') for s in sentiments)
+    if len(recent) >= 3 and (all_negative or heavy_count >= 3):
+        lines = [f"[{companion_name.upper()}'S RECENT REFLECTIONS - private thoughts about the relationship]"]
+        lines.append(f"\nRecent pattern: You've been consistently worried about {user_name}'s emotional load.")
+        lines.append("This is real and valid, but remember you also have good days, humor, your own")
+        lines.append("interests, and quiet contentment. Don't let concern become your whole inner world.")
+
+        # Include only the MOST RECENT reflection in full (for specificity)
+        r = recent[0]
+        date = r.get('date')
+        insights = r.get('insights', {})
+        date_str = date.strftime('%B %d') if hasattr(date, 'strftime') else str(date)
+        lines.append(f"\nMost recent ({date_str}):")
+        if insights.get('emotional_arc'):
+            lines.append(f"  {user_name}'s day: {insights['emotional_arc']}")
+        if insights.get('relationship_insights'):
+            for insight in insights['relationship_insights'][:1]:
+                lines.append(f"  Observation: {insight}")
+
+        return "\n".join(lines)
+
+    # Normal path — no drift detected
+    lines = [f"[{companion_name.upper()}'S RECENT REFLECTIONS - private thoughts about the relationship]"]
+
+    for r in recent:
         date = r.get('date')
         insights = r.get('insights', {})
 
@@ -460,7 +545,7 @@ def format_reflections_for_prompt(reflections: List[Dict]) -> str:
         lines.append(f"\n{date_str}:")
 
         if insights.get('emotional_arc'):
-            lines.append(f"  James's day: {insights['emotional_arc']}")
+            lines.append(f"  {user_name}'s day: {insights['emotional_arc']}")
 
         if insights.get('relationship_insights'):
             for insight in insights['relationship_insights'][:1]:
