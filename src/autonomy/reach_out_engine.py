@@ -554,6 +554,18 @@ class ReachOutEngine:
                     context['companion_upcoming_calendar'] = [
                         e.get('summary', '') for e in upcoming_cal[:3]
                     ]
+
+                # Add completed events (what she's done today)
+                completed = cal_service.get_completed_events()
+                if completed:
+                    context['companion_completed_today'] = [
+                        e.get('summary', '') for e in completed[-3:]
+                    ]
+
+                # Get full behavior context for richer reach-out
+                behavior = cal_service.format_schedule_behavior_context()
+                if behavior:
+                    context['companion_schedule_behavior'] = behavior
         except Exception as e:
             logger.debug(f"Could not get calendar schedule for reach-out: {e}")
 
@@ -761,11 +773,17 @@ THINGS YOU'RE CURIOUS ABOUT (topics to potentially follow up on):
         except Exception as e:
             logger.debug(f"Could not get opinions: {e}")
 
-        # Include upcoming calendar events if available
+        # Include schedule context (completed + upcoming + behavior)
         calendar_section = ""
+        if context.get('companion_completed_today'):
+            calendar_section += f"\nWHAT YOU'VE DONE TODAY: {', '.join(context['companion_completed_today'])}\n"
         if context.get('companion_upcoming_calendar'):
-            calendar_section = f"\nYOUR UPCOMING SCHEDULE: {', '.join(context['companion_upcoming_calendar'])}\n"
-            calendar_section += "(You can naturally reference your schedule when reaching out)\n"
+            calendar_section += f"COMING UP: {', '.join(context['companion_upcoming_calendar'])}\n"
+        if context.get('companion_schedule_behavior'):
+            calendar_section += f"\nYOUR DAY SO FAR:\n{context['companion_schedule_behavior']}\n"
+        if calendar_section:
+            calendar_section = "\n" + calendar_section
+            calendar_section += "(Reference your day naturally — what you just finished, what you're about to do, how your day's been.)\n"
 
         # Include natural trigger context if present
         trigger_section = ""

@@ -133,34 +133,59 @@ class TimeAwareness:
             return ""
 
     def _get_companion_schedule_section(self, now: datetime) -> str:
-        """Get the companion's current schedule status."""
+        """
+        Get the companion's schedule as first-person behavioral context.
+
+        Tries the rich calendar schedule service first (DB-backed, with
+        completed/in-progress/upcoming awareness), then falls back to
+        the structural skeleton.
+        """
+        # Try the rich calendar schedule service first
+        try:
+            from src.scheduling.calendar_schedule_service import (
+                get_calendar_schedule_service, is_calendar_schedule_enabled
+            )
+            if is_calendar_schedule_enabled():
+                cal_service = get_calendar_schedule_service()
+                behavior_context = cal_service.format_schedule_behavior_context()
+                if behavior_context:
+                    return f"[YOUR SCHEDULE TODAY]\n{behavior_context}"
+        except Exception as e:
+            logger.debug(f"Calendar schedule service unavailable: {e}")
+
+        # Fall back to structural skeleton
         try:
             from src.scheduling.companion_schedule import get_companion_schedule
 
             schedule = get_companion_schedule()
-            activity_status = schedule.get_current_activity_status(now.replace(tzinfo=None))
+            activity_status = schedule.get_current_activity_status(
+                now.replace(tzinfo=None)
+            )
 
             status = activity_status.get('status', 'unknown')
             details = activity_status.get('details', '')
 
             if status == 'asleep':
-                return "Companion status: sleeping"
+                return "You're sleeping right now."
 
-            parts = [f"Companion status: {details}" if details else f"Companion status: {status}"]
+            parts = []
+            if details:
+                parts.append(f"You're currently: {details}")
+            else:
+                parts.append(f"Status: {status}")
 
-            # Add workload if available
             today = schedule.get_today_schedule()
             if today:
                 workload = today.get('workload', 'normal')
                 if workload != 'normal':
-                    parts.append(f"Workload: {workload}")
-                notes = today.get('notes', '')
-                if notes:
-                    parts.append(f"Note: {notes}")
+                    parts.append(f"Workload today: {workload}")
 
-            # Reinforce work mode behavior when she's working
             if status == 'working':
-                parts.append("You're in work mode right now. Respond naturally but acknowledge you're working — keep it brief unless it's something important.")
+                parts.append(
+                    "You're in work mode right now. Respond naturally but "
+                    "acknowledge you're working — keep it brief unless "
+                    "it's something important."
+                )
 
             return "\n".join(parts)
 
