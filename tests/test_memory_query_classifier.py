@@ -98,6 +98,26 @@ class TestClassifyWithLLMFailure:
         assert result.query_type == 'factual'
 
 
+class TestEmptyLLMResponse:
+    """Test fallback when LLM returns empty/None instead of raising."""
+
+    def test_empty_response_falls_back_with_real_message(self, classifier):
+        """Empty LLM response should fallback using the original message, not empty string."""
+        with patch('src.llm.fireworks_models.call_fireworks', return_value=""), \
+             patch.object(classifier, '_get_client', return_value=None), \
+             patch.object(classifier, '_fallback_classify', wraps=classifier._fallback_classify) as mock_fb:
+            result = classifier._classify_with_llm("Who is Jesse?")
+        mock_fb.assert_called_once_with("Who is Jesse?")
+        assert result.is_memory_query is True
+
+    def test_none_response_falls_back_with_real_message(self, classifier):
+        with patch('src.llm.fireworks_models.call_fireworks', return_value=None), \
+             patch.object(classifier, '_get_client', return_value=None), \
+             patch.object(classifier, '_fallback_classify', wraps=classifier._fallback_classify) as mock_fb:
+            result = classifier._classify_with_llm("Who is Jesse?")
+        mock_fb.assert_called_once_with("Who is Jesse?")
+
+
 class TestPreFilterRouting:
     """Ensure pre-filter correctly routes to LLM or rejects."""
 

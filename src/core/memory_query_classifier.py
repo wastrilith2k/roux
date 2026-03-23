@@ -136,7 +136,7 @@ IMPORTANT: Roleplay and present-tense conversation is NOT a memory query.
         )
 
         if not text:
-            return self._fallback_classify("")
+            return self._fallback_classify(message)
 
         # Handle markdown code blocks
         if text.startswith('```'):
