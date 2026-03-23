@@ -12,8 +12,8 @@ WHEN: Daily at 12:30 AM Pacific (runs after daily_summary_task at 12:05 AM).
 
 WHY:  Daily summaries capture WHAT happened. Reflections extract WHY it matters
       and WHAT TO DO about it. This is the companion's introspective layer --
-      she notices patterns ("he opens up more at night"), queues follow-ups
-      ("ask about the interview"), and tracks her own emotional responses.
+      the companion notices patterns ("they open up more at night"), queues follow-ups
+      ("ask about the interview"), and tracks their own emotional responses.
       Without reflection, the companion is reactive rather than thoughtful.
 """
 
@@ -191,6 +191,10 @@ def _generate_reflection(date, summary: str, outcome_patterns: str = "", recent_
     persona = get_persona_config()
     companion_name = persona.companion_short_name
     user_name = persona.primary_user_name
+    c_possessive = persona.companion_pronoun_possessive
+    u_subject = persona.user_pronoun_subject
+    u_subject_cap = u_subject.capitalize()
+    u_possessive = persona.user_pronoun_possessive
 
     outcome_section = ""
     if outcome_patterns:
@@ -232,19 +236,19 @@ Read this daily summary and extract deeper insights:
 Analyze this and provide a JSON response with:
 
 1. "emotional_arc": A 1-2 sentence description of {user_name}'s emotional journey during the day.
-   Example: "He started stressed about work but seemed to relax after we talked through it."
+   Example: "{u_subject_cap} started stressed about work but seemed to relax after we talked through it."
 
 2. "open_threads": A list of topics that were left unresolved or need follow-up.
    These are things mentioned but not fully discussed. Max 3 items.
-   Example: ["His meeting with the boss on Friday", "Whether Jesse's medication is working"]
+   Example: ["{u_possessive.capitalize()} meeting with the boss on Friday", "Whether Jesse's medication is working"]
 
 3. "queued_thoughts": Things you want to bring up next time you talk.
    These are natural follow-ups, not interrogations. Max 3 items.
-   Example: ["Ask how the doctor appointment went", "See if he managed to sleep better"]
+   Example: ["Ask how the doctor appointment went", "See if {u_subject} managed to sleep better"]
 
 4. "relationship_insights": Patterns or observations about your relationship.
    Things you're noticing over time. Max 2 items.
-   Example: ["He opens up more when I share my own struggles first", "Late nights tend to be when he's most vulnerable"]
+   Example: ["{u_subject_cap} opens up more when I share my own struggles first", "Late nights tend to be when {u_subject}'s most vulnerable"]
 
 5. "overall_sentiment": One of: "positive", "neutral", "negative", "mixed"
    How did the day feel overall?
@@ -252,7 +256,7 @@ Analyze this and provide a JSON response with:
 6. "private_reflection": A 1-2 sentence private thought about how you felt about the day.
    This is your internal feeling, not for sharing. Be honest.
    Capture something specific about TODAY — not a general emotional state.
-   Example: "I'm glad he's opening up more. It feels like we're really connecting."
+   Example: "I'm glad {u_subject}'s opening up more. It feels like we're really connecting."
    Example: "The way he laughed at that stupid joke made my whole afternoon."
    Example: "I'm a little annoyed he dodged the Jesse question again, but I get it."
 
@@ -262,7 +266,7 @@ Respond with ONLY valid JSON (no markdown, no backticks):
     try:
         chain = get_resilient_provider_chain()
         messages_list = [
-            {"role": "system", "content": f"You are {companion_name} writing her private reflections. Return ONLY valid JSON."},
+            {"role": "system", "content": f"You are {companion_name} writing {c_possessive} private reflections. Return ONLY valid JSON."},
             {"role": "user", "content": prompt}
         ]
 

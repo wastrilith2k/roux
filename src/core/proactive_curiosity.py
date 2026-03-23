@@ -387,7 +387,7 @@ Return ONLY a JSON array of strings, e.g.: ["question 1", "question 2"]"""
                     note = f" — NOTE: {thread.resolution_notes}"
                 lines.append(f"- {thread.topic} (mentioned {time_desc}){note}")
 
-        # Memory-gap curiosities (things she's been wondering about on her own)
+        # Memory-gap curiosities (things the companion has been wondering about on their own)
         if memory_gap_topics:
             lines.append("")
             lines.append("Things you've been wondering about (gaps in what you know):\n")

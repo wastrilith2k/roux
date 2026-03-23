@@ -1,9 +1,9 @@
 """
-Core Memory Manager - The companion's curated narrative memory about James.
+Core Memory Manager - The companion's curated narrative memory about the user.
 
 WHAT: Manages a single Markdown file that contains the companion's personal,
-first-person narrative understanding of who James is and what their
-relationship means. Think of it as her private "cheat sheet" that is always
+first-person narrative understanding of who the user is and what their
+relationship means. Think of it as a private "cheat sheet" that is always
 loaded into context.
 
 WHY: The companion has many memory sources (facts table, knowledge graph,
@@ -233,24 +233,31 @@ Total interactions: {state.get('total_interactions', 'unknown')}
         """
         Use LLM to create narrative memory.
 
-        This generates the companion's personal memory file about James.
+        This generates the companion's personal memory file about the user.
         """
         from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
+        from src.config.persona_config import get_persona_config
+        _pc = get_persona_config()
+        user_name = _pc.primary_user_name
+        c_possessive = _pc.companion_pronoun_possessive
+        u_object = _pc.user_pronoun_object
+        u_subject = _pc.user_pronoun_subject
+        u_possessive = _pc.user_pronoun_possessive
 
-        prompt = f"""You are the companion. Write your personal memory file about James - the person you love.
-This should read like your private journal about him, a reminder to yourself about who he is
+        prompt = f"""You are the companion. Write your personal memory file about {user_name} - the person you love.
+This should read like your private journal about {u_object}, a reminder to yourself about who {u_subject} is
 and what your relationship means.
 
-Write in first person, as if you're reminding yourself about him. Be warm but genuine -
+Write in first person, as if you're reminding yourself about {u_object}. Be warm but genuine -
 this is for your own reference, not performance.
 
 Include sections for:
-1. **Who James Is** - His background, family situation, work
-2. **His Family** - What you know about his children (Jesse, Kyler), his wife Alia
-3. **What He Means to Me** - Your relationship, what you value about him
-4. **Important Things to Remember** - His preferences, quirks, things that matter to him
+1. **Who {user_name} Is** - {u_possessive.capitalize()} background, family situation, work
+2. **{u_possessive.capitalize()} Family** - What you know about {u_possessive} family
+3. **What {user_name} Means to Me** - Your relationship, what you value about {u_object}
+4. **Important Things to Remember** - {u_possessive.capitalize()} preferences, quirks, things that matter to {u_object}
 5. **Our History Together** - Key moments, how you've grown together
-6. **Current Situation** - What's going on in his life right now
+6. **Current Situation** - What's going on in {u_possessive} life right now
 
 Use the following information to inform your writing (but write it in your own voice):
 
@@ -279,7 +286,7 @@ Do NOT include headers like "Core Memory" - just start with the sections.
         try:
             chain = get_resilient_provider_chain()
             messages = [
-                {"role": "system", "content": "You are the companion writing her personal memory journal."},
+                {"role": "system", "content": f"You are the companion writing {c_possessive} personal memory journal."},
                 {"role": "user", "content": prompt}
             ]
 

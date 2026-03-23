@@ -531,7 +531,7 @@ class InternalStateManager:
         else:
             # Continuing active session
             if minutes_since_last:
-                # Add elapsed time to her internal clock
+                # Add elapsed time to the companion's internal clock
                 state.internal_minutes_elapsed += int(minutes_since_last)
 
                 # Energy: Start from time-of-day base + activity offset,
@@ -1180,12 +1180,17 @@ class InternalStateManager:
         if state.user_current_activity:
             activity_status = self.get_user_activity_status(user_email)
             if activity_status:
+                from src.config.persona_config import get_persona_config
+                _pc = get_persona_config()
+                user_name = _pc.primary_user_name
+                u_subject = _pc.user_pronoun_subject
+                u_subject_cap = u_subject.capitalize()
                 if activity_status['overdue']:
-                    lines.append(f"He said he was going to {activity_status['activity']} {activity_status['elapsed_min']:.0f} min ago — should be back by now.")
+                    lines.append(f"{user_name} said {u_subject} was going to {activity_status['activity']} {activity_status['elapsed_min']:.0f} min ago — should be back by now.")
                 elif activity_status['probably_done']:
-                    lines.append(f"He said he was going to {activity_status['activity']} — probably finishing up.")
+                    lines.append(f"{user_name} said {u_subject} was going to {activity_status['activity']} — probably finishing up.")
                 else:
-                    lines.append(f"He is currently {activity_status['activity']} (mentioned {activity_status['elapsed_min']:.0f} min ago).")
+                    lines.append(f"{u_subject_cap} is currently {activity_status['activity']} (mentioned {activity_status['elapsed_min']:.0f} min ago).")
 
         # Unresolved feelings
         active_feelings = [

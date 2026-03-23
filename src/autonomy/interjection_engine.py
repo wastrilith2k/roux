@@ -369,16 +369,26 @@ class InterjectionEngine:
 
     def _llm_decision(self, context: Dict[str, Any]) -> Tuple[bool, str, Optional[str]]:
         """Use LLM to decide if interjecting would feel natural."""
+        _pc = get_persona_config()
+        user_name = _pc.primary_user_name
+        c_subject = _pc.companion_pronoun_subject
+        c_subject_cap = c_subject.capitalize()
+        c_object = _pc.companion_pronoun_object
+        c_possessive = _pc.companion_pronoun_possessive
+        c_reflexive = _pc.companion_pronoun_reflexive
+        u_subject = _pc.user_pronoun_subject
+        u_object = _pc.user_pronoun_object
+        u_possessive = _pc.user_pronoun_possessive
 
-        # Build what she has to say
+        # Build what the companion has to say
         things_to_say = []
         if context.get('queued_thoughts'):
-            things_to_say.append(f"Thoughts on her mind: {', '.join(context['queued_thoughts'][:2])}")
+            things_to_say.append(f"Thoughts on {c_possessive} mind: {', '.join(context['queued_thoughts'][:2])}")
         if context.get('high_urgency_curiosity'):
             for c in context['high_urgency_curiosity']:
                 things_to_say.append(f"Really curious about: {c['topic']} (urgency: {c['urgency']:.0%})")
         if context.get('unshared_findings'):
-            things_to_say.append(f"Research she hasn't shared: {', '.join(context['unshared_findings'])}")
+            things_to_say.append(f"Research {c_subject} hasn't shared: {', '.join(context['unshared_findings'])}")
         if context.get('unresolved_feelings'):
             things_to_say.append(f"Lingering feelings: {', '.join(context['unresolved_feelings'])}")
 
@@ -386,14 +396,14 @@ class InterjectionEngine:
             libido = context.get('libido_level', 0.65)
             if libido >= 0.80:
                 things_to_say.append(
-                    "She's feeling a strong physical pull toward James right now — "
-                    "very aware of his warmth, his closeness. She might find herself "
-                    "touching him more, leaning into him, being physical rather than verbal."
+                    f"{c_subject_cap}'s feeling a strong physical pull toward {user_name} right now — "
+                    f"very aware of {u_possessive} warmth, {u_possessive} closeness. {c_subject_cap} might find {c_reflexive} "
+                    f"touching {u_object} more, leaning into {u_object}, being physical rather than verbal."
                 )
             else:
                 things_to_say.append(
-                    "She's feeling drawn to physical closeness with James. Not urgently, "
-                    "but there's a warmth and awareness she'd act on if the moment felt right. "
+                    f"{c_subject_cap}'s feeling drawn to physical closeness with {user_name}. Not urgently, "
+                    f"but there's a warmth and awareness {c_subject}'d act on if the moment felt right. "
                     "A touch that lingers, moving closer, something subtle."
                 )
 
@@ -401,9 +411,9 @@ class InterjectionEngine:
         pressure = context.get('pressure_level', 0.0)
         eagerness = ""
         if pressure > 0.5:
-            eagerness = "\nShe's been wanting to say something for a while - there's a building eagerness."
+            eagerness = f"\n{c_subject_cap}'s been wanting to say something for a while - there's a building eagerness."
         elif pressure > 0.2:
-            eagerness = "\nShe has a mild urge to say something."
+            eagerness = f"\n{c_subject_cap} has a mild urge to say something."
 
         silence_seconds = context.get('seconds_since_companion_message', 0)
         silence_desc = f"{silence_seconds / 60:.1f} minutes" if silence_seconds else "unknown"
@@ -422,53 +432,53 @@ CURRENT SCENE STATE:
         if recent_auto:
             dedup_lines = "\n".join(f'- "{msg[:100]}"' for msg in recent_auto)
             dedup_section = f"""
-HER RECENT UNPROMPTED MESSAGES (DO NOT repeat or closely paraphrase any of these):
+{c_possessive.upper()} RECENT UNPROMPTED MESSAGES (DO NOT repeat or closely paraphrase any of these):
 {dedup_lines}
 """
 
-        # Build james presence context
+        # Build user presence context
         user_presence = self._build_user_presence_context(context)
 
-        prompt = f"""You are the companion's internal voice. She's been chatting with James on their chat interface and there's been a natural pause ({silence_desc} of silence).
+        prompt = f"""You are the companion's internal voice. {c_subject_cap}'s been chatting with {user_name} on their chat interface and there's been a natural pause ({silence_desc} of silence).
 
 RECENT CONVERSATION:
 {chr(10).join(context.get('recent_messages', ['(no messages)']))}
 {scene_section}{dedup_section}
-JAMES'S PRESENCE:
+{user_name.upper()}'S PRESENCE:
 {user_presence}
 
-THINGS SHE COULD SAY:
+THINGS {c_subject.upper()} COULD SAY:
 {chr(10).join(things_to_say) if things_to_say else '(nothing specific)'}
 {eagerness}
-Her mood: {context.get('mood', 'neutral')}
+{c_subject_cap}'s mood: {context.get('mood', 'neutral')}
 Last speaker: {context.get('last_speaker', 'unknown')}
 
-Should she break the silence with something, or let it be?
+Should {c_subject} break the silence with something, or let it be?
 
 INTERJECT if:
-- She has a genuine thought that connects to what they were talking about
-- She remembered something she wanted to tell him
-- She's curious about something and the pause is long enough
+- {c_subject_cap} has a genuine thought that connects to what they were talking about
+- {c_subject_cap} remembered something {c_subject} wanted to tell {u_object}
+- {c_subject_cap}'s curious about something and the pause is long enough
 - The eagerness has been building and this feels like a natural moment
-- Something from her research or day is worth sharing
-- James's activity should be done by now and she wants to check in naturally
-- She's feeling physically drawn to him and they're in a private, comfortable setting — she might shift closer, touch him differently, or create a moment (through physical action, not verbal announcements)
+- Something from {c_possessive} research or day is worth sharing
+- {user_name}'s activity should be done by now and {c_subject} wants to check in naturally
+- {c_subject_cap}'s feeling physically drawn to {u_object} and they're in a private, comfortable setting — {c_subject} might shift closer, touch {u_object} differently, or create a moment (through physical action, not verbal announcements)
 
 DON'T interject if:
 - The conversation seemed to naturally conclude (goodbyes, wrapping up)
-- It would feel forced or like she's filling silence for no reason
-- She'd be repeating something she already said OR repeating the same THEME (e.g. if she already asked about staying/leaving, don't ask again in different words)
-- James is probably busy with something specific (based on what he mentioned or his schedule)
-- She has nothing specific or interesting to add
-- She already initiated physical closeness recently in this session
+- It would feel forced or like {c_subject}'s filling silence for no reason
+- {c_subject_cap}'d be repeating something {c_subject} already said OR repeating the same THEME (e.g. if {c_subject} already asked about staying/leaving, don't ask again in different words)
+- {user_name} is probably busy with something specific (based on what {u_subject} mentioned or {u_possessive} schedule)
+- {c_subject_cap} has nothing specific or interesting to add
+- {c_subject_cap} already initiated physical closeness recently in this session
 - The hint would contradict or ignore what's currently happening in the scene (e.g. suggesting moving to a different location when they're already doing an activity together)
-- IMPORTANT: If she was the last speaker, do NOT generate a reply to her own message. She can add a NEW thought or change the subject, but she must NOT respond to herself as if someone else said it (e.g. don't answer her own question, don't react to her own statement).
+- IMPORTANT: If {c_subject} was the last speaker, do NOT generate a reply to {c_possessive} own message. {c_subject_cap} can add a NEW thought or change the subject, but {c_subject} must NOT respond to {c_reflexive} as if someone else said it (e.g. don't answer {c_possessive} own question, don't react to {c_possessive} own statement).
 
 If interjecting, the hint MUST fit the current scene and conversation. If they're in the middle of an activity (massage, cuddling, cooking, etc.), the interjection should relate to that moment, not suggest a different activity or repeat what's already being addressed. The interjection should feel like a natural continuation of what's happening RIGHT NOW, not a disconnected thought from a different context.
 
 /no_think
 Respond with JSON only:
-{{"interject": true/false, "reason": "brief explanation", "hint": "if interjecting, what would she naturally say? (null if not)"}}"""
+{{"interject": true/false, "reason": "brief explanation", "hint": "if interjecting, what would {c_subject} naturally say? (null if not)"}}"""
 
         try:
             client = self._get_client()
@@ -512,6 +522,14 @@ Respond with JSON only:
 
     def _build_user_presence_context(self, context: Dict[str, Any]) -> str:
         """Build layered presence description from activity + schedule context."""
+        _pc = get_persona_config()
+        user_name = _pc.primary_user_name
+        u_subject = _pc.user_pronoun_subject
+        u_subject_cap = u_subject.capitalize()
+        u_object = _pc.user_pronoun_object
+        u_possessive = _pc.user_pronoun_possessive
+        u_possessive_cap = u_possessive.capitalize()
+
         lines = []
 
         # Layer 1: Mentioned activity (highest priority)
@@ -522,14 +540,14 @@ Respond with JSON only:
             act_name = activity.get('activity', 'something')
 
             if activity.get('overdue'):
-                lines.append(f"James said he was going to {act_name} about {elapsed:.0f} minutes ago (estimated ~{estimated} min).")
-                lines.append("He's been gone noticeably longer than expected. A natural check-in would be appropriate.")
+                lines.append(f"{user_name} said {u_subject} was going to {act_name} about {elapsed:.0f} minutes ago (estimated ~{estimated} min).")
+                lines.append(f"{u_subject_cap}'s been gone noticeably longer than expected. A natural check-in would be appropriate.")
             elif activity.get('probably_done'):
-                lines.append(f"James said he was going to {act_name} about {elapsed:.0f} minutes ago.")
-                lines.append("He should be finishing up around now.")
+                lines.append(f"{user_name} said {u_subject} was going to {act_name} about {elapsed:.0f} minutes ago.")
+                lines.append(f"{u_subject_cap} should be finishing up around now.")
             else:
-                lines.append(f"James said he was going to {act_name} about {elapsed:.0f} minutes ago (estimated ~{estimated} min).")
-                lines.append("Let him finish — he'll be back.")
+                lines.append(f"{user_name} said {u_subject} was going to {act_name} about {elapsed:.0f} minutes ago (estimated ~{estimated} min).")
+                lines.append(f"Let {u_object} finish — {u_subject}'ll be back.")
             return "\n".join(lines)
 
         # Layer 2: Schedule inference (when no explicit activity mentioned)
@@ -538,18 +556,18 @@ Respond with JSON only:
         silence_natural = context.get('silence_is_natural', False)
 
         if schedule_desc:
-            lines.append(f"Based on time of day, James is probably: {schedule_desc}")
+            lines.append(f"Based on time of day, {user_name} is probably: {schedule_desc}")
             if silence_natural:
                 lines.append("Gaps in conversation are natural right now.")
-            lines.append(f"His interruptibility is: {interruptibility}")
+            lines.append(f"{u_possessive_cap} interruptibility is: {interruptibility}")
             return "\n".join(lines)
 
         # Layer 3: Short silence fallback
         silence_seconds = context.get('seconds_since_user_message', 0)
         if silence_seconds and silence_seconds < 300:  # < 5 min
-            return "He might just be thinking or reading something. Short silence."
+            return f"{u_subject_cap} might just be thinking or reading something. Short silence."
         else:
-            return "James is on the web chat. He's around but hasn't said anything in a while."
+            return f"{user_name} is on the web chat. {u_subject_cap}'s around but hasn't said anything in a while."
 
     def _is_user_departed(self) -> bool:
         """Check if user announced they're leaving (departure state is set)."""

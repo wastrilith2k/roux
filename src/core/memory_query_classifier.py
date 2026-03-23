@@ -73,9 +73,14 @@ class MemoryQueryClassifier:
         # Quick filter - skip obvious non-memory messages
         if len(message) < 10 or not self._has_memory_keywords(message):
             # Check for factual queries that might not have keywords
-            factual_patterns = ['where does', 'where is', 'what is', 'who is',
-                               'what\'s', 'who\'s', 'does she', 'does he',
-                               'is she', 'is he', 'her name', 'his name']
+            factual_patterns = [
+                'where does', 'where is', 'who is',
+                'what is his', 'what is her', 'what is my', 'what is their',
+                'what\'s his', 'what\'s her', 'what\'s my', 'what\'s their',
+                'who\'s his', 'who\'s her', 'who\'s my', 'who\'s their',
+                'does she', 'does he', 'is she', 'is he',
+                'her name', 'his name', 'how old is',
+            ]
             if not any(p in message.lower() for p in factual_patterns):
                 return MemoryQueryResult(
                     is_memory_query=False,
@@ -131,7 +136,7 @@ IMPORTANT: Roleplay and present-tense conversation is NOT a memory query.
         )
 
         if not text:
-            return self._fallback_classify("")
+            return self._fallback_classify(message)
 
         # Handle markdown code blocks
         if text.startswith('```'):
@@ -186,8 +191,14 @@ IMPORTANT: Roleplay and present-tense conversation is NOT a memory query.
             )
 
         # Check for factual queries
-        factual_patterns = ['where does', 'where is', 'what is', 'who is',
-                           'what\'s', 'who\'s']
+        factual_patterns = [
+            'where does', 'where is', 'who is',
+            'what is his', 'what is her', 'what is my', 'what is their',
+            'what\'s his', 'what\'s her', 'what\'s my', 'what\'s their',
+            'who\'s his', 'who\'s her', 'who\'s my', 'who\'s their',
+            'does she', 'does he', 'is she', 'is he',
+            'her name', 'his name', 'how old is',
+        ]
         if any(p in message_lower for p in factual_patterns):
             words = message.split()
             search_terms = [w for w in words if len(w) > 3 and w.isalpha()][:5]

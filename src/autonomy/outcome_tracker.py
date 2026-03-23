@@ -120,15 +120,19 @@ class OutcomeTracker:
                 for m in messages[:6]
             ])
 
-            prompt = f"""Analyze whether James engaged positively when the companion brought up a topic.
+            from src.config.persona_config import get_persona_config
+            _pc = get_persona_config()
+            user_name = _pc.primary_user_name
+            u_subject = _pc.user_pronoun_subject
+            prompt = f"""Analyze whether {user_name} engaged positively when the companion brought up a topic.
 
 MESSAGES AFTER COMPANION SHARED:
 {msgs_text}
 
-How did James respond?
-- "good": He engaged, asked follow-ups, showed interest, or appreciated it
-- "neutral": He acknowledged but didn't really engage further
-- "poor": He seemed disinterested, changed the subject, or was dismissive
+How did {user_name} respond?
+- "good": {u_subject.capitalize()} engaged, asked follow-ups, showed interest, or appreciated it
+- "neutral": {u_subject.capitalize()} acknowledged but didn't really engage further
+- "poor": {u_subject.capitalize()} seemed disinterested, changed the subject, or was dismissive
 
 Respond with ONLY one word: good, neutral, or poor"""
 

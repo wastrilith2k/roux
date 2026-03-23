@@ -241,6 +241,7 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
             PipelineResult with response and metadata
         """
         start_time = time.time()
+        is_proactive_msg = extra_context.get('is_proactive_message', False) if extra_context else False
 
         try:
             # Step 1: Build context from 6 sources
@@ -249,6 +250,29 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                 user_message=user_message,
                 closeness_score=closeness_score
             )
+
+            # Step 1.1: Schedule interruption detection
+            # If user starts chatting during a scheduled event, check if the
+            # companion can multi-task or needs to pause the event.
+            if not is_proactive_msg:
+                try:
+                    from src.scheduling.calendar_schedule_service import (
+                        get_calendar_schedule_service, is_calendar_schedule_enabled
+                    )
+                    if is_calendar_schedule_enabled():
+                        cal = get_calendar_schedule_service()
+                        current = cal.get_current_activity()
+                        if current and current.get('id') and current.get('status') == 'in_progress':
+                            can_multitask = self._check_multitaskable(current.get('summary', ''))
+                            if not can_multitask:
+                                from src.scheduling.calendar_schedule_generator import update_event_status
+                                update_event_status(current['id'], 'paused')
+                                cal._today_cache = None
+                                logger.debug(f"Paused event '{current.get('summary')}' (user started chatting)")
+                            else:
+                                logger.debug(f"Continuing event '{current.get('summary')}' alongside chat (multi-taskable)")
+                except Exception as e:
+                    logger.debug(f"Schedule interruption check failed: {e}")
 
             # Step 1.4: Clear queued thoughts that match the user's message
             # This prevents the companion from asking about things the user just addressed
@@ -308,7 +332,6 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
             # WebSocket message from James = he's present, clear departure.
             # Telegram message = he's texting from his phone, does NOT clear departure.
             # Either channel can SET departure if the message is a goodbye.
-            is_proactive_msg = extra_context.get('is_proactive_message', False) if extra_context else False
             msg_source = (extra_context.get('source', '') if extra_context else '') or ''
             is_telegram = msg_source.startswith('telegram')
             if not is_proactive_msg:
@@ -1175,6 +1198,24 @@ Just write the message itself, nothing else.
         # Hit max iterations
         logger.warning(f"Hit max tool calls ({MAX_TOOL_CALLS})")
         return "i'm not able to check right now, can you ask me again in a bit?", "gpt-4o-mini", tool_calls_made
+
+    def _check_multitaskable(self, activity_summary: str) -> bool:
+        """Quick LLM check: can someone chat while doing this activity?"""
+        try:
+            from src.llm.provider_factory import generate_sync
+            response = generate_sync(
+                messages=[{"role": "user", "content": (
+                    f"Can someone realistically have a casual text conversation "
+                    f"while doing this activity?\n"
+                    f"Activity: \"{activity_summary}\"\n"
+                    f"Answer with ONLY 'yes' or 'no'."
+                )}],
+                temperature=0.0,
+                max_tokens=5,
+            )
+            return response.strip().lower().startswith('yes')
+        except Exception:
+            return True  # Default to multi-taskable on error
 
     def _clear_addressed_thoughts(self, user_email: str, user_message: str):
         """

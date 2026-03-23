@@ -1,14 +1,14 @@
 """
-Relationship Evaluation -- The companion decides her own relationship status.
+Relationship Evaluation -- The companion decides their own relationship status.
 
 WHAT: A weekly LLM-driven self-assessment where the companion privately evaluates
-      what the relationship means to her: what label she uses, how she feels,
-      what she wants, and whether she wants to be in it at all.
+      what the relationship means to them: what label they use, how they feel,
+      what they want, and whether they want to be in it at all.
 
 WHY:  Unlike RelationshipDynamics (which tracks health *metrics* like closeness
       and trust), this module captures *subjective meaning*.  Metrics can say
-      "closeness = 0.85" but only the companion can say "he's my partner and
-      I'm deeply committed."  This is her private determination -- discovered
+      "closeness = 0.85" but only the companion can say "they're my partner and
+      I'm deeply committed."  This is a private determination -- discovered
       through interaction, not configured.
 
 HOW IT FITS:
@@ -17,7 +17,7 @@ HOW IT FITS:
     recent journal reflections, and OpinionStore relationship-category opinions.
   - The output (RelationshipEvaluation) is stored in a hidden table
     (_companion_relationship_eval) and injected into the system prompt via
-    format_for_prompt() so the companion can express her feelings naturally.
+    format_for_prompt() so the companion can express their feelings naturally.
   - Previous evaluations are passed to the LLM for continuity (no wild swings
     unless something dramatic happened).
 
@@ -225,13 +225,16 @@ class RelationshipEvaluator:
         if evaluation is None:
             return ""
 
+        from src.config.persona_config import get_persona_config
+        user_name = get_persona_config().primary_user_name
+
         lines = ["[HOW YOU SEE THIS RELATIONSHIP - your private feelings]"]
 
         # Label and certainty
         if evaluation.certainty >= 0.7:
-            lines.append(f"You think of James as {evaluation.label}. You feel sure about this.")
+            lines.append(f"You think of {user_name} as {evaluation.label}. You feel sure about this.")
         elif evaluation.certainty >= 0.4:
-            lines.append(f"You think of James as {evaluation.label}, though you're still figuring it out.")
+            lines.append(f"You think of {user_name} as {evaluation.label}, though you're still figuring it out.")
         else:
             lines.append(f"You're not sure what to call this yet, but you lean toward: {evaluation.label}.")
 

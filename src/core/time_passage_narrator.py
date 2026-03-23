@@ -4,10 +4,10 @@ Time Passage Narrator -- LLM-generated narratives for conversation gaps.
 WHAT: When time passes between messages, generates a natural-language summary
       of what both the companion and user were doing during the gap. Handles
       shared-time scenes (falling asleep together, watching a movie) separately
-      from apart-time (user at work, companion doing her own thing).
+      from apart-time (user at work, companion doing their own thing).
 
 WHY:  A companion that says "hi again" after an 8-hour gap breaks immersion.
-      This narrator produces context like "She dozed off next to you around
+      This narrator produces context like "They dozed off next to you around
       midnight, then got up early to read while you slept in" -- grounded in
       the actual scene state and both parties' schedules.
 
@@ -232,6 +232,12 @@ class TimePassageNarrator:
         transitions: list,
     ) -> str:
         """Narrate what happened when they were APART during the gap."""
+        from src.config.persona_config import get_persona_config
+        _pc = get_persona_config()
+        user_name = _pc.primary_user_name
+        u_subject = _pc.user_pronoun_subject
+        u_subject_cap = u_subject.capitalize()
+
         parts = []
 
         # Simple narrative for being apart
@@ -239,18 +245,18 @@ class TimePassageNarrator:
         end_hour = gap_end.hour
 
         if gap_hours >= 8:
-            # Long gap - she was living her life
+            # Long gap - the companion was living their life
             if any('came back' in t[1] for t in transitions):
-                parts.append("He was at his house with the kids and came back")
+                parts.append(f"{u_subject_cap} was at {_pc.user_pronoun_possessive} house with the kids and came back")
             elif 22 <= start_hour or start_hour < 6:
                 parts.append("You both slept")
             else:
                 parts.append("You've been doing your own thing")
         else:
             if any('kids' in t[1] for t in transitions):
-                parts.append("He is at his house with the kids")
+                parts.append(f"{u_subject_cap} is at {_pc.user_pronoun_possessive} house with the kids")
             elif any('working' in t[1] for t in transitions):
-                parts.append("He has been working")
+                parts.append(f"{u_subject_cap} has been working")
 
         # Add what the companion was doing from their calendar (if available)
         try:

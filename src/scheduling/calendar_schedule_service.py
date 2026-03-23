@@ -264,6 +264,15 @@ class CalendarScheduleService:
                 f"Earlier today you: {', '.join(done_summaries)}."
             )
 
+        # Check for paused events (interrupted by conversation)
+        paused = [e for e in events if e.get('status') == 'paused']
+        if paused:
+            last_paused = paused[-1]
+            parts.append(
+                f"You were doing {last_paused.get('summary', 'something')} "
+                f"but paused to chat. You can go back to it when the conversation wraps up."
+            )
+
         if current:
             summary = current.get('summary', 'something')
             end_time = current.get('end_time', current.get('end', ''))
