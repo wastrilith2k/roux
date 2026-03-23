@@ -177,9 +177,9 @@ def update_event_status(event_id: int, status: str) -> bool:
     """
     Update the status of a schedule event.
 
-    Valid statuses: planned, in_progress, completed, skipped
+    Valid statuses: planned, in_progress, completed, skipped, paused
     """
-    if status not in ('planned', 'in_progress', 'completed', 'skipped'):
+    if status not in ('planned', 'in_progress', 'completed', 'skipped', 'paused'):
         logger.warning(f"Invalid event status: {status}")
         return False
 

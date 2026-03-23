@@ -7,14 +7,14 @@ WHAT: Runs a continuous dual-cadence loop that makes the companion feel present:
       2. WebSocket path (2-5 min):  Checks if she should interject during an
          active web conversation.
       Also: processes incoming Telegram messages, dispatches async Celery tasks,
-      tracks activity transitions, monitors James's calendar, and triggers
+      tracks activity transitions, monitors the user's calendar, and triggers
       autonomous goal actions (budget-gated).
 
 WHY:  A companion that only replies feels transactional.  This service gives
-      her initiative -- she notices when a meeting ends, when it's been too long
-      since they talked, when she finishes a task and has something to share.
+      the companion initiative -- they notice when a meeting ends, when it's been too long
+      since they talked, when they finish a task and have something to share.
       The dual cadence avoids both spam (slow offline) and stale silence (fast
-      when he's right there on the web UI).
+      when the user is right there on the web UI).
 
 HOW IT FITS:
   - Started by start_always_on() at app boot (called from app.py or worker).
@@ -374,6 +374,9 @@ class AlwaysOnService:
 
                 # Check for activity changes and record them
                 self._check_activity_changes()
+
+                # Resume paused schedule events when conversation has gone quiet
+                self._check_paused_events()
 
                 # Check for user's calendar event transitions (event ended = good time to reach out)
                 self._check_calendar_transitions()
@@ -1020,6 +1023,52 @@ class AlwaysOnService:
         except Exception as e:
             logger.warning(f"Could not initialize activity tracking: {e}")
             self._previous_activity_status = None
+
+    def _check_paused_events(self):
+        """Resume paused schedule events when conversation has gone quiet."""
+        try:
+            from src.scheduling.calendar_schedule_service import (
+                get_calendar_schedule_service, is_calendar_schedule_enabled
+            )
+            from src.scheduling.calendar_schedule_generator import update_event_status
+
+            if not is_calendar_schedule_enabled():
+                return
+
+            cal = get_calendar_schedule_service()
+            events = cal.get_today_events()
+            paused = [e for e in events if e.get('status') == 'paused']
+
+            if not paused:
+                return
+
+            # Check if conversation has gone quiet (>10 min since last message)
+            from src.database.db import get_db
+            db = get_db()
+            email = get_persona_config().primary_user_email
+            minutes_since = db.get_minutes_since_last_message(email)
+
+            if minutes_since is not None and minutes_since >= 10:
+                from src.utils.timezone_utils import now_pacific_naive
+                now = now_pacific_naive()
+                for event in paused:
+                    end_time_str = event.get('end_time', '')
+                    if end_time_str:
+                        try:
+                            end_h, end_m = int(end_time_str[:2]), int(end_time_str[3:5])
+                            end_dt = now.replace(hour=end_h, minute=end_m, second=0)
+                            if now < end_dt:
+                                update_event_status(event['id'], 'in_progress')
+                                cal._today_cache = None
+                                logger.info(f"Resumed paused event '{event.get('summary')}' (quiet for {minutes_since}m)")
+                            else:
+                                update_event_status(event['id'], 'completed')
+                                cal._today_cache = None
+                                logger.info(f"Completed paused event '{event.get('summary')}' (time window passed)")
+                        except (ValueError, IndexError):
+                            pass
+        except Exception as e:
+            logger.debug(f"Paused event check failed: {e}")
 
     def _check_activity_changes(self):
         """
