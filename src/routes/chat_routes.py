@@ -135,6 +135,21 @@ def _process_with_bundling(socketio, data, email, sid):
                     socketio.emit('message', result, room=sid)
             else:
                 socketio.emit('error', {'message': 'Failed to process message'}, room=sid)
+
+            # Check for messages that arrived after the pipeline passed its
+            # cancel checkpoints.  Without this, queued messages are silently
+            # dropped in the finally block and the user never gets a response.
+            queued = _user_message_queue.pop(email, [])
+            if queued:
+                bundled = _bundle_messages(queued)
+                current_message = bundled
+                current_data = dict(data)
+                current_data['message'] = bundled
+                logger.info(
+                    f"Processing {len(queued)} late-queued message(s) for {email} "
+                    f"({len(bundled)} chars)"
+                )
+                continue
             break
 
     finally:
