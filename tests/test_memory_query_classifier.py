@@ -116,6 +116,7 @@ class TestEmptyLLMResponse:
              patch.object(classifier, '_fallback_classify', wraps=classifier._fallback_classify) as mock_fb:
             result = classifier._classify_with_llm("Who is Jesse?")
         mock_fb.assert_called_once_with("Who is Jesse?")
+        assert result.is_memory_query is True
 
 
 class TestPreFilterRouting:
