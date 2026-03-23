@@ -117,8 +117,10 @@ Respond with JSON only:
 Query types:
 - specific_event: Asking about a particular past event ("when did we go to...", "remember the time...")
 - emotional_vague: Asking for emotional/significant memories ("favorite memory", "best moment", "happiest time")
-- factual: Asking for facts about people/places/things ("where does X live", "what's my job", "who is X")
-- none: Not a memory query (greetings, requests, roleplay, present-tense conversation)
+- factual: Asking for facts about known people/places/things ("where does X live", "what's my job", "who is X"). These ARE memory queries — the answer comes from stored knowledge about the user's world.
+- none: Not a memory query (greetings, requests, roleplay, present-tense conversation, general knowledge questions)
+
+IMPORTANT: If query_type is "specific_event", "emotional_vague", or "factual", then is_memory_query MUST be true. Only set is_memory_query to false when query_type is "none".
 
 Extract search_terms that would help find relevant memories (names, places, events, dates).
 For emotional_vague queries, use terms like ["significant", "memorable", "emotional", "important"].
@@ -146,9 +148,17 @@ IMPORTANT: Roleplay and present-tense conversation is NOT a memory query.
 
         data = json.loads(text)
 
+        query_type = data.get('query_type', 'none')
+        is_memory_query = data.get('is_memory_query', False)
+
+        # Post-LLM correction: if the LLM assigned a real query type,
+        # it IS a memory query regardless of the is_memory_query flag.
+        if query_type in ('factual', 'specific_event', 'emotional_vague'):
+            is_memory_query = True
+
         result = MemoryQueryResult(
-            is_memory_query=data.get('is_memory_query', False),
-            query_type=data.get('query_type', 'none'),
+            is_memory_query=is_memory_query,
+            query_type=query_type,
             search_terms=data.get('search_terms', []),
             confidence=data.get('confidence', 0.5),
             reasoning=data.get('reasoning', '')
