@@ -134,6 +134,64 @@ class TestEmptyLLMResponse:
         assert result.is_memory_query is True
 
 
+class TestIssue3KeywordPreFilterTooRestrictive:
+    """Regression tests for issue #3: keyword pre-filter misses valid memory queries."""
+
+    @pytest.mark.parametrize("message", [
+        "I've been feeling weird about what happened",
+        "What did I tell you about my job?",
+        "Remember that thing I mentioned?",
+        "What did you tell me months ago about my childhood?",
+        "What was the name of that restaurant I mentioned once?",
+        "I think I mentioned something about Kyler's grades",
+        "What was going on with us back in January?",
+    ])
+    def test_issue3_queries_pass_prefilter(self, classifier, message):
+        """All issue #3 failing queries must pass the pre-filter and reach the LLM."""
+        with patch.object(classifier, '_classify_with_llm') as mock_llm:
+            mock_llm.return_value = MemoryQueryResult(
+                is_memory_query=True, query_type='specific_event',
+                search_terms=[], confidence=0.9
+            )
+            classifier.classify(message)
+        mock_llm.assert_called_once(), f"'{message}' should reach the LLM"
+
+    @pytest.mark.parametrize("message,expected_type", [
+        ("What did I tell you about my job?", "specific_event"),
+        ("Remember that thing I mentioned?", "specific_event"),
+        ("I think I mentioned something about Kyler's grades", "specific_event"),
+        ("What did you tell me months ago about my childhood?", "specific_event"),
+    ])
+    def test_issue3_queries_fallback_detects_memory(self, classifier, message, expected_type):
+        """On LLM failure, fallback must still detect these as memory queries."""
+        result = classifier._fallback_classify(message)
+        assert result.is_memory_query is True, f"'{message}' should be a memory query in fallback"
+
+    def test_new_keywords_in_list(self, classifier):
+        """Verify the new keywords were added to MEMORY_KEYWORDS."""
+        keywords = classifier.MEMORY_KEYWORDS
+        for kw in ['mentioned', 'told you', 'told me', 'said about',
+                    'talked about', 'brought up', 'discussed',
+                    'what did i', 'what did you', 'months ago',
+                    'weeks ago', 'years ago', 'back in',
+                    'childhood', 'growing up']:
+            assert kw in keywords, f"'{kw}' missing from MEMORY_KEYWORDS"
+
+    def test_min_length_reduced(self, classifier):
+        """Messages between 5 and 10 chars should no longer be rejected by length alone."""
+        # "Who's X?" is 9 chars - should not be rejected by length
+        # It has no memory keywords, but let's verify the length check itself
+        # We test by providing a short message WITH a memory keyword
+        with patch.object(classifier, '_classify_with_llm') as mock_llm:
+            mock_llm.return_value = MemoryQueryResult(
+                is_memory_query=True, query_type='specific_event',
+                search_terms=[], confidence=0.9
+            )
+            # 9 chars, has "recall"
+            classifier.classify("recall X")
+        mock_llm.assert_called_once()
+
+
 class TestPreFilterRouting:
     """Ensure pre-filter correctly routes to LLM or rejects."""
 
