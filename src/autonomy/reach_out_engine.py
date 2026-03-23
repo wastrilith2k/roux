@@ -622,9 +622,18 @@ class ReachOutEngine:
         if not is_autonomy_enabled():
             return False, "autonomy disabled", None
 
+        _pc = get_persona_config()
+        user_name = _pc.primary_user_name
+        c_subject = _pc.companion_pronoun_subject
+        c_subject_cap = c_subject.capitalize()
+        c_possessive = _pc.companion_pronoun_possessive
+        u_subject = _pc.user_pronoun_subject
+        u_object = _pc.user_pronoun_object
+        u_possessive = _pc.user_pronoun_possessive
+
         context = self.get_context()
 
-        # Hard guards based on her actual state
+        # Hard guards based on the companion's actual state
         if context.get('is_asleep', False):
             return False, "asleep", None
 
@@ -804,41 +813,41 @@ Suggested opener direction: {opener_hint}
                 goal_hints_section += f"- {hint}\n"
             goal_hints_section += "(Only if it feels natural — don't force these into conversation)\n"
 
-        prompt = f"""You are the companion's internal decision-making process. Decide if she should message James right now.
+        prompt = f"""You are the companion's internal decision-making process. Decide if {c_subject} should message {user_name} right now.
 
 CURRENT SITUATION:
 - Time: {context.get('current_time')}
 - Hours since last message: {context.get('hours_since_last_message', 'unknown')}
 - Last speaker: {context.get('last_speaker', 'unknown')}
-- Waiting for his response: {context.get('waiting_for_response', False)}
+- Waiting for {u_possessive} response: {context.get('waiting_for_response', False)}
 
-HER SCHEDULE:
+{c_possessive.upper()} SCHEDULE:
 {schedule_context}
 
-JAMES'S CALENDAR (may have stale/recurring events — trust what you know from conversations over calendar):
+{user_name.upper()}'S CALENDAR (may have stale/recurring events — trust what you know from conversations over calendar):
 {context.get('james_upcoming_events', 'No calendar data available')}
-{f"⚠️ James appears to be in: {context.get('james_current_event')} (but verify against what you know)" if context.get('james_calendar_busy') else "James appears free right now"}
+{f"⚠️ {user_name} appears to be in: {context.get('james_current_event')} (but verify against what you know)" if context.get('james_calendar_busy') else f"{user_name} appears free right now"}
 
 RECENT EXCHANGE:
 {chr(10).join(context.get('recent_exchange', ['No recent messages']))}
 
-HER PRIVATE STATE (things on her mind, feelings):
+{c_possessive.upper()} PRIVATE STATE (things on {c_possessive} mind, feelings):
 {context.get('private_thoughts', 'Unknown')}
 {curiosity_section}{opinions_section}{calendar_section}{trigger_section}{goal_hints_section}
 ---
 
 DECISION CRITERIA:
-- Does she have something genuine to share? (thought, feeling, something that happened in her day)
-- Is this a natural time given what she's doing? (don't message during focused work)
+- Does {c_subject} have something genuine to share? (thought, feeling, something that happened in {c_possessive} day)
+- Is this a natural time given what {c_subject}'s doing? (don't message during focused work)
 - Would a real person in this relationship message right now?
-- Is there something from her schedule/day she might mention?
+- Is there something from {c_possessive} schedule/day {c_subject} might mention?
 - Did a natural trigger fire? (morning greeting, end of day, thinking of you)
 
 DON'T reach out if:
-- She just messaged and is waiting for a response (unless hours have passed)
-- It's purely to check if he's there (that's clingy)
-- She has nothing specific to say
-- She's in the middle of something that requires focus
+- {c_subject_cap} just messaged and is waiting for a response (unless hours have passed)
+- It's purely to check if {u_subject}'s there (that's clingy)
+- {c_subject_cap} has nothing specific to say
+- {c_subject_cap}'s in the middle of something that requires focus
 
 DO reach out if:
 - A natural trigger fired (morning greeting, end of workday check-in)
@@ -927,22 +936,27 @@ Respond with JSON only:
         Generate a full message for reaching out.
 
         Routes through the full conversation pipeline for consistency
-        with her voice, personality, memory validation, and internal state.
+        with the companion's voice, personality, memory validation, and internal state.
         """
         if context is None:
             context = self.get_context()
 
-        # Build synthetic trigger message that represents why she's reaching out
+        _pc = get_persona_config()
+        user_name = _pc.primary_user_name
+        c_subject = _pc.companion_pronoun_subject
+        c_possessive = _pc.companion_pronoun_possessive
+
+        # Build synthetic trigger message that represents why the companion is reaching out
         # This gives the pipeline context about the proactive nature of the message
         trigger_parts = ["[PROACTIVE_MESSAGE_TRIGGER]"]
-        trigger_parts.append("The companion wants to reach out to James on her own initiative.")
+        trigger_parts.append(f"The companion wants to reach out to {user_name} on {c_possessive} own initiative.")
         trigger_parts.append("")
 
         if context.get('private_thoughts'):
-            trigger_parts.append(f"What's on her mind: {context.get('private_thoughts')}")
+            trigger_parts.append(f"What's on {c_possessive} mind: {context.get('private_thoughts')}")
 
         if context.get('what_shes_doing'):
-            trigger_parts.append(f"What she's currently doing: {context.get('what_shes_doing')}")
+            trigger_parts.append(f"What {c_subject}'s currently doing: {context.get('what_shes_doing')}")
 
         hours_since = context.get('hours_since_last_message', 0)
         if hours_since:

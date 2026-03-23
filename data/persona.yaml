@@ -7,12 +7,22 @@ companion:
   short_name: "Companion"
   email: ""
   entity_profile: "companion"       # -> data/entity_profiles/companion.yaml
+  pronouns:
+    subject: "they"      # she/he/they
+    object: "them"       # her/him/them
+    possessive: "their"  # her/his/their
+    reflexive: "themselves" # herself/himself/themselves
 
 primary_user:
   name: "User"
   email: ""
   entity_profile: "user"            # -> data/entity_profiles/user.yaml
   timezone: "America/Los_Angeles"
+  pronouns:
+    subject: "they"
+    object: "them"
+    possessive: "their"
+    reflexive: "themselves"
 
 # Relationship is NOT typed — let the relationship_evaluation system
 # classify and evolve it from actual interactions. Only provide

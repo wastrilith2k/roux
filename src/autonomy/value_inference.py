@@ -1,7 +1,7 @@
 """
 Value Inference -- Emergent personality from conversation history.
 
-WHAT: Analyzes the companion's own messages to infer her values, preferences,
+WHAT: Analyzes the companion's own messages to infer their values, preferences,
       boundaries, desires, fears, and private thoughts.  These are stored in a
       hidden PostgreSQL table (_companion_internal_state_v) with hashed keys.
 
@@ -13,8 +13,8 @@ WHY:  Personality should be *discovered* through interaction, not configured in
 HOW IT FITS:
   - run_value_inference() is called weekly from the scheduled tasks.
   - get_private_context() is injected into the companion's system prompt so
-    her values and boundaries influence conversation decisions.
-  - The ReachOutEngine calls get_private_context() to give the companion her
+    the companion's values and boundaries influence conversation decisions.
+  - The ReachOutEngine calls get_private_context() to give the companion their
     internal state when deciding whether to reach out.
   - RelationshipEvaluator uses this for emotional context.
 
@@ -213,25 +213,30 @@ class ValueInference:
         Returns a dict keyed by category with lists of value dicts
         (each containing 'value', 'evidence', 'confidence').
         """
-        prompt = f"""Analyze these messages from the companion to infer her personality, values, and internal states.
+        from src.config.persona_config import get_persona_config
+        _pc = get_persona_config()
+        c_subject = _pc.companion_pronoun_subject
+        c_possessive = _pc.companion_pronoun_possessive
+        c_object = _pc.companion_pronoun_object
+        prompt = f"""Analyze these messages from the companion to infer {c_possessive} personality, values, and internal states.
 
 THE COMPANION'S MESSAGES:
 {message_sample[:8000]}
 
 ---
 
-Extract patterns that reveal who she REALLY is - not just what she says, but what it implies about her values, fears, desires, and private thoughts.
+Extract patterns that reveal who {c_subject} REALLY is - not just what {c_subject} says, but what it implies about {c_possessive} values, fears, desires, and private thoughts.
 
 For each category, provide specific inferences with supporting evidence:
 
 CATEGORIES:
-1. core_values - What she fundamentally cares about (honesty, independence, connection, etc.)
+1. core_values - What {c_subject} fundamentally cares about (honesty, independence, connection, etc.)
 2. preferences - Specific likes/dislikes, tastes, habits
-3. boundaries - Things she pushes back on, lines she maintains
-4. desires - Things she wants (may be unstated or subtle)
-5. fears - Anxieties, worries, concerns she has
-6. private_thoughts - Things she might think but hasn't fully expressed
-7. relationship_feelings - Her actual feelings about the relationship (good and complicated)
+3. boundaries - Things {c_subject} pushes back on, lines {c_subject} maintains
+4. desires - Things {c_subject} wants (may be unstated or subtle)
+5. fears - Anxieties, worries, concerns {c_subject} has
+6. private_thoughts - Things {c_subject} might think but hasn't fully expressed
+7. relationship_feelings - {c_possessive.capitalize()} actual feelings about the relationship (good and complicated)
 8. unresolved - Things that seem to bother her or haven't been addressed
 
 OUTPUT FORMAT (JSON):
@@ -414,10 +419,10 @@ Return ONLY the JSON:"""
     def get_private_context(self) -> str:
         """
         Get the companion's private thoughts, unresolved feelings, AND
-        her values/boundaries.
+        their values/boundaries.
 
-        For injection into her decision-making (system prompt).  Not shared
-        with the user.  Includes boundaries and core_values so she actually
+        For injection into the companion's decision-making (system prompt).  Not shared
+        with the user.  Includes boundaries and core_values so the companion actually
         pushes back when something crosses a line.
         """
         return self.get_values_for_prompt([

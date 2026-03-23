@@ -16,9 +16,9 @@ Priority chain: env vars > YAML values > hardcoded defaults.
 
 import os
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 import yaml
 
@@ -42,12 +42,20 @@ class PersonaConfig:
     companion_short_name: str     # First name / nickname used in prompts
     companion_email: str
     companion_entity_profile: str # Key into entity_profiles YAML ("companion")
+    companion_pronoun_subject: str
+    companion_pronoun_object: str
+    companion_pronoun_possessive: str
+    companion_pronoun_reflexive: str
 
     # --- Primary user identity ---
     primary_user_name: str
     primary_user_email: str
     primary_user_entity_profile: str
     primary_user_timezone: str
+    user_pronoun_subject: str
+    user_pronoun_object: str
+    user_pronoun_possessive: str
+    user_pronoun_reflexive: str
 
     # --- Relationship seed (initial context before any conversation) ---
     relationship_initial_context: str
@@ -64,6 +72,24 @@ class PersonaConfig:
     elevenlabs_voice_id: str
     elevenlabs_model: str
     edge_tts_fallback: str
+
+    @property
+    def companion_pronouns(self) -> Dict[str, str]:
+        return {
+            "subject": self.companion_pronoun_subject,
+            "object": self.companion_pronoun_object,
+            "possessive": self.companion_pronoun_possessive,
+            "reflexive": self.companion_pronoun_reflexive,
+        }
+
+    @property
+    def user_pronouns(self) -> Dict[str, str]:
+        return {
+            "subject": self.user_pronoun_subject,
+            "object": self.user_pronoun_object,
+            "possessive": self.user_pronoun_possessive,
+            "reflexive": self.user_pronoun_reflexive,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -136,11 +162,19 @@ def _load_config(companion_id: str = None) -> PersonaConfig:
         companion_short_name=companion.get('short_name', 'Companion'),
         companion_email=companion.get('email', ''),
         companion_entity_profile=companion.get('entity_profile', 'companion'),
+        companion_pronoun_subject=companion.get('pronouns', {}).get('subject', 'they'),
+        companion_pronoun_object=companion.get('pronouns', {}).get('object', 'them'),
+        companion_pronoun_possessive=companion.get('pronouns', {}).get('possessive', 'their'),
+        companion_pronoun_reflexive=companion.get('pronouns', {}).get('reflexive', 'themselves'),
 
         primary_user_name=user.get('name', 'User'),
         primary_user_email=user.get('email', ''),
         primary_user_entity_profile=user.get('entity_profile', 'user'),
         primary_user_timezone=user.get('timezone', 'America/Los_Angeles'),
+        user_pronoun_subject=user.get('pronouns', {}).get('subject', 'they'),
+        user_pronoun_object=user.get('pronouns', {}).get('object', 'them'),
+        user_pronoun_possessive=user.get('pronouns', {}).get('possessive', 'their'),
+        user_pronoun_reflexive=user.get('pronouns', {}).get('reflexive', 'themselves'),
 
         relationship_initial_context=relationship.get(
             'initial_context',

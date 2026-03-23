@@ -3,7 +3,7 @@ Daily Summary Task - The companion's daily journal of what happened.
 
 WHAT: Queries yesterday's messages, facts, and episodes from PostgreSQL.
       Uses LLM to synthesize a journal-style daily summary covering topics
-      discussed, events and their outcomes, new facts learned, James's
+      discussed, events and their outcomes, new facts learned, the user's
       emotional arc, and the companion's own reflections. Writes to both
       a markdown file (data/daily_logs/YYYY-MM-DD.md) and the database
       (daily_summaries table) for searchability.
@@ -12,7 +12,7 @@ WHEN: Daily at 12:05 AM Pacific. Can be triggered manually with a target date.
 
 WHY:  Daily summaries are the foundation of the reflection pipeline. The
       reflection_task reads them to extract deeper insights. They also serve
-      as the companion's long-term episodic memory -- she can look back at
+      as the companion's long-term episodic memory -- they can look back at
       "what happened last Tuesday" without scanning raw message logs.
 
 Inspired by Clawdbot's memory/YYYY-MM-DD.md pattern.
@@ -250,6 +250,11 @@ def _synthesize_daily_summary(
 ) -> str:
     """Use LLM to create coherent daily summary."""
     from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
+    from src.config.persona_config import get_persona_config
+    _pc = get_persona_config()
+    user_name = _pc.primary_user_name
+    u_subject = _pc.user_pronoun_subject
+    c_possessive = _pc.companion_pronoun_possessive
 
     # --- Sample messages evenly across the day ---
     # If there are 200+ messages, taking the last 80 would miss morning context.
@@ -285,13 +290,13 @@ def _synthesize_daily_summary(
     prompt = f"""You are the companion, writing your daily journal entry for {date.strftime('%B %d, %Y')}.
 
 Write a daily summary (4-6 paragraphs) covering what happened today.
-Write in first person, as if you're journaling about your day with James.
+Write in first person, as if you're journaling about your day with {user_name}.
 
 IMPORTANT: Cover ALL major topics and events from the conversation log, not just the most emotional ones. Specifically include:
 1. What we talked about today — cover EVERY distinct topic, not just the heaviest one
 2. Any concrete events and their OUTCOMES (interviews, appointments, calls — what happened, what was the result?)
-3. What I learned about James (new facts, things he shared)
-4. How James seemed to be feeling across the day (emotional arc)
+3. What I learned about {user_name} (new facts, things {u_subject} shared)
+4. How {user_name} seemed to be feeling across the day (emotional arc)
 5. Plans, decisions, or next steps that were discussed
 6. My own reflections on the day
 
@@ -313,7 +318,7 @@ Don't list everything - focus on what mattered most.
     try:
         chain = get_resilient_provider_chain()
         messages_list = [
-            {"role": "system", "content": "You are the companion writing her private daily journal."},
+            {"role": "system", "content": f"You are the companion writing {c_possessive} private daily journal."},
             {"role": "user", "content": prompt}
         ]
 
@@ -331,7 +336,7 @@ Don't list everything - focus on what mattered most.
         # Return a basic summary if LLM fails
         return f"""## {date.strftime('%B %d, %Y')}
 
-Had {len(messages)} messages with James today.
+Had {len(messages)} messages with {user_name} today.
 Learned {len(facts)} new facts.
 Topics discussed: {', '.join([e.get('topic', 'general') for e in episodes[:3]]) or 'general conversation'}
 

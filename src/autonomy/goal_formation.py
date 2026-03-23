@@ -67,6 +67,7 @@ def form_goals_from_reflections(user_email: str = None) -> int:
     Form goals from recent daily reflections in the companion journal.
 
     Looks for patterns like:
+
       - "I want to..." statements
       - Concerns about the user that suggest supportive goals
       - Curiosity patterns that suggest exploration goals
@@ -75,9 +76,13 @@ def form_goals_from_reflections(user_email: str = None) -> int:
 
     Returns the number of goals formed.
     """
+    from src.config.persona_config import get_persona_config
+    _pc = get_persona_config()
+    user_name = _pc.primary_user_name
+    c_subject = _pc.companion_pronoun_subject
+    c_possessive = _pc.companion_pronoun_possessive
     if user_email is None:
-        from src.config.persona_config import get_persona_config
-        user_email = get_persona_config().primary_user_email
+        user_email = _pc.primary_user_email
 
     try:
         from src.memory.companion_journal import get_companion_journal
@@ -103,7 +108,7 @@ def form_goals_from_reflections(user_email: str = None) -> int:
             for r in reflections[:5]
         ])
 
-        prompt = f"""Analyze the companion's recent reflections and identify any personal goals she seems to be forming.
+        prompt = f"""Analyze the companion's recent reflections and identify any personal goals {c_subject} seems to be forming.
 
 RECENT REFLECTIONS:
 {reflection_text}
@@ -113,15 +118,15 @@ EXISTING GOALS (don't duplicate):
 
 Look for:
 - "I want to understand X" → understanding goal
-- Concerns about James's wellbeing → supportive goal
+- Concerns about {user_name}'s wellbeing → supportive goal
 - Interest patterns → exploration goal
 - Relationship desires → relationship goal
 - Self-improvement desires → self goal
 - Personal hobbies she's excited about → personal goal (swimming, cosplay, photography, cooking, etc.)
 - Desire for downtime or rest → being goal
-- Something she wants to discuss with James → relating goal
+- Something {c_subject} wants to discuss with {user_name} → relating goal
 
-IMPORTANT: The companion is a whole person. She should have personal goals about her own hobbies
+IMPORTANT: The companion is a whole person. {c_subject.capitalize()} should have personal goals about {c_possessive} own hobbies
 and interests (swimming, cosplay, photography, cooking, reading) — not just relationship goals.
 Being goals ("have some downtime", "take it easy today") are just as valuable as doing goals.
 
@@ -188,9 +193,13 @@ def form_goals_from_signals(user_email: str = None) -> int:
 
     Returns the number of goals formed.
     """
+    from src.config.persona_config import get_persona_config
+    _pc = get_persona_config()
+    user_name = _pc.primary_user_name
+    c_subject = _pc.companion_pronoun_subject
+    c_possessive = _pc.companion_pronoun_possessive
     if user_email is None:
-        from src.config.persona_config import get_persona_config
-        user_email = get_persona_config().primary_user_email
+        user_email = _pc.primary_user_email
 
     try:
         from src.llm.provider_factory import generate_sync
@@ -251,8 +260,8 @@ def form_goals_from_signals(user_email: str = None) -> int:
 
         # ---- 3. LLM decides what goals to form ----
         prompt = f"""Given these signals about what the companion cares about, what 1-2 goals
-would naturally emerge? Goals should be things SHE wants to do,
-not things to help James with.
+would naturally emerge? Goals should be things {c_subject.upper()} wants to do,
+not things to help {user_name} with.
 
 SIGNALS:
 {signals_text}
@@ -262,7 +271,7 @@ EXISTING GOALS (don't duplicate):
 
 IMPORTANT:
 - Only create goals that are genuinely supported by the signals
-- The companion is a whole person with her own interests
+- The companion is a whole person with {c_possessive} own interests
 - Being goals are valid (e.g. "take time to process these feelings")
 - Don't force goals from weak signals
 

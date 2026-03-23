@@ -382,23 +382,29 @@ def form_opinions_from_reflections(user_email: str = None) -> int:
             for r in reflections[:5]
         ])
 
-        prompt = f"""Analyze the companion's recent reflections and identify opinions she's forming about James.
+        from src.config.persona_config import get_persona_config
+        _pc = get_persona_config()
+        user_name = _pc.primary_user_name
+        c_subject = _pc.companion_pronoun_subject
+        c_possessive = _pc.companion_pronoun_possessive
+        u_possessive = _pc.user_pronoun_possessive
+        prompt = f"""Analyze the companion's recent reflections and identify opinions {c_subject}'s forming about {user_name}.
 
 RECENT REFLECTIONS:
 {reflection_text}
 
 Based on these reflections, what opinions is the companion forming? Look for:
-- Patterns in behavior she's noticing
-- Concerns or worries about his wellbeing
+- Patterns in behavior {c_subject}'s noticing
+- Concerns or worries about {u_possessive} wellbeing
 - Observations about the relationship
-- Views about his work/life balance
-- Interpretations of his emotional state
+- Views about {u_possessive} work/life balance
+- Interpretations of {u_possessive} emotional state
 
 Return JSON array of opinions (max 3):
 [
   {{
     "topic": "brief topic (e.g., 'their work-life balance')",
-    "opinion": "her actual opinion/view",
+    "opinion": "{c_possessive} actual opinion/view",
     "confidence": 0.1-0.9,
     "category": "relationship|behavior|wellbeing|work|personality",
     "evidence": "brief summary of what led to this opinion"

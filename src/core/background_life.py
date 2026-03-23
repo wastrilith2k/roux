@@ -2,11 +2,11 @@
 Background Life -- tracks the companion's activities between conversations.
 
 WHAT: Records what the companion was doing while the user was away, based on
-      her schedule and the time of day. Produces an activity log and a narrative
+      the companion's schedule and the time of day. Produces an activity log and a narrative
       summary that bridges the gap when conversation resumes.
 
 WHY:  Without this, the companion either says nothing about the gap ("hi again")
-      or invents something random. By grounding background activities in her
+      or invents something random. By grounding background activities in the
       actual schedule, the narrative feels consistent: "I finished my morning
       focus block and then read for a bit" instead of a generic filler.
 
@@ -141,7 +141,7 @@ class BackgroundLife:
         """
         Generate what the companion was doing during idle time.
 
-        Uses her schedule + time of day to infer realistic activities.
+        Uses the companion's schedule + time of day to infer realistic activities.
         Returns a natural description for the prompt.
         """
         from src.scheduling.companion_schedule import get_companion_schedule
@@ -150,7 +150,7 @@ class BackgroundLife:
         now = now_pacific_naive()
         schedule = get_companion_schedule()
 
-        # Get what time block(s) she was in during the gap
+        # Get what time block(s) the companion was in during the gap
         gap_start = now - timedelta(hours=gap_hours)
 
         # Determine activity based on schedule and time
@@ -158,10 +158,10 @@ class BackgroundLife:
         description = "relaxing"
 
         try:
-            # Check if she was working during the gap
+            # Check if the companion was working during the gap
             if schedule.is_working_now(gap_start):
                 activity_type = "work"
-                # Get her current work projects for context
+                # Get current work projects for context
                 today_schedule = schedule.get_today_schedule()
                 if today_schedule:
                     workload = today_schedule.get('workload', 'normal')

@@ -141,7 +141,9 @@ class EpisodeLearningExtractor:
             topic = episode.get('topic', 'general conversation')
             emotional_state = episode.get('emotional_state', 'neutral')
 
-            prompt = f"""Analyze this conversation between James (user) and the companion.
+            from src.config.persona_config import get_persona_config
+            user_name = get_persona_config().primary_user_name
+            prompt = f"""Analyze this conversation between {user_name} (user) and the companion.
 
 CONVERSATION TOPIC: {topic}
 EMOTIONAL CONTEXT: {emotional_state}
