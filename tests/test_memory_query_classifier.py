@@ -69,33 +69,48 @@ class TestFallbackTruePositives:
         assert result.query_type == 'emotional_vague'
 
 
+class TestPreFilterRejection:
+    """Verify pre-filter rejects generic queries before they reach the LLM."""
+
+    @pytest.mark.parametrize("message", [
+        "What's the weather like?",
+        "Who's ready?",
+    ])
+    def test_generic_queries_rejected_by_prefilter(self, classifier, message):
+        """These messages have no memory keywords and no factual patterns, so the
+        pre-filter returns is_memory_query=False without ever calling the LLM."""
+        with patch.object(classifier, '_classify_with_llm') as mock_llm:
+            result = classifier.classify(message)
+        mock_llm.assert_not_called()
+        assert result.is_memory_query is False
+        assert result.query_type == 'none'
+
+
 class TestClassifyWithLLMFailure:
     """Test the real failure path: classify() -> LLM exception -> fallback."""
 
-    def test_weather_not_memory_on_llm_failure(self, classifier):
-        """Issue #2 regression: the actual production path."""
-        with patch.object(classifier, '_classify_with_llm', side_effect=Exception("LLM unavailable")):
-            result = classifier.classify("What's the weather like?")
-        assert result.is_memory_query is False
-        assert result.query_type == 'none'
-
-    def test_whos_ready_not_memory_on_llm_failure(self, classifier):
-        with patch.object(classifier, '_classify_with_llm', side_effect=Exception("LLM unavailable")):
-            result = classifier.classify("Who's ready?")
-        assert result.is_memory_query is False
-        assert result.query_type == 'none'
-
-    def test_what_is_generic_not_memory_on_llm_failure(self, classifier):
-        with patch.object(classifier, '_classify_with_llm', side_effect=Exception("LLM unavailable")):
-            result = classifier.classify("What is the time?")
-        assert result.is_memory_query is False
-        assert result.query_type == 'none'
-
     def test_who_is_factual_on_llm_failure(self, classifier):
+        """"Who is Jesse?" matches factual pattern, reaches LLM, falls back on error."""
         with patch.object(classifier, '_classify_with_llm', side_effect=Exception("LLM unavailable")):
             result = classifier.classify("Who is Jesse?")
         assert result.is_memory_query is True
         assert result.query_type == 'factual'
+
+    def test_memory_keyword_non_memory_on_llm_failure(self, classifier):
+        """"before" is a memory keyword so this passes pre-filter to LLM.
+        On LLM failure, fallback finds no event/emotional/factual pattern → none."""
+        with patch.object(classifier, '_classify_with_llm', side_effect=Exception("LLM unavailable")):
+            result = classifier.classify("What should we do before dinner?")
+        assert result.is_memory_query is False
+        assert result.query_type == 'none'
+
+    def test_what_is_the_time_non_memory_on_llm_failure(self, classifier):
+        """"the time" matches MEMORY_KEYWORDS so this reaches the LLM.
+        On LLM failure, fallback finds no matching pattern → none."""
+        with patch.object(classifier, '_classify_with_llm', side_effect=Exception("LLM unavailable")):
+            result = classifier.classify("What is the time?")
+        assert result.is_memory_query is False
+        assert result.query_type == 'none'
 
 
 class TestEmptyLLMResponse:
