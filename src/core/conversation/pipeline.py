@@ -85,6 +85,15 @@ CURRENT TIME: {current_time}
 RECENT CONVERSATION:
 {recent_context}"""
 
+# Import the new structured tool reasoning module
+from .tool_reasoning import (
+    make_tool_decision,
+    build_tool_code,
+    build_verification_code,
+    ToolDecision,
+    TOOL_REASONING_ENABLED,
+)
+
 
 @dataclass
 class PipelineResult:
@@ -1046,11 +1055,17 @@ Just write the message itself, nothing else.
         conversation_turns: list = None
     ) -> tuple[str, str, list]:
         """
-        Call the LLM with tool execution support (agentic loop).
+        Call the LLM with tool execution support.
 
-        This method enables the companion to execute Python code to accomplish tasks.
-        Instead of loading many tool schemas, she gets ONE tool: execute_code.
-        She writes Python to call the tools modules as needed.
+        Two-phase approach:
+        1. REASONING PHASE: Structured tool decision (make_tool_decision) determines
+           whether tools are needed, what action to take, and whether verification
+           is required before mutating external state.
+        2. EXECUTION PHASE: If tools are needed, execute verification first (if
+           required), then the tool action, then pass results to the main model.
+
+        Falls back to the legacy agentic loop if structured reasoning is disabled
+        or if the reasoning step produces a tool action we can't template.
 
         Args:
             system_prompt: Assembled system prompt
@@ -1060,15 +1075,93 @@ Just write the message itself, nothing else.
         Returns:
             Tuple of (response_text, model_name, tool_calls_made)
         """
+        # Phase 1: Structured tool reasoning
+        if TOOL_REASONING_ENABLED:
+            decision = make_tool_decision(
+                user_message=user_message,
+                conversation_turns=conversation_turns,
+            )
+
+            if not decision.needs_tool:
+                # Reasoning says no tool needed — go straight to main model
+                response, model = self._call_llm(system_prompt, user_message, conversation_turns)
+                return response, model, []
+
+            # Phase 2: Execute with verification guardrail
+            tool_calls_made = []
+
+            # Step 2a: Verification — check before acting on external mutations
+            if decision.verification_needed:
+                verification_code = build_verification_code(decision)
+                if verification_code:
+                    logger.info(f"Running pre-action verification: {decision.verification_query}")
+                    verification_result = self.code_executor.execute(verification_code)
+                    tool_calls_made.append({
+                        "tool": "verification",
+                        "code": verification_code[:200],
+                        "result": verification_result[:500] if verification_result else "(no output)"
+                    })
+                    logger.info(f"Verification result: {verification_result[:100]}...")
+
+            # Step 2b: Execute the tool action
+            tool_code = build_tool_code(decision)
+            if tool_code:
+                logger.info(f"Executing tool action: {decision.tool_action}")
+                result = self.code_executor.execute(tool_code)
+                tool_calls_made.append({
+                    "tool": decision.tool_action,
+                    "code": tool_code[:200],
+                    "result": result[:500] if result else "(no output)"
+                })
+                logger.info(f"Tool result: {result[:100]}...")
+            else:
+                # Structured reasoning decided a tool is needed but we have no
+                # template — fall through to legacy agentic loop
+                logger.info(
+                    f"No code template for action '{decision.tool_action}' "
+                    f"— falling back to legacy tool loop"
+                )
+                return self._call_llm_with_tools_legacy(
+                    system_prompt, user_message, conversation_turns
+                )
+
+            # Step 2c: Pass tool results to main model for personality response
+            if tool_calls_made:
+                tool_context = "\n\n[TOOL RESULTS - Use this information in your response]\n"
+                for tc in tool_calls_made:
+                    tool_context += f"Tool: {tc['tool']}\nResult: {tc['result']}\n---\n"
+                enhanced_prompt = system_prompt + tool_context
+                response, model = self._call_llm(enhanced_prompt, user_message, conversation_turns)
+                return response, model, tool_calls_made
+
+            # No tool calls actually made (edge case) — just call main model
+            response, model = self._call_llm(system_prompt, user_message, conversation_turns)
+            return response, model, []
+
+        # Fallback: tool reasoning disabled, use legacy loop
+        return self._call_llm_with_tools_legacy(
+            system_prompt, user_message, conversation_turns
+        )
+
+    def _call_llm_with_tools_legacy(
+        self,
+        system_prompt: str,
+        user_message: str,
+        conversation_turns: list = None
+    ) -> tuple[str, str, list]:
+        """
+        Legacy agentic tool loop (GPT-4o-mini routing + execute_code).
+
+        Preserved as fallback when structured tool reasoning is disabled or
+        when the reasoning step produces an action we can't template.
+        """
         from src.core.code_executor import EXECUTE_CODE_TOOL
 
-        # Build minimal tool-routing prompt for GPT-4o-mini
-        # (The full companion personality prompt causes it to roleplay instead of routing)
         recent_context = ""
         if conversation_turns:
+            from src.config.persona_config import get_persona_config
+            _pc = get_persona_config()
             for turn in conversation_turns[-6:]:
-                from src.config.persona_config import get_persona_config
-                _pc = get_persona_config()
                 role_label = _pc.primary_user_name if turn["role"] == "user" else _pc.companion_short_name
                 recent_context += f"{role_label}: {turn['content'][:150]}\n"
 
@@ -1080,19 +1173,16 @@ Just write the message itself, nothing else.
         messages = [{"role": "system", "content": tool_prompt}]
         messages.append({"role": "user", "content": user_message})
 
-        logger.info(f"Tool routing: sending to GPT-4o-mini ({len(tool_prompt)} char prompt)")
+        logger.info(f"Legacy tool routing: sending to GPT-4o-mini ({len(tool_prompt)} char prompt)")
 
-        # Agentic loop - allow up to 5 tool calls
         MAX_TOOL_CALLS = 5
         tool_calls_made = []
         temperature = self._get_dynamic_temperature(user_message, system_prompt)
 
-        # Cost tracking
         from src.core.cost_tracker import get_cost_tracker
         cost_tracker = get_cost_tracker()
 
         for iteration in range(MAX_TOOL_CALLS + 1):
-            # Use OpenAI gpt-4o-mini for tool calling (much cheaper than Claude)
             try:
                 from src.llm.openai_provider import get_openai_tool_provider
 
@@ -1111,18 +1201,12 @@ Just write the message itself, nothing else.
 
             except Exception as e:
                 logger.error(f"Tool-enabled LLM call failed: {e}")
-                # Fall back to standard LLM
                 response, model = self._call_llm(system_prompt, user_message, conversation_turns)
                 return response, model, []
 
-            # Check if response is a tool call or text
             if isinstance(response, str):
-                logger.info(f"Tool routing: GPT-4o-mini returned text: {response[:80]}")
-                # gpt-4o-mini returned text - but we want the MAIN MODEL for personality
-                # If no tools were used, just call main model
-                # If tools WERE used, add tool context and call main model
+                logger.info(f"Legacy tool routing: GPT-4o-mini returned text: {response[:80]}")
                 if tool_calls_made:
-                    # Add tool results as context for main model
                     tool_context = "\n\n[TOOL RESULTS - Use this information in your response]\n"
                     for tc in tool_calls_made:
                         tool_context += f"Tool: {tc['tool']}\nResult: {tc['result']}\n---\n"
@@ -1130,17 +1214,14 @@ Just write the message itself, nothing else.
                     response, model = self._call_llm(enhanced_prompt, user_message, conversation_turns)
                     return response, model, tool_calls_made
                 else:
-                    # No tools needed - use main model for personality response
                     response, model = self._call_llm(system_prompt, user_message, conversation_turns)
                     return response, model, []
 
             if isinstance(response, dict) and response.get("type") == "tool_use":
-                # Tool call requested
                 tool_name = response.get("tool_name")
                 tool_input = response.get("tool_input", {})
                 tool_use_id = response.get("tool_use_id")
 
-                # Track cost for this tool call
                 usage = response.get("usage", {})
                 if usage:
                     cost_tracker.record_call(
@@ -1156,19 +1237,16 @@ Just write the message itself, nothing else.
                     code = tool_input.get("code", "")
                     logger.debug(f"Executing code: {code[:100]}...")
 
-                    # Execute the code
                     result = self.code_executor.execute(code)
 
                     tool_calls_made.append({
                         "tool": tool_name,
-                        "code": code[:200],  # Truncate for logging
+                        "code": code[:200],
                         "result": result[:500] if result else "(no output)"
                     })
 
                     logger.info(f"Code execution result: {result[:100]}...")
 
-                    # Add tool result to conversation
-                    # OpenAI format for tool results
                     import json
                     messages.append({
                         "role": "assistant",
@@ -1188,14 +1266,11 @@ Just write the message itself, nothing else.
                         "content": result
                     })
 
-                    # Continue loop to get next response
                     continue
 
-            # Unexpected response format
             logger.warning(f"Unexpected response format: {type(response)}")
             return str(response), "unknown", tool_calls_made
 
-        # Hit max iterations
         logger.warning(f"Hit max tool calls ({MAX_TOOL_CALLS})")
         return "i'm not able to check right now, can you ask me again in a bit?", "gpt-4o-mini", tool_calls_made
 
