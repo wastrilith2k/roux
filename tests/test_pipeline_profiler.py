@@ -5,8 +5,8 @@ Covers:
 - PipelineProfiler collects stage timings
 - Sub-timings attach correctly
 - Summary report is human-readable
-- Profiler handles nested/overlapping stages
-- Feature flag disables profiling
+- Edge cases (inactive profiler, non-existent stage)
+- Per-request instantiation (not singleton)
 """
 
 import os
@@ -20,21 +20,21 @@ os.environ.setdefault('POSTGRES_HOST', 'localhost')
 os.environ.setdefault('POSTGRES_PORT', '5432')
 os.environ.setdefault('POSTGRES_USER', 'test')
 
+from src.core.conversation.pipeline_profiler import PipelineProfiler, get_pipeline_profiler
+
 
 class TestPipelineProfiler:
     """Test the profiler collects timing data correctly."""
 
     def test_basic_stage_timing(self):
-        from src.core.conversation.pipeline_profiler import PipelineProfiler
-
         profiler = PipelineProfiler()
         profiler.start("How are you feeling?")
 
         with profiler.stage("context_assembly"):
-            time.sleep(0.01)  # 10ms
+            time.sleep(0.01)
 
         with profiler.stage("llm_call"):
-            time.sleep(0.02)  # 20ms
+            time.sleep(0.02)
 
         profile = profiler.finish()
 
@@ -42,21 +42,17 @@ class TestPipelineProfiler:
         assert len(profile.stages) == 2
         assert profile.stages[0].stage == "context_assembly"
         assert profile.stages[1].stage == "llm_call"
-        # Timings should be > 0
         assert profile.stages[0].duration_ms > 0
         assert profile.stages[1].duration_ms > 0
         assert profile.total_ms > 0
 
     def test_sub_timings_attached(self):
-        from src.core.conversation.pipeline_profiler import PipelineProfiler
-
         profiler = PipelineProfiler()
         profiler.start("test message")
 
         with profiler.stage("context_assembly"):
             time.sleep(0.01)
 
-        # Simulate context builder sub-timings (in seconds, converted to ms internally)
         profiler.record_sub_timings("context_assembly", {
             "memories": 0.15,
             "entity_profiles": 0.08,
@@ -68,12 +64,25 @@ class TestPipelineProfiler:
         ctx_stage = profile.get_stage("context_assembly")
         assert ctx_stage is not None
         assert "memories" in ctx_stage.sub_timings
-        assert ctx_stage.sub_timings["memories"] == pytest.approx(150, abs=1)  # 0.15s -> 150ms
+        assert ctx_stage.sub_timings["memories"] == pytest.approx(150, abs=1)
         assert ctx_stage.sub_timings["graphiti_context"] == pytest.approx(220, abs=1)
 
-    def test_metadata_on_stages(self):
-        from src.core.conversation.pipeline_profiler import PipelineProfiler
+    def test_sub_timings_nonexistent_stage_ignored(self):
+        """record_sub_timings on a stage that doesn't exist should be a no-op."""
+        profiler = PipelineProfiler()
+        profiler.start("test")
 
+        with profiler.stage("real_stage"):
+            pass
+
+        # This should not raise or modify any stage
+        profiler.record_sub_timings("nonexistent_stage", {"foo": 0.1})
+
+        profile = profiler.finish()
+        real = profile.get_stage("real_stage")
+        assert real.sub_timings == {}  # Not contaminated
+
+    def test_metadata_on_stages(self):
         profiler = PipelineProfiler()
         profiler.start("test")
 
@@ -84,8 +93,6 @@ class TestPipelineProfiler:
         assert profile.stages[0].metadata["model"] == "fireworks/llama-3.1-405b"
 
     def test_summary_report_format(self):
-        from src.core.conversation.pipeline_profiler import PipelineProfiler
-
         profiler = PipelineProfiler()
         profiler.start("How are you feeling?")
 
@@ -114,8 +121,6 @@ class TestPipelineProfiler:
         assert "ms" in summary
 
     def test_get_stage_by_name(self):
-        from src.core.conversation.pipeline_profiler import PipelineProfiler
-
         profiler = PipelineProfiler()
         profiler.start("test")
 
@@ -130,10 +135,7 @@ class TestPipelineProfiler:
         assert profile.get_stage("baz") is None
 
     def test_inactive_profiler_yields_cleanly(self):
-        from src.core.conversation.pipeline_profiler import PipelineProfiler
-
         profiler = PipelineProfiler()
-        # Don't call start() — profiler is inactive
 
         with profiler.stage("should_not_record"):
             pass
@@ -142,14 +144,10 @@ class TestPipelineProfiler:
         assert profile is None
 
     def test_finish_returns_none_when_inactive(self):
-        from src.core.conversation.pipeline_profiler import PipelineProfiler
-
         profiler = PipelineProfiler()
         assert profiler.finish() is None
 
     def test_bottleneck_identified(self):
-        from src.core.conversation.pipeline_profiler import PipelineProfiler
-
         profiler = PipelineProfiler()
         profiler.start("test")
 
@@ -163,12 +161,10 @@ class TestPipelineProfiler:
         assert "Bottleneck: slow" in summary
 
 
-class TestProfilerSingleton:
-    """Test the singleton accessor."""
+class TestProfilerFactory:
+    """Test that get_pipeline_profiler returns fresh instances (thread-safe)."""
 
-    def test_singleton_returns_same_instance(self):
-        from src.core.conversation.pipeline_profiler import get_pipeline_profiler
-
+    def test_returns_new_instance_each_call(self):
         p1 = get_pipeline_profiler()
         p2 = get_pipeline_profiler()
-        assert p1 is p2
+        assert p1 is not p2

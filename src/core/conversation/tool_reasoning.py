@@ -182,13 +182,12 @@ def make_tool_decision(
 
 def _parse_decision(response: str) -> ToolDecision:
     """Parse the JSON response from the reasoning LLM into a ToolDecision."""
-    # Strip markdown code fences if present
+    # Strip markdown code fences if present (handles trailing whitespace/newlines)
+    import re as _re
     text = response.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
+    text = _re.sub(r'^```\w*\n?', '', text)
+    text = _re.sub(r'\n?```\s*$', '', text)
+    text = text.strip()
 
     try:
         data = json.loads(text)
@@ -223,13 +222,10 @@ def build_verification_code(decision: ToolDecision) -> Optional[str]:
     if not decision.verification_needed or not decision.verification_query:
         return None
 
-    query = decision.verification_query.replace('"', '\\"')
+    query = repr(decision.verification_query)
 
     # Use web search to verify before acting
-    return f"""from tools import search
-result = search.web_search("{query}", max_results=3)
-print(result)
-"""
+    return f"from tools import search\nresult = search.web_search({query}, max_results=3)\nprint(result)\n"
 
 
 def build_tool_code(decision: ToolDecision) -> Optional[str]:
@@ -272,40 +268,42 @@ def build_tool_code(decision: ToolDecision) -> Optional[str]:
 
 
 # --- Code template builders ---
+# All builders use repr() for parameter values to prevent injection
+# (newlines, backslashes, quotes in LLM-controlled params).
 
 def _build_weather_code(params: dict) -> str:
-    location = params.get('location', 'Portland')
-    return f'from tools import weather\nprint(weather.get_current_weather("{location}"))\nprint(weather.get_forecast("{location}", days=3))'
+    location = repr(params.get('location', 'Portland'))
+    return f'from tools import weather\nprint(weather.get_current_weather({location}))\nprint(weather.get_forecast({location}, days=3))'
 
 
 def _build_search_code(params: dict) -> str:
-    query = params.get('query', '').replace('"', '\\"')
-    return f'from tools import search\nprint(search.web_search("{query}", max_results=5))'
+    query = repr(params.get('query', ''))
+    return f'from tools import search\nprint(search.web_search({query}, max_results=5))'
 
 
 def _build_fetch_code(params: dict) -> str:
-    url = params.get('url', '').replace('"', '\\"')
-    return f'from tools import web\nprint(web.fetch_url("{url}"))'
+    url = repr(params.get('url', ''))
+    return f'from tools import web\nprint(web.fetch_url({url}))'
 
 
 def _build_email_code(params: dict) -> str:
-    to = params.get('to', '').replace('"', '\\"')
-    subject = params.get('subject', '').replace('"', '\\"')
-    body = params.get('body', '').replace('"', '\\"')
-    return f'from tools import google\ngoogle.send_email("{to}", "{subject}", "{body}")\nprint("Email sent successfully")'
+    to = repr(params.get('to', ''))
+    subject = repr(params.get('subject', ''))
+    body = repr(params.get('body', ''))
+    return f'from tools import google\ngoogle.send_email({to}, {subject}, {body})\nprint("Email sent successfully")'
 
 
 def _build_search_email_code(params: dict) -> str:
-    query = params.get('query', 'is:unread').replace('"', '\\"')
-    return f'from tools import google\nprint(google.search_emails("{query}", max_results=5))'
+    query = repr(params.get('query', 'is:unread'))
+    return f'from tools import google\nprint(google.search_emails({query}, max_results=5))'
 
 
 def _build_calendar_code(params: dict) -> str:
-    summary = params.get('summary', '').replace('"', '\\"')
-    start = params.get('start', '').replace('"', '\\"')
-    end = params.get('end', '').replace('"', '\\"')
-    desc = params.get('description', '').replace('"', '\\"')
-    return f'from tools import google\ngoogle.create_calendar_event("{summary}", "{start}", "{end}", "{desc}")\nprint("Calendar event created")'
+    summary = repr(params.get('summary', ''))
+    start = repr(params.get('start', ''))
+    end = repr(params.get('end', ''))
+    desc = repr(params.get('description', ''))
+    return f'from tools import google\ngoogle.create_calendar_event({summary}, {start}, {end}, {desc})\nprint("Calendar event created")'
 
 
 def _build_check_calendar_code(params: dict) -> str:
@@ -313,28 +311,28 @@ def _build_check_calendar_code(params: dict) -> str:
 
 
 def _build_document_code(params: dict) -> str:
-    title = params.get('title', '').replace('"', '\\"')
-    content = params.get('content', '').replace('"', '\\"')
-    return f'from tools import google\nresult = google.create_document("{title}", "{content}")\nprint(result)'
+    title = repr(params.get('title', ''))
+    content = repr(params.get('content', ''))
+    return f'from tools import google\nresult = google.create_document({title}, {content})\nprint(result)'
 
 
 def _build_memory_code(params: dict) -> str:
-    query = params.get('query', '').replace('"', '\\"')
-    return f'from tools import memory\nprint(memory.search_memories("{query}"))'
+    query = repr(params.get('query', ''))
+    return f'from tools import memory\nprint(memory.search_memories({query}))'
 
 
 def _build_reminder_code(params: dict) -> str:
-    title = params.get('title', '').replace('"', '\\"')
-    due = params.get('due_date', '').replace('"', '\\"')
-    notes = params.get('notes', '').replace('"', '\\"')
-    return f'from tools import reminders\nreminders.add_reminder("{title}", "{due}", "{notes}")\nprint("Reminder set")'
+    title = repr(params.get('title', ''))
+    due = repr(params.get('due_date', ''))
+    notes = repr(params.get('notes', ''))
+    return f'from tools import reminders\nreminders.add_reminder({title}, {due}, {notes})\nprint("Reminder set")'
 
 
 def _build_image_code(params: dict) -> str:
-    prompt = params.get('prompt', '').replace('"', '\\"')
-    return f'from tools import image\nprint(image.generate_image("{prompt}"))'
+    prompt = repr(params.get('prompt', ''))
+    return f'from tools import image\nprint(image.generate_image({prompt}))'
 
 
 def _build_browse_code(params: dict) -> str:
-    url = params.get('url', '').replace('"', '\\"')
-    return f'from tools.browser import go, read\npage = go("{url}")\nprint(page["title"])\nprint(page["text"][:2000])'
+    url = repr(params.get('url', ''))
+    return f'from tools.browser import go, read\npage = go({url})\nprint(page["title"])\nprint(page["text"][:2000])'

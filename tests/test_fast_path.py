@@ -22,14 +22,16 @@ os.environ.setdefault('POSTGRES_USER', 'test')
 # Complexity Classifier Tests
 # =========================================================================
 
+from unittest.mock import patch
+from src.core.conversation.complexity_classifier import classify_message
+
+
 class TestComplexityClassifier:
     """Test message complexity classification."""
 
     def _classify(self, message):
         """Helper — classify with fast path enabled."""
-        from unittest.mock import patch
         with patch('src.core.conversation.complexity_classifier.FAST_PATH_ENABLED', True):
-            from src.core.conversation.complexity_classifier import classify_message
             return classify_message(message)
 
     # --- SIMPLE messages ---
@@ -126,9 +128,7 @@ class TestComplexityClassifier:
     # --- Feature flag ---
 
     def test_disabled_returns_complex(self):
-        from unittest.mock import patch
         with patch('src.core.conversation.complexity_classifier.FAST_PATH_ENABLED', False):
-            from src.core.conversation.complexity_classifier import classify_message
             result = classify_message("hey!")
             assert result.complexity.value == "complex"
             assert "disabled" in result.reason
@@ -202,20 +202,62 @@ class TestSentenceSplitting:
 class TestContextBuilderLightweight:
     """Test that build_lightweight fetches fewer sources than full build."""
 
-    def test_lightweight_has_fewer_sources(self):
-        """Verify build_lightweight submits fewer futures than full build."""
-        from unittest.mock import patch, MagicMock
-
-        # We can't easily run the full builder without a DB, but we can
-        # verify the method exists and has the right signature
+    def test_lightweight_submits_fewer_futures(self):
+        """Verify build_lightweight submits fewer thread pool tasks than _build_parallel."""
+        from unittest.mock import MagicMock, patch
         from src.core.conversation.context_builder import ContextBuilder
 
-        assert hasattr(ContextBuilder, 'build_lightweight')
+        # Count how many futures each method submits
+        with patch.object(ContextBuilder, '__init__', lambda self: None):
+            builder = ContextBuilder()
+            builder._source_timings = {}
 
-        # Check it accepts the same args as build
-        import inspect
-        sig = inspect.signature(ContextBuilder.build_lightweight)
-        params = list(sig.parameters.keys())
-        assert 'user_email' in params
-        assert 'user_message' in params
-        assert 'closeness_score' in params
+            # Mock the executor to count submit calls
+            mock_executor = MagicMock()
+            # Make futures return dummy results
+            mock_future = MagicMock()
+            mock_future.result.return_value = ('test', None, 0.01)
+            mock_executor.submit.return_value = mock_future
+            builder._executor = mock_executor
+
+            # Mock all context source methods to no-op
+            for attr in dir(builder):
+                if attr.startswith('_get_'):
+                    setattr(builder, attr, MagicMock(return_value=None))
+
+            # Count lightweight submits
+            builder.build_lightweight('test@test.com', 'hey')
+            lightweight_count = mock_executor.submit.call_count
+
+            mock_executor.reset_mock()
+
+            # Count full parallel submits
+            builder._build_parallel('test@test.com', 'hey', 50)
+            full_count = mock_executor.submit.call_count
+
+            assert lightweight_count < full_count, (
+                f"Lightweight ({lightweight_count}) should submit fewer "
+                f"futures than full ({full_count})"
+            )
+            assert lightweight_count <= 8, f"Lightweight should be ~7 sources, got {lightweight_count}"
+            assert full_count >= 20, f"Full should be ~24 sources, got {full_count}"
+
+
+class TestActionClassificationRouting:
+    """Test that ACTION-classified messages are routed to tool pipeline."""
+
+    def test_action_classification_sets_force_tools(self):
+        """Verify that ACTION complexity results in force_tools=True in pipeline logic."""
+        from src.core.conversation.complexity_classifier import MessageComplexity, FAST_PATH_ENABLED
+
+        # Simulate the pipeline's logic for computing force_tools
+        with patch('src.core.conversation.complexity_classifier.FAST_PATH_ENABLED', True):
+            result = classify_message("what's the weather in Portland?")
+            assert result.complexity == MessageComplexity.ACTION
+
+            # Replicate pipeline logic
+            use_fast_path = result.complexity == MessageComplexity.SIMPLE
+            force_tools = result.complexity == MessageComplexity.ACTION
+
+            assert use_fast_path is False
+            assert force_tools is True

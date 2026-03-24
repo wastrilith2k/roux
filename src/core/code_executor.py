@@ -48,21 +48,17 @@ class CodeExecutor:
     def is_available(self) -> bool:
         """Check if the code executor service is available.
 
-        Caches positive results indefinitely (service is up).
-        Caches negative results for AVAILABILITY_TTL seconds, then retries.
-        This prevents a single failed health check from permanently disabling tools.
+        Caches results for AVAILABILITY_TTL seconds, then re-checks.
+        This prevents a single failed health check from permanently disabling
+        tools AND detects executor restarts/crashes after a positive check.
         """
         import time as _time
 
-        # If previously available, trust the cache
-        if self._available is True:
-            return True
-
-        # If previously unavailable, retry after TTL expires
-        if self._available is False:
+        # Return cached result if within TTL
+        if self._available is not None:
             elapsed = _time.time() - self._available_checked_at
             if elapsed < self.AVAILABILITY_TTL:
-                return False
+                return self._available
             logger.info("Code executor availability TTL expired, rechecking...")
 
         try:

@@ -280,10 +280,19 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                 and classification.complexity == MessageComplexity.SIMPLE
                 and not is_proactive_msg
             )
+            force_tools = (
+                FAST_PATH_ENABLED
+                and classification.complexity == MessageComplexity.ACTION
+            )
 
             if use_fast_path:
                 logger.info(
                     f"Fast path: {classification.reason} "
+                    f"(confidence={classification.confidence:.2f})"
+                )
+            elif force_tools:
+                logger.info(
+                    f"Action path: {classification.reason} "
                     f"(confidence={classification.confidence:.2f})"
                 )
 
@@ -504,7 +513,7 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
 
                 # Use tool-enabled path if code execution is enabled
                 # Fast path skips tools entirely — simple messages don't need them
-                if not use_fast_path and CODE_EXECUTION_ENABLED and self.code_executor.is_available():
+                if (force_tools or (not use_fast_path and CODE_EXECUTION_ENABLED)) and self.code_executor.is_available():
                     response, model, tool_calls_made = self._call_llm_with_tools(
                         current_prompt, user_message, conversation_turns
                     )

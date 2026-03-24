@@ -150,12 +150,10 @@ class PipelineProfiler:
         return profile
 
 
-# Singleton
-_profiler: Optional[PipelineProfiler] = None
-
-
 def get_pipeline_profiler() -> PipelineProfiler:
-    global _profiler
-    if _profiler is None:
-        _profiler = PipelineProfiler()
-    return _profiler
+    """Create a new PipelineProfiler for the current request.
+
+    Returns a fresh instance each time — profilers carry mutable per-request
+    state (_stages, _start_time) and must not be shared across threads.
+    """
+    return PipelineProfiler()

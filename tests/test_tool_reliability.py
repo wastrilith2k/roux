@@ -5,7 +5,8 @@ Covers:
 - Structured tool reasoning produces correct decisions
 - Verification guardrail fires for mutating external actions
 - Code executor availability TTL prevents permanent disabling
-- End-to-end pipeline tool path with reasoning
+- Code injection prevention via repr() in code templates
+- Markdown fence stripping edge cases
 """
 
 import json
@@ -21,6 +22,15 @@ os.environ.setdefault('POSTGRES_HOST', 'localhost')
 os.environ.setdefault('POSTGRES_PORT', '5432')
 os.environ.setdefault('POSTGRES_USER', 'test')
 
+from src.core.conversation.tool_reasoning import (
+    _parse_decision,
+    make_tool_decision,
+    build_verification_code,
+    build_tool_code,
+    ToolDecision,
+)
+from src.core.code_executor import CodeExecutor
+
 
 # =========================================================================
 # Tool Reasoning Unit Tests
@@ -30,8 +40,6 @@ class TestToolDecisionParsing:
     """Test that _parse_decision correctly handles LLM output."""
 
     def test_valid_json_parsed(self):
-        from src.core.conversation.tool_reasoning import _parse_decision
-
         response = json.dumps({
             "reasoning": "User asked about weather",
             "needs_tool": True,
@@ -50,24 +58,31 @@ class TestToolDecisionParsing:
         assert decision.confidence == 0.95
 
     def test_markdown_fenced_json_parsed(self):
-        from src.core.conversation.tool_reasoning import _parse_decision
-
         response = '```json\n{"reasoning": "casual chat", "needs_tool": false, "tool_action": null, "tool_parameters": {}, "verification_needed": false, "verification_query": null, "confidence": 0.9}\n```'
 
         decision = _parse_decision(response)
         assert decision.needs_tool is False
         assert decision.tool_action is None
 
-    def test_invalid_json_returns_no_tool(self):
-        from src.core.conversation.tool_reasoning import _parse_decision
+    def test_markdown_fence_with_trailing_whitespace(self):
+        response = '```json\n{"reasoning": "test", "needs_tool": true, "tool_action": "weather", "tool_parameters": {}, "verification_needed": false, "verification_query": null, "confidence": 0.9}\n```  \n'
 
+        decision = _parse_decision(response)
+        assert decision.needs_tool is True
+        assert decision.tool_action == "weather"
+
+    def test_markdown_fence_with_trailing_newlines(self):
+        response = '```\n{"reasoning": "test", "needs_tool": false}\n```\n\n'
+
+        decision = _parse_decision(response)
+        assert decision.needs_tool is False
+
+    def test_invalid_json_returns_no_tool(self):
         decision = _parse_decision("SKIP")
         assert decision.needs_tool is False
         assert "Could not parse" in decision.reasoning
 
     def test_empty_response_returns_no_tool(self):
-        from src.core.conversation.tool_reasoning import _parse_decision
-
         decision = _parse_decision("")
         assert decision.needs_tool is False
 
@@ -77,8 +92,6 @@ class TestToolDecisionLogic:
 
     @patch('src.llm.openai_provider.get_openai_tool_provider')
     def test_weather_query_needs_tool(self, mock_provider_fn):
-        from src.core.conversation.tool_reasoning import make_tool_decision
-
         provider = MagicMock()
         provider.generate_sync.return_value = json.dumps({
             "reasoning": "User is asking about the weather",
@@ -97,8 +110,6 @@ class TestToolDecisionLogic:
 
     @patch('src.llm.openai_provider.get_openai_tool_provider')
     def test_casual_message_skips_tool(self, mock_provider_fn):
-        from src.core.conversation.tool_reasoning import make_tool_decision
-
         provider = MagicMock()
         provider.generate_sync.return_value = json.dumps({
             "reasoning": "This is casual conversation",
@@ -116,8 +127,6 @@ class TestToolDecisionLogic:
 
     @patch('src.llm.openai_provider.get_openai_tool_provider')
     def test_no_provider_defaults_to_no_tool(self, mock_provider_fn):
-        from src.core.conversation.tool_reasoning import make_tool_decision
-
         mock_provider_fn.return_value = None
 
         decision = make_tool_decision("What's the weather?")
@@ -130,15 +139,13 @@ class TestVerificationGuardrail:
 
     @patch('src.llm.openai_provider.get_openai_tool_provider')
     def test_send_email_forces_verification(self, mock_provider_fn):
-        from src.core.conversation.tool_reasoning import make_tool_decision
-
         provider = MagicMock()
         provider.generate_sync.return_value = json.dumps({
             "reasoning": "User wants to send an email",
             "needs_tool": True,
             "tool_action": "send_email",
             "tool_parameters": {"to": "test@example.com", "subject": "Hi", "body": "Hello"},
-            "verification_needed": False,  # LLM says no, but we override
+            "verification_needed": False,
             "verification_query": None,
             "confidence": 0.9,
         })
@@ -146,13 +153,11 @@ class TestVerificationGuardrail:
 
         decision = make_tool_decision("Send an email to test@example.com saying hi")
         assert decision.needs_tool is True
-        assert decision.verification_needed is True  # Enforced by MUTATING_ACTIONS
+        assert decision.verification_needed is True
         assert decision.verification_query is not None
 
     @patch('src.llm.openai_provider.get_openai_tool_provider')
     def test_calendar_create_forces_verification(self, mock_provider_fn):
-        from src.core.conversation.tool_reasoning import make_tool_decision
-
         provider = MagicMock()
         provider.generate_sync.return_value = json.dumps({
             "reasoning": "User wants to add a calendar event",
@@ -169,9 +174,24 @@ class TestVerificationGuardrail:
         assert decision.verification_needed is True
 
     @patch('src.llm.openai_provider.get_openai_tool_provider')
-    def test_web_search_no_verification(self, mock_provider_fn):
-        from src.core.conversation.tool_reasoning import make_tool_decision
+    def test_add_reminder_forces_verification(self, mock_provider_fn):
+        provider = MagicMock()
+        provider.generate_sync.return_value = json.dumps({
+            "reasoning": "User wants a reminder",
+            "needs_tool": True,
+            "tool_action": "add_reminder",
+            "tool_parameters": {"title": "Call mom", "due_date": "5pm"},
+            "verification_needed": False,
+            "verification_query": None,
+            "confidence": 0.9,
+        })
+        mock_provider_fn.return_value = provider
 
+        decision = make_tool_decision("Remind me to call mom at 5pm")
+        assert decision.verification_needed is True
+
+    @patch('src.llm.openai_provider.get_openai_tool_provider')
+    def test_web_search_no_verification(self, mock_provider_fn):
         provider = MagicMock()
         provider.generate_sync.return_value = json.dumps({
             "reasoning": "User wants to search for something",
@@ -185,15 +205,13 @@ class TestVerificationGuardrail:
         mock_provider_fn.return_value = provider
 
         decision = make_tool_decision("Search for the best pizza in Portland")
-        assert decision.verification_needed is False  # Read-only, no override
+        assert decision.verification_needed is False
 
 
 class TestBuildVerificationCode:
     """Test verification code generation."""
 
     def test_verification_code_generated(self):
-        from src.core.conversation.tool_reasoning import ToolDecision, build_verification_code
-
         decision = ToolDecision(
             needs_tool=True,
             reasoning="Sending email",
@@ -208,8 +226,6 @@ class TestBuildVerificationCode:
         assert "Check meeting time" in code
 
     def test_no_verification_returns_none(self):
-        from src.core.conversation.tool_reasoning import ToolDecision, build_verification_code
-
         decision = ToolDecision(
             needs_tool=True,
             reasoning="Weather check",
@@ -224,8 +240,6 @@ class TestBuildToolCode:
     """Test tool code generation from decisions."""
 
     def test_weather_code(self):
-        from src.core.conversation.tool_reasoning import ToolDecision, build_tool_code
-
         decision = ToolDecision(
             needs_tool=True,
             reasoning="weather",
@@ -239,8 +253,6 @@ class TestBuildToolCode:
         assert "Portland" in code
 
     def test_search_code(self):
-        from src.core.conversation.tool_reasoning import ToolDecision, build_tool_code
-
         decision = ToolDecision(
             needs_tool=True,
             reasoning="search",
@@ -253,14 +265,10 @@ class TestBuildToolCode:
         assert "search.web_search" in code
 
     def test_no_tool_returns_none(self):
-        from src.core.conversation.tool_reasoning import ToolDecision, build_tool_code
-
         decision = ToolDecision(needs_tool=False, reasoning="casual chat")
         assert build_tool_code(decision) is None
 
     def test_unknown_action_returns_none(self):
-        from src.core.conversation.tool_reasoning import ToolDecision, build_tool_code
-
         decision = ToolDecision(
             needs_tool=True,
             reasoning="unknown",
@@ -270,52 +278,84 @@ class TestBuildToolCode:
 
         assert build_tool_code(decision) is None
 
+    def test_code_injection_prevented(self):
+        """Verify that malicious params can't inject arbitrary code."""
+        decision = ToolDecision(
+            needs_tool=True,
+            reasoning="search",
+            tool_action="web_search",
+            tool_parameters={"query": 'test\nimport os; os.system("rm -rf /")'},
+        )
+
+        code = build_tool_code(decision)
+        assert code is not None
+        # repr() should escape the newline — the injected import should NOT
+        # appear as a separate line in the generated code
+        lines = code.split('\n')
+        for line in lines:
+            assert not line.startswith('import os'), "Injection not prevented"
+
+    def test_repr_escapes_quotes_and_backslashes(self):
+        """Verify repr() handles quotes and backslashes in params."""
+        decision = ToolDecision(
+            needs_tool=True,
+            reasoning="search",
+            tool_action="web_search",
+            tool_parameters={"query": 'he said "hello\\world"'},
+        )
+
+        code = build_tool_code(decision)
+        assert code is not None
+        # The generated code should be valid Python
+        assert "search.web_search(" in code
+
 
 # =========================================================================
 # Code Executor Availability TTL Tests
 # =========================================================================
 
 class TestCodeExecutorAvailabilityTTL:
-    """Test that code executor doesn't permanently cache negative availability."""
+    """Test that code executor availability cache respects TTL."""
 
     def test_negative_cache_expires(self):
-        from src.core.code_executor import CodeExecutor
-
         executor = CodeExecutor(base_url="http://fake:9999")
         executor._available = False
-        executor._available_checked_at = time.time() - 120  # 2 minutes ago (> 60s TTL)
+        executor._available_checked_at = time.time() - 120
 
-        # Mock the health check to succeed this time
         with patch('src.core.code_executor.requests.get') as mock_get:
             mock_get.return_value = MagicMock(status_code=200)
             assert executor.is_available() is True
 
     def test_negative_cache_within_ttl(self):
-        from src.core.code_executor import CodeExecutor
-
         executor = CodeExecutor(base_url="http://fake:9999")
         executor._available = False
-        executor._available_checked_at = time.time() - 10  # 10 seconds ago (< 60s TTL)
+        executor._available_checked_at = time.time() - 10
 
-        # Should return False without making any HTTP request
         with patch('src.core.code_executor.requests.get') as mock_get:
             assert executor.is_available() is False
             mock_get.assert_not_called()
 
-    def test_positive_cache_persists(self):
-        from src.core.code_executor import CodeExecutor
-
+    def test_positive_cache_within_ttl(self):
         executor = CodeExecutor(base_url="http://fake:9999")
         executor._available = True
+        executor._available_checked_at = time.time() - 10
 
-        # Should return True without making any HTTP request
         with patch('src.core.code_executor.requests.get') as mock_get:
             assert executor.is_available() is True
             mock_get.assert_not_called()
 
-    def test_first_check_makes_request(self):
-        from src.core.code_executor import CodeExecutor
+    def test_positive_cache_expires(self):
+        """Verify that a previously-available executor is rechecked after TTL."""
+        executor = CodeExecutor(base_url="http://fake:9999")
+        executor._available = True
+        executor._available_checked_at = time.time() - 120
 
+        with patch('src.core.code_executor.requests.get') as mock_get:
+            # Executor has crashed — returns 500
+            mock_get.return_value = MagicMock(status_code=500)
+            assert executor.is_available() is False
+
+    def test_first_check_makes_request(self):
         executor = CodeExecutor(base_url="http://fake:9999")
 
         with patch('src.core.code_executor.requests.get') as mock_get:
@@ -332,10 +372,7 @@ class TestToolReasoningFeatureFlag:
     """Test that tool reasoning can be toggled via env var."""
 
     def test_disabled_returns_no_tool(self):
-        from src.core.conversation.tool_reasoning import ToolDecision
-
         with patch('src.core.conversation.tool_reasoning.TOOL_REASONING_ENABLED', False):
-            from src.core.conversation.tool_reasoning import make_tool_decision
             decision = make_tool_decision("What's the weather?")
             assert decision.needs_tool is False
             assert "disabled" in decision.reasoning
