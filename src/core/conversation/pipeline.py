@@ -110,7 +110,15 @@ class PipelineResult:
     conversation_mode: Optional[str] = None  # Detected conversation mode
     inner_monologue: Optional[str] = None  # Pre-response reasoning (private)
     quality_score: Optional[float] = None  # Post-response quality score
+    profile: Optional[Any] = None  # Pipeline profiling data (when enabled)
 
+
+# Pipeline profiling
+from .pipeline_profiler import (
+    PipelineProfiler,
+    get_pipeline_profiler,
+    PROFILING_ENABLED,
+)
 
 # ---------------------------------------------------------------------------
 # Feature flags — toggle pipeline steps via environment variables
@@ -252,13 +260,31 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
         start_time = time.time()
         is_proactive_msg = extra_context.get('is_proactive_message', False) if extra_context else False
 
+        # Initialize profiler if enabled
+        profiler = get_pipeline_profiler() if PROFILING_ENABLED else None
+        if profiler:
+            profiler.start(user_message)
+
         try:
             # Step 1: Build context from 6 sources
-            context = self.context_builder.build(
-                user_email=user_email,
-                user_message=user_message,
-                closeness_score=closeness_score
-            )
+            if profiler:
+                with profiler.stage("context_assembly"):
+                    context = self.context_builder.build(
+                        user_email=user_email,
+                        user_message=user_message,
+                        closeness_score=closeness_score
+                    )
+                # Attach per-source sub-timings from context builder
+                if hasattr(self.context_builder, '_source_timings'):
+                    profiler.record_sub_timings(
+                        "context_assembly", self.context_builder._source_timings
+                    )
+            else:
+                context = self.context_builder.build(
+                    user_email=user_email,
+                    user_message=user_message,
+                    closeness_score=closeness_score
+                )
 
             # Step 1.1: Schedule interruption detection
             # If user starts chatting during a scheduled event, check if the
@@ -288,7 +314,11 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
             self._clear_addressed_thoughts(user_email, user_message)
 
             # Step 1.5: Memory validation (detect memory queries, retrieve verified records)
-            memory_context = self.memory_agent.validate(user_message, user_email)
+            if profiler:
+                with profiler.stage("memory_validation"):
+                    memory_context = self.memory_agent.validate(user_message, user_email)
+            else:
+                memory_context = self.memory_agent.validate(user_message, user_email)
             if memory_context.is_memory_query:
                 logger.info(
                     f"Memory validation: {memory_context.query_type} query, "
@@ -305,9 +335,15 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                 try:
                     from .message_analyzer import get_message_analyzer
                     analyzer = get_message_analyzer()
-                    analysis = analyzer.analyze(
-                        user_message, context, context.scene_state or ""
-                    )
+                    if profiler:
+                        with profiler.stage("message_analysis"):
+                            analysis = analyzer.analyze(
+                                user_message, context, context.scene_state or ""
+                            )
+                    else:
+                        analysis = analyzer.analyze(
+                            user_message, context, context.scene_state or ""
+                        )
                     if analysis:
                         mode_detection = analysis.to_mode_detection()
                         monologue = analysis.to_inner_monologue()
@@ -385,10 +421,17 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                 raise PipelineCancelled("Cancelled before prompt assembly")
 
             # Step 2: Assemble the full prompt (now includes memory context + agent improvements)
-            full_prompt = self._assemble_prompt(
-                context, user_message, memory_context, extra_context,
-                mode_detection=mode_detection, monologue=monologue
-            )
+            if profiler:
+                with profiler.stage("prompt_assembly"):
+                    full_prompt = self._assemble_prompt(
+                        context, user_message, memory_context, extra_context,
+                        mode_detection=mode_detection, monologue=monologue
+                    )
+            else:
+                full_prompt = self._assemble_prompt(
+                    context, user_message, memory_context, extra_context,
+                    mode_detection=mode_detection, monologue=monologue
+                )
 
             # Save prompt for debugging (keep last 5)
             self._save_prompt_debug(full_prompt, user_email)
@@ -406,9 +449,16 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
             tool_calls_made = []  # Track any tool calls
             quality_score = None
 
+            # Start LLM profiling stage (covers call + tool execution + validation loop)
+            _llm_stage = profiler.stage("llm_call") if profiler else None
+            if _llm_stage:
+                _llm_stage.__enter__()
+
             while True:
                 # Check for cancellation before each LLM call attempt
                 if cancel_check and cancel_check():
+                    if _llm_stage:
+                        _llm_stage.__exit__(None, None, None)
                     raise PipelineCancelled("Cancelled before LLM call")
 
                 # Use tool-enabled path if code execution is enabled
@@ -483,6 +533,10 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
 
                     break
 
+            # Close LLM profiling stage
+            if _llm_stage:
+                _llm_stage.__exit__(None, None, None)
+
             # Step 5: Image intent detection (two-pass approach)
             # Skip for proactive messages - she's texting, not sending photos
             image_task_id = None
@@ -507,6 +561,9 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
             except Exception as e:
                 logger.debug(f"Observation trigger skipped: {e}")
 
+            # Finish profiling and attach to result
+            pipeline_profile = profiler.finish() if profiler else None
+
             return PipelineResult(
                 response=response,
                 context_used=context,
@@ -518,7 +575,8 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                 tool_calls=tool_calls_made,
                 conversation_mode=mode_detection.mode.value if mode_detection else None,
                 inner_monologue=monologue.thoughts if monologue else None,
-                quality_score=quality_score
+                quality_score=quality_score,
+                profile=pipeline_profile,
             )
 
         except PipelineCancelled:

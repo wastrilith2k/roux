@@ -110,6 +110,9 @@ class VoiceService:
             logger.error("Deepgram client not initialized")
             return None
 
+        import time as _time
+        stt_start = _time.time()
+
         try:
             with open(audio_file_path, 'rb') as f:
                 buffer_data = f.read()
@@ -130,15 +133,17 @@ class VoiceService:
                 .transcript
             )
 
+            stt_ms = (_time.time() - stt_start) * 1000
             if transcript:
-                logger.info(f"Transcribed audio: {transcript[:80]}...")
+                logger.info(f"[PROFILE] STT transcription: {stt_ms:.0f}ms ({len(buffer_data)} bytes -> {len(transcript)} chars)")
                 return transcript.strip()
             else:
-                logger.warning("Deepgram returned empty transcript")
+                logger.warning(f"[PROFILE] STT transcription: {stt_ms:.0f}ms (empty result)")
                 return None
 
         except Exception as e:
-            logger.error(f"STT transcription failed: {e}", exc_info=True)
+            stt_ms = (_time.time() - stt_start) * 1000
+            logger.error(f"[PROFILE] STT transcription failed after {stt_ms:.0f}ms: {e}", exc_info=True)
             return None
 
     @staticmethod
@@ -208,12 +213,22 @@ class VoiceService:
         Returns:
             True if successful, False otherwise.
         """
+        import time as _time
+        tts_start = _time.time()
+
         if self._tts_engine == 'elevenlabs':
             text = self.clean_text_for_tts(text, allow_paralinguistics=True)
-            return self._synthesize_elevenlabs(text, output_path)
+            result = self._synthesize_elevenlabs(text, output_path)
         else:
             text = self.clean_text_for_tts(text, allow_paralinguistics=False)
-            return self._synthesize_edge_tts(text, output_path)
+            result = self._synthesize_edge_tts(text, output_path)
+
+        tts_ms = (_time.time() - tts_start) * 1000
+        logger.info(
+            f"[PROFILE] TTS generation ({self._tts_engine}): {tts_ms:.0f}ms "
+            f"({len(text)} chars, success={result})"
+        )
+        return result
 
     def _synthesize_elevenlabs(self, text: str, output_path: str) -> bool:
         """Synthesize speech using ElevenLabs API."""
