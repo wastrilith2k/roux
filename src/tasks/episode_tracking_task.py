@@ -19,6 +19,7 @@ import logging
 from datetime import datetime
 
 from src.celery_app import celery_app
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -157,9 +158,9 @@ def close_stale_episodes(self, hours_threshold: int = 4):
 
         # First, find stale episodes (don't close yet - we need to score them)
         with conn.cursor() as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT episode_id, user_email, topic
-                FROM episodes
+                FROM {T.EPISODES}
                 WHERE resolution = 'ongoing'
                   AND updated_at < NOW() - INTERVAL '%s hours'
             """, (hours_threshold,))
@@ -172,8 +173,8 @@ def close_stale_episodes(self, hours_threshold: int = 4):
 
             # Close with satisfaction score
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE episodes
+                cursor.execute(f"""
+                    UPDATE {T.EPISODES}
                     SET resolution = %s,
                         ended_at = CURRENT_TIMESTAMP,
                         satisfaction = %s,
@@ -218,10 +219,10 @@ def summarize_episode(self, episode_id: str):
 
         # Get episode messages
         with conn.cursor() as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT m.sender_name, m.message_text
-                FROM episode_messages em
-                JOIN messages m ON m.id = em.message_id
+                FROM {T.EPISODE_MESSAGES} em
+                JOIN {T.MESSAGES} m ON m.id = em.message_id
                 WHERE em.episode_id = %s::uuid
                 ORDER BY em.turn_number
                 LIMIT 20
@@ -261,8 +262,8 @@ Write a 1-2 sentence summary of what worked:"""
 
             # Store the summary and satisfaction score
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE episodes
+                cursor.execute(f"""
+                    UPDATE {T.EPISODES}
                     SET approach_summary = %s,
                         satisfaction = %s,
                         updated_at = CURRENT_TIMESTAMP

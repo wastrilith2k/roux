@@ -24,6 +24,7 @@ import logging
 from typing import Dict, List, Any
 
 from src.celery_app import celery_app
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +78,9 @@ def validate_facts_against_profiles(self, dry_run: bool = False):
 
             # Get active facts for this entity (match any name variant)
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT id, subject, predicate, object
-                    FROM facts
+                    FROM {T.FACTS}
                     WHERE archived_at IS NULL
                       AND LOWER(subject) = ANY(%s)
                     ORDER BY id
@@ -103,8 +104,8 @@ def validate_facts_against_profiles(self, dry_run: bool = False):
 
                 if not dry_run:
                     with conn.cursor() as cursor:
-                        cursor.execute("""
-                            UPDATE facts
+                        cursor.execute(f"""
+                            UPDATE {T.FACTS}
                             SET archived_at = CURRENT_TIMESTAMP,
                                 archive_reason = 'contradicted_by_entity_profile'
                             WHERE id = ANY(%s)

@@ -26,6 +26,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'utils'))
 from src.utils.timezone_utils import now_pacific_naive
 from src.config.persona_config import get_persona_config
+from src.database import tables as T
 
 
 # ---------------------------------------------------------------------------
@@ -117,11 +118,14 @@ class CompanionDB:
         env_marker = "[DEV]" if environment == 'development' else "[PROD]"
         print(f"{env_marker} CompanionDB connecting to: {self.pg_db} @ {self.pg_host}:{self.pg_port}")
 
-        self._init_db()
-
     @contextmanager
-    def _get_connection(self):
-        """Context manager for database connections"""
+    def _get_connection(self, user_email: str = None):
+        """Context manager for database connections.
+
+        Args:
+            user_email: If provided, sets the PostgreSQL search_path to the
+                        user's schema so all queries resolve to that schema first.
+        """
         conn = psycopg2.connect(
             host=self.pg_host,
             port=self.pg_port,
@@ -129,8 +133,10 @@ class CompanionDB:
             user=self.pg_user,
             password=self.pg_pass
         )
-
         try:
+            if user_email:
+                from src.database.schema_manager import set_search_path
+                set_search_path(conn, user_email)
             yield conn
             conn.commit()
         except Exception:
@@ -139,13 +145,19 @@ class CompanionDB:
         finally:
             conn.close()
 
-    def execute(self, query: str, params: tuple = None):
+    def execute(self, query: str, params: tuple = None, user_email: str = None):
         """
         Execute a raw SQL query and return a wrapper that holds the results.
         The connection is maintained within the context manager while data is fetched.
         Returns a cursor-like object that provides fetchone() and fetchall() methods.
+
+        Args:
+            query: SQL query string with %s placeholders.
+            params: Optional tuple of query parameters.
+            user_email: If provided, sets the search_path to the user's schema
+                        before executing the query.
         """
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=user_email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(query, params or ())
             # CRITICAL: Fetch data while connection is still open
@@ -157,381 +169,6 @@ class CompanionDB:
         """No-op for compatibility with raw SQL code patterns"""
         pass
 
-    def _init_db(self):
-        """Initialize database schema (tables already created by migration, but this ensures they exist)"""
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-
-            # User profiles table (already exists from migration)
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_profiles (
-                    email TEXT PRIMARY KEY,
-                    display_name TEXT NOT NULL,
-                    is_admin BOOLEAN DEFAULT FALSE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_seen TIMESTAMP
-                )
-            ''')
-
-            # User state table (already exists from migration)
-            # companion_id enables multi-agent: each companion has separate state per user
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_state (
-                    email TEXT NOT NULL,
-                    companion_id TEXT DEFAULT 'default',
-                    closeness_score INTEGER DEFAULT 15,
-                    romance_level REAL DEFAULT 0,
-                    romance_enabled BOOLEAN DEFAULT FALSE,
-                    romance_decision TEXT,
-                    emotion_profile TEXT DEFAULT 'Guarded',
-                    last_negative_event TIMESTAMP,
-                    cooldown_active BOOLEAN DEFAULT FALSE,
-                    badgering_count INTEGER DEFAULT 0,
-                    last_message_time TIMESTAMP,
-                    attraction_cue_count INTEGER DEFAULT 0,
-                    attraction_latent_state BOOLEAN DEFAULT FALSE,
-                    sms_preference TEXT DEFAULT 'good_morning',
-                    PRIMARY KEY (email, companion_id),
-                    FOREIGN KEY (email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            # Messages table - stores all conversation messages
-            # companion_id enables multi-agent: messages scoped per companion
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS messages (
-                    id SERIAL PRIMARY KEY,
-                    email TEXT NOT NULL,
-                    companion_id TEXT DEFAULT 'default',
-                    sender_name TEXT NOT NULL,
-                    message_text TEXT NOT NULL,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    sentiment_score FLOAT,
-                    closeness_after INTEGER,
-                    model_used TEXT,
-                    romance_level FLOAT,
-                    source TEXT DEFAULT 'chat',
-                    message_type TEXT DEFAULT 'normal',
-                    conversation_id INTEGER,
-                    FOREIGN KEY (email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_email ON messages(email)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp DESC)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_messages_companion_id ON messages(companion_id)')
-
-            # Microblog/feed table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS feed_posts (
-                    id SERIAL PRIMARY KEY,
-                    content TEXT NOT NULL,
-                    timestamp TIMESTAMP NOT NULL,
-                    mood TEXT,
-                    tags TEXT,
-                    is_public BOOLEAN DEFAULT TRUE
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_feed_posts_timestamp ON feed_posts(timestamp DESC)')
-
-            # Generic state table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS state (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL,
-                    updated_at TIMESTAMP NOT NULL
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_state_key ON state(key)')
-
-            # Upcoming events table
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS upcoming_events (
-                    id SERIAL PRIMARY KEY,
-                    user_email TEXT NOT NULL,
-                    event_type TEXT NOT NULL,
-                    description TEXT NOT NULL,
-                    scheduled_time TIMESTAMP,
-                    created_at TIMESTAMP NOT NULL,
-                    status TEXT DEFAULT 'planned',
-                    participants TEXT,
-                    location TEXT,
-                    notes TEXT,
-                    FOREIGN KEY (user_email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_events_user_status ON upcoming_events(user_email, status)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_events_scheduled_time ON upcoming_events(scheduled_time)')
-
-            # Conversation patterns table - tracks user's conversation style
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS conversation_patterns (
-                    id SERIAL PRIMARY KEY,
-                    email TEXT NOT NULL,
-                    user_length INTEGER,
-                    response_length INTEGER,
-                    closeness INTEGER,
-                    pattern_type TEXT DEFAULT 'exchange',
-                    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_patterns_email ON conversation_patterns(email)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_patterns_recorded_at ON conversation_patterns(recorded_at DESC)')
-
-            # Conversation patterns statistics table - aggregated statistics
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS conversation_patterns_stats (
-                    email TEXT PRIMARY KEY,
-                    total_exchanges INTEGER DEFAULT 0,
-                    avg_user_length FLOAT DEFAULT 0,
-                    avg_response_length FLOAT DEFAULT 0,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            # Emotion analytics table - tracks emotional states over time
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS emotion_analytics (
-                    id SERIAL PRIMARY KEY,
-                    email TEXT NOT NULL,
-                    emotion TEXT,
-                    confidence FLOAT,
-                    intensity FLOAT,
-                    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_emotion_email ON emotion_analytics(email)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_emotion_recorded_at ON emotion_analytics(recorded_at DESC)')
-
-            # User preferences table - learned preferences
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_preferences (
-                    id SERIAL PRIMARY KEY,
-                    email TEXT NOT NULL,
-                    preference_type TEXT,
-                    preference_value TEXT,
-                    learned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_prefs_email ON user_preferences(email)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_prefs_type ON user_preferences(preference_type)')
-
-            # Episodes table - structured conversation episodes for enhanced episodic memory
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS episodes (
-                    id SERIAL PRIMARY KEY,
-                    episode_id UUID UNIQUE NOT NULL,
-                    user_email TEXT NOT NULL,
-                    started_at TIMESTAMP NOT NULL,
-                    ended_at TIMESTAMP,
-                    topic TEXT,
-                    trigger TEXT,
-                    emotional_state TEXT,
-                    resolution TEXT,
-                    user_satisfaction FLOAT,
-                    companion_approach TEXT,
-                    summary_embedding JSONB,
-                    pattern_id UUID,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_episodes_user_email ON episodes(user_email)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_episodes_started_at ON episodes(started_at DESC)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_episodes_topic ON episodes(topic)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_episodes_pattern_id ON episodes(pattern_id)')
-
-            # Episode messages - links messages to episodes
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS episode_messages (
-                    id SERIAL PRIMARY KEY,
-                    episode_id UUID NOT NULL,
-                    message_id INTEGER NOT NULL,
-                    turn_number INTEGER NOT NULL,
-                    speaker TEXT NOT NULL,
-                    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_episode_messages_episode_id ON episode_messages(episode_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_episode_messages_message_id ON episode_messages(message_id)')
-
-            # Episode patterns - consolidated learnings from similar episodes
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS episode_patterns (
-                    id SERIAL PRIMARY KEY,
-                    pattern_id UUID UNIQUE NOT NULL,
-                    pattern_name TEXT NOT NULL,
-                    description TEXT,
-                    successful_approach TEXT,
-                    pitfalls_to_avoid TEXT,
-                    topic_category TEXT,
-                    emotional_context TEXT,
-                    episode_count INTEGER DEFAULT 0,
-                    avg_satisfaction FLOAT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_episode_patterns_topic ON episode_patterns(topic_category)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_episode_patterns_emotional ON episode_patterns(emotional_context)')
-
-            # ==================== BENCHMARK TABLES ====================
-
-            # Benchmark questions - curated test questions with expected answers
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS benchmark_questions (
-                    id SERIAL PRIMARY KEY,
-                    question TEXT NOT NULL,
-                    expected_answer TEXT NOT NULL,
-                    expected_keywords TEXT,
-                    negative_keywords TEXT,
-                    category TEXT NOT NULL,
-                    difficulty TEXT DEFAULT 'medium',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_benchmark_questions_category ON benchmark_questions(category)')
-
-            # Benchmark runs - metadata for each benchmark execution
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS benchmark_runs (
-                    id SERIAL PRIMARY KEY,
-                    run_type TEXT NOT NULL,
-                    config_snapshot JSONB,
-                    overall_score FLOAT,
-                    category_scores JSONB,
-                    total_cost FLOAT DEFAULT 0,
-                    total_time_seconds FLOAT DEFAULT 0,
-                    question_count INTEGER DEFAULT 0,
-                    observations_enabled BOOLEAN DEFAULT FALSE,
-                    notes TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-
-            # Benchmark results - per-question results for each run
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS benchmark_results (
-                    id SERIAL PRIMARY KEY,
-                    run_id INTEGER NOT NULL REFERENCES benchmark_runs(id) ON DELETE CASCADE,
-                    question_id INTEGER NOT NULL REFERENCES benchmark_questions(id),
-                    context_retrieved TEXT,
-                    context_sources JSONB,
-                    response TEXT,
-                    accuracy_score FLOAT,
-                    confabulation_score FLOAT,
-                    completeness_score FLOAT,
-                    context_utilization_score FLOAT,
-                    keyword_hits INTEGER DEFAULT 0,
-                    keyword_misses INTEGER DEFAULT 0,
-                    negative_keyword_hits INTEGER DEFAULT 0,
-                    context_build_time_ms INTEGER,
-                    response_time_ms INTEGER,
-                    judge_time_ms INTEGER,
-                    cost_estimate FLOAT DEFAULT 0,
-                    judge_reasoning TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_benchmark_results_run ON benchmark_results(run_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_benchmark_results_question ON benchmark_results(question_id)')
-
-            # ==================== OBSERVATIONAL MEMORY TABLES ====================
-
-            # Observations - compressed dated conversation summaries
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS observations (
-                    id SERIAL PRIMARY KEY,
-                    user_email TEXT NOT NULL,
-                    observation_date DATE NOT NULL,
-                    time_range TEXT,
-                    content TEXT NOT NULL,
-                    message_count INTEGER DEFAULT 0,
-                    raw_token_count INTEGER DEFAULT 0,
-                    compressed_token_count INTEGER DEFAULT 0,
-                    compression_ratio FLOAT DEFAULT 0,
-                    topics TEXT,
-                    emotional_tone TEXT,
-                    first_message_id INTEGER,
-                    last_message_id INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_observations_user_date ON observations(user_email, observation_date DESC)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_observations_date ON observations(observation_date DESC)')
-
-            # Observation reflections - weekly/monthly consolidations
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS observation_reflections (
-                    id SERIAL PRIMARY KEY,
-                    user_email TEXT NOT NULL,
-                    period_type TEXT NOT NULL DEFAULT 'weekly',
-                    period_start DATE NOT NULL,
-                    period_end DATE NOT NULL,
-                    content TEXT NOT NULL,
-                    themes TEXT,
-                    observation_ids TEXT,
-                    observation_count INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_reflections_user_period ON observation_reflections(user_email, period_end DESC)')
-
-            # ==================== MULTI-AGENT TABLES ====================
-
-            # Companion reminders - scoped per companion instance
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS companion_reminders (
-                    id SERIAL PRIMARY KEY,
-                    companion_id TEXT NOT NULL DEFAULT 'default',
-                    user_email TEXT NOT NULL,
-                    reminder_text TEXT NOT NULL,
-                    remind_at TIMESTAMP NOT NULL,
-                    status TEXT DEFAULT 'pending',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    completed_at TIMESTAMP,
-                    FOREIGN KEY (user_email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_companion_reminders_status ON companion_reminders(companion_id, status)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_companion_reminders_remind_at ON companion_reminders(remind_at)')
-
-            # Companion observations - scoped per companion instance
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS companion_observations (
-                    id SERIAL PRIMARY KEY,
-                    companion_id TEXT NOT NULL DEFAULT 'default',
-                    user_email TEXT NOT NULL,
-                    observation_type TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    metadata JSONB,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_email) REFERENCES user_profiles(email)
-                )
-            ''')
-
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_companion_observations_cid ON companion_observations(companion_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_companion_observations_user ON companion_observations(user_email, companion_id)')
-
     # ==================== USER PROFILE METHODS ====================
 
     def get_profile(self, email: str) -> Dict:
@@ -539,7 +176,7 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(
-                'SELECT * FROM user_profiles WHERE email = %s',
+                f'SELECT * FROM {T.USER_PROFILES} WHERE email = %s',
                 (email,)
             )
             row = cursor.fetchone()
@@ -567,7 +204,7 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                'SELECT id FROM users WHERE email = %s',
+                f'SELECT id FROM {T.USERS} WHERE email = %s',
                 (email,)
             )
             row = cursor.fetchone()
@@ -583,15 +220,15 @@ class CompanionDB:
 
             if existing['created_at']:
                 # Update existing
-                cursor.execute('''
-                    UPDATE user_profiles
+                cursor.execute(f'''
+                    UPDATE {T.USER_PROFILES}
                     SET display_name = %s, last_seen = %s
                     WHERE email = %s
                 ''', (display_name, now_pacific_naive(), email))
             else:
                 # Create new
-                cursor.execute('''
-                    INSERT INTO user_profiles (email, display_name, is_admin, last_seen)
+                cursor.execute(f'''
+                    INSERT INTO {T.USER_PROFILES} (email, display_name, is_admin, last_seen)
                     VALUES (%s, %s, FALSE, %s)
                 ''', (email, display_name, now_pacific_naive()))
 
@@ -603,15 +240,15 @@ class CompanionDB:
 
             if existing['created_at']:
                 # Update existing
-                cursor.execute('''
-                    UPDATE user_profiles
+                cursor.execute(f'''
+                    UPDATE {T.USER_PROFILES}
                     SET is_admin = %s, last_seen = %s
                     WHERE email = %s
                 ''', (is_admin, now_pacific_naive(), email))
             else:
                 # Create new
-                cursor.execute('''
-                    INSERT INTO user_profiles (email, display_name, is_admin, last_seen)
+                cursor.execute(f'''
+                    INSERT INTO {T.USER_PROFILES} (email, display_name, is_admin, last_seen)
                     VALUES (%s, %s, %s, %s)
                 ''', (email, email.split('@')[0], is_admin, now_pacific_naive()))
 
@@ -629,8 +266,8 @@ class CompanionDB:
             if not profile['created_at']:
                 self.set_display_name(email, email.split('@')[0])
 
-            cursor.execute('''
-                UPDATE user_profiles
+            cursor.execute(f'''
+                UPDATE {T.USER_PROFILES}
                 SET last_seen = %s
                 WHERE email = %s
             ''', (now_pacific_naive(), email))
@@ -642,7 +279,7 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(
-                'SELECT * FROM user_state WHERE email = %s',
+                f'SELECT * FROM {T.USER_STATE} WHERE email = %s',
                 (email,)
             )
             row = cursor.fetchone()
@@ -690,13 +327,13 @@ class CompanionDB:
             last_message = state['last_message_time'].datetime if state.get('last_message_time') else None
 
             # Check if state exists
-            cursor.execute('SELECT email FROM user_state WHERE email = %s', (email,))
+            cursor.execute(f'SELECT email FROM {T.USER_STATE} WHERE email = %s', (email,))
             exists = cursor.fetchone() is not None
 
             if exists:
                 # Update
-                cursor.execute('''
-                    UPDATE user_state
+                cursor.execute(f'''
+                    UPDATE {T.USER_STATE}
                     SET closeness_score = %s,
                         romance_level = %s,
                         romance_enabled = %s,
@@ -727,8 +364,8 @@ class CompanionDB:
                 ))
             else:
                 # Insert
-                cursor.execute('''
-                    INSERT INTO user_state (
+                cursor.execute(f'''
+                    INSERT INTO {T.USER_STATE} (
                         email, closeness_score, romance_level, romance_enabled,
                         romance_decision, emotion_profile, last_negative_event,
                         cooldown_active, badgering_count, last_message_time,
@@ -824,8 +461,8 @@ class CompanionDB:
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO messages (email, sender_name, message_text, timestamp,
+            cursor.execute(f'''
+                INSERT INTO {T.MESSAGES} (email, sender_name, message_text, timestamp,
                                      sentiment_score, closeness_after, model_used,
                                      romance_level, source, message_type, conversation_id,
                                      emotion_state, emotion_timestamp, mood_intensity,
@@ -853,21 +490,21 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             if source:
-                cursor.execute('''
+                cursor.execute(f'''
                     SELECT id, sender_name, message_text, timestamp, sentiment_score,
                            closeness_after, model_used, romance_level, source,
                            message_type, conversation_id
-                    FROM messages
+                    FROM {T.MESSAGES}
                     WHERE email = %s AND source = %s
                     ORDER BY timestamp DESC, id DESC
                     LIMIT %s
                 ''', (email, source, limit))
             else:
-                cursor.execute('''
+                cursor.execute(f'''
                     SELECT id, sender_name, message_text, timestamp, sentiment_score,
                            closeness_after, model_used, romance_level, source,
                            message_type, conversation_id
-                    FROM messages
+                    FROM {T.MESSAGES}
                     WHERE email = %s
                     ORDER BY timestamp DESC, id DESC
                     LIMIT %s
@@ -895,7 +532,7 @@ class CompanionDB:
         """Get total message count for user"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT COUNT(*) FROM messages WHERE email = %s', (email,))
+            cursor.execute(f'SELECT COUNT(*) FROM {T.MESSAGES} WHERE email = %s', (email,))
             return cursor.fetchone()[0]
 
     def get_last_message_id(self, email: str) -> Optional[int]:
@@ -903,7 +540,7 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                'SELECT id FROM messages WHERE email = %s ORDER BY id DESC LIMIT 1',
+                f'SELECT id FROM {T.MESSAGES} WHERE email = %s ORDER BY id DESC LIMIT 1',
                 (email,)
             )
             result = cursor.fetchone()
@@ -922,11 +559,11 @@ class CompanionDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT id, sender_name, message_text, timestamp, sentiment_score,
                        closeness_after, model_used, romance_level, source,
                        message_type, conversation_id
-                FROM messages
+                FROM {T.MESSAGES}
                 WHERE email = %s
                 ORDER BY timestamp DESC, id DESC
                 LIMIT %s OFFSET %s
@@ -963,8 +600,8 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             _pc = get_persona_config()
-            cursor.execute('''
-                SELECT timestamp FROM messages
+            cursor.execute(f'''
+                SELECT timestamp FROM {T.MESSAGES}
                 WHERE email = %s AND sender_name != %s AND message_text IS NOT NULL AND message_text != ''
                 ORDER BY timestamp DESC
                 LIMIT 1
@@ -1002,8 +639,8 @@ class CompanionDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            query = '''
-                SELECT timestamp FROM messages
+            query = f'''
+                SELECT timestamp FROM {T.MESSAGES}
                 WHERE email = %s AND message_text IS NOT NULL AND message_text != ''
             '''
             params = [email]
@@ -1044,11 +681,11 @@ class CompanionDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT id, sender_name, message_text, timestamp, sentiment_score,
                        closeness_after, model_used, romance_level, source,
                        message_type, conversation_id
-                FROM messages
+                FROM {T.MESSAGES}
                 WHERE email = %s AND timestamp >= %s
                 ORDER BY timestamp ASC, id ASC
             ''', (email, cutoff_date))
@@ -1085,11 +722,11 @@ class CompanionDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT id, sender_name, message_text, timestamp, sentiment_score,
                        closeness_after, model_used, romance_level, source,
                        message_type, conversation_id
-                FROM messages
+                FROM {T.MESSAGES}
                 WHERE email = %s AND timestamp >= %s AND timestamp < %s
                 ORDER BY timestamp ASC, id ASC
             ''', (email, start_date, end_date))
@@ -1179,8 +816,8 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             tags_str = ','.join(tags) if tags else None
-            cursor.execute('''
-                INSERT INTO feed_posts (content, timestamp, mood, tags)
+            cursor.execute(f'''
+                INSERT INTO {T.FEED_POSTS} (content, timestamp, mood, tags)
                 VALUES (%s, %s, %s, %s)
                 RETURNING id
             ''', (content, now_pacific_naive(), mood, tags_str))
@@ -1192,16 +829,16 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             if include_private:
-                cursor.execute('''
+                cursor.execute(f'''
                     SELECT id, content, timestamp, mood, tags, is_public
-                    FROM feed_posts
+                    FROM {T.FEED_POSTS}
                     ORDER BY timestamp DESC
                     LIMIT %s
                 ''', (limit,))
             else:
-                cursor.execute('''
+                cursor.execute(f'''
                     SELECT id, content, timestamp, mood, tags, is_public
-                    FROM feed_posts
+                    FROM {T.FEED_POSTS}
                     WHERE is_public = TRUE
                     ORDER BY timestamp DESC
                     LIMIT %s
@@ -1224,7 +861,7 @@ class CompanionDB:
         """Delete a feed post"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM feed_posts WHERE id = %s', (post_id,))
+            cursor.execute(f'DELETE FROM {T.FEED_POSTS} WHERE id = %s', (post_id,))
             return cursor.rowcount > 0
 
     # ==================== GENERIC STATE METHODS ====================
@@ -1233,7 +870,7 @@ class CompanionDB:
         """Get a state value by key (returns JSON string or None)"""
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute('SELECT value FROM state WHERE key = %s', (key,))
+            cursor.execute(f'SELECT value FROM {T.STATE} WHERE key = %s', (key,))
             row = cursor.fetchone()
             return row['value'] if row else None
 
@@ -1241,18 +878,18 @@ class CompanionDB:
         """Set a state value (value should be JSON string)"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT key FROM state WHERE key = %s', (key,))
+            cursor.execute(f'SELECT key FROM {T.STATE} WHERE key = %s', (key,))
             exists = cursor.fetchone() is not None
 
             if exists:
-                cursor.execute('''
-                    UPDATE state
+                cursor.execute(f'''
+                    UPDATE {T.STATE}
                     SET value = %s, updated_at = %s
                     WHERE key = %s
                 ''', (value, now_pacific_naive(), key))
             else:
-                cursor.execute('''
-                    INSERT INTO state (key, value, updated_at)
+                cursor.execute(f'''
+                    INSERT INTO {T.STATE} (key, value, updated_at)
                     VALUES (%s, %s, %s)
                 ''', (key, value, now_pacific_naive()))
 
@@ -1260,7 +897,7 @@ class CompanionDB:
         """Delete a state value by key"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM state WHERE key = %s', (key,))
+            cursor.execute(f'DELETE FROM {T.STATE} WHERE key = %s', (key,))
             return cursor.rowcount > 0
 
     # ==================== UPCOMING EVENTS METHODS ====================
@@ -1286,8 +923,8 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             participants_str = ','.join(participants) if participants else None
-            cursor.execute('''
-                INSERT INTO upcoming_events
+            cursor.execute(f'''
+                INSERT INTO {T.UPCOMING_EVENTS}
                 (user_email, event_type, description, scheduled_time, created_at, status, participants, location, notes)
                 VALUES (%s, %s, %s, %s, %s, 'planned', %s, %s, %s)
                 RETURNING id
@@ -1310,10 +947,10 @@ class CompanionDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT id, user_email, event_type, description, scheduled_time,
                        created_at, status, participants, location, notes
-                FROM upcoming_events
+                FROM {T.UPCOMING_EVENTS}
                 WHERE user_email = %s AND status = %s
                 ORDER BY scheduled_time ASC NULLS LAST, created_at DESC
                 LIMIT %s
@@ -1352,10 +989,10 @@ class CompanionDB:
 
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT id, user_email, event_type, description, scheduled_time,
                        created_at, status, participants, location, notes
-                FROM upcoming_events
+                FROM {T.UPCOMING_EVENTS}
                 WHERE status = 'planned'
                   AND scheduled_time IS NOT NULL
                   AND scheduled_time < %s
@@ -1391,10 +1028,10 @@ class CompanionDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT id, user_email, event_type, description, scheduled_time,
                        created_at, status, participants, location, notes
-                FROM upcoming_events
+                FROM {T.UPCOMING_EVENTS}
                 WHERE id = %s
             ''', (event_id,))
 
@@ -1427,8 +1064,8 @@ class CompanionDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE upcoming_events
+            cursor.execute(f'''
+                UPDATE {T.UPCOMING_EVENTS}
                 SET status = %s
                 WHERE id = %s
             ''', (status, event_id))
@@ -1438,7 +1075,7 @@ class CompanionDB:
         """Delete an event"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM upcoming_events WHERE id = %s', (event_id,))
+            cursor.execute(f'DELETE FROM {T.UPCOMING_EVENTS} WHERE id = %s', (event_id,))
             return cursor.rowcount > 0
 
     def get_events_for_prompt(self, user_email: str, limit: int = 5) -> str:
@@ -1490,10 +1127,10 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(
-                """
+                f"""
                 SELECT task_id, user_id, task_name, status, narrative,
                        mood_delta, energy_delta, created_at, updated_at
-                FROM companion_autonomous_tasks
+                FROM {T.COMPANION_AUTONOMOUS_TASKS}
                 WHERE task_id = %s
                 """,
                 (task_id,)
@@ -1539,11 +1176,11 @@ class CompanionDB:
             embedding_str = '[' + ','.join(str(x) for x in query_embedding) + ']'
 
             if email:
-                cursor.execute('''
+                cursor.execute(f'''
                     SELECT
                         id, sender_name, message_text, timestamp, email,
                         1 - (embedding_vec <=> %s::vector) as similarity
-                    FROM messages
+                    FROM {T.MESSAGES}
                     WHERE embedding_vec IS NOT NULL
                       AND email = %s
                       AND 1 - (embedding_vec <=> %s::vector) >= %s
@@ -1551,11 +1188,11 @@ class CompanionDB:
                     LIMIT %s
                 ''', (embedding_str, email, embedding_str, min_similarity, embedding_str, limit))
             else:
-                cursor.execute('''
+                cursor.execute(f'''
                     SELECT
                         id, sender_name, message_text, timestamp, email,
                         1 - (embedding_vec <=> %s::vector) as similarity
-                    FROM messages
+                    FROM {T.MESSAGES}
                     WHERE embedding_vec IS NOT NULL
                       AND 1 - (embedding_vec <=> %s::vector) >= %s
                     ORDER BY embedding_vec <=> %s::vector
@@ -1580,7 +1217,7 @@ class CompanionDB:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                'SELECT embedding_vec::text FROM messages WHERE id = %s AND embedding_vec IS NOT NULL',
+                f'SELECT embedding_vec::text FROM {T.MESSAGES} WHERE id = %s AND embedding_vec IS NOT NULL',
                 (message_id,)
             )
             row = cursor.fetchone()
@@ -1603,10 +1240,10 @@ class CompanionDB:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT id, subject, predicate, object, confidence, importance,
                        temporal, context, source, created_at, last_mentioned
-                FROM facts
+                FROM {T.FACTS}
                 WHERE user_email = %s AND archived_at IS NULL
                 ORDER BY last_mentioned DESC NULLS LAST, created_at DESC
                 LIMIT %s

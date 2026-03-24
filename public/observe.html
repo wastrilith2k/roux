@@ -17,93 +17,25 @@
     </div>
 </div>
 
+<!-- Character selector bar -->
+<div class="character-selector" id="character-selector">
+    <span class="selector-label">Characters:</span>
+    <div class="selector-buttons" id="selector-buttons">
+        <!-- Populated dynamically -->
+    </div>
+    <button class="selector-all" id="btn-show-all" onclick="showAllCharacters()">Show All</button>
+</div>
+
 <div class="dashboard">
 
-    <!-- Left: Kai's state -->
-    <div class="side-panel" id="panel-kai">
-        <div class="panel-title kai">Kai</div>
-
-        <div class="state-card">
-            <h3>Mood</h3>
-            <div class="state-value"><span class="mood-tag" id="kai-mood">--</span></div>
-        </div>
-
-        <div class="state-card">
-            <h3>Energy</h3>
-            <div class="state-value" id="kai-energy-label">--</div>
-            <div class="bar-container">
-                <div class="bar-fill energy" id="kai-energy-bar" style="width: 0%"></div>
-            </div>
-        </div>
-
-        <div class="state-card">
-            <h3>Mode</h3>
-            <div class="state-value" id="kai-mode">--</div>
-        </div>
-
-        <div class="state-card">
-            <h3>Scene</h3>
-            <div class="state-value" id="kai-scene">--</div>
-        </div>
-
-        <div class="state-card">
-            <h3>Closeness</h3>
-            <div class="state-value" id="kai-closeness-label">--</div>
-            <div class="bar-container">
-                <div class="bar-fill closeness" id="kai-closeness-bar" style="width: 0%"></div>
-            </div>
-        </div>
-
-        <div class="state-card">
-            <h3>Emotion Profile</h3>
-            <div class="state-value" id="kai-emotion">--</div>
-        </div>
+    <!-- Left: State panels (dynamically populated) -->
+    <div class="state-panels" id="state-panels">
+        <!-- Built by JS -->
     </div>
 
     <!-- Center: Conversation feed -->
     <div class="feed-container">
         <div class="feed" id="feed"></div>
-    </div>
-
-    <!-- Right: Mira's state -->
-    <div class="side-panel" id="panel-mira">
-        <div class="panel-title mira">Mira</div>
-
-        <div class="state-card">
-            <h3>Mood</h3>
-            <div class="state-value"><span class="mood-tag" id="mira-mood">--</span></div>
-        </div>
-
-        <div class="state-card">
-            <h3>Energy</h3>
-            <div class="state-value" id="mira-energy-label">--</div>
-            <div class="bar-container">
-                <div class="bar-fill energy" id="mira-energy-bar" style="width: 0%"></div>
-            </div>
-        </div>
-
-        <div class="state-card">
-            <h3>Mode</h3>
-            <div class="state-value" id="mira-mode">--</div>
-        </div>
-
-        <div class="state-card">
-            <h3>Scene</h3>
-            <div class="state-value" id="mira-scene">--</div>
-        </div>
-
-        <div class="state-card">
-            <h3>Closeness</h3>
-            <div class="state-value" id="mira-closeness-label">--</div>
-            <div class="bar-container">
-                <div class="bar-fill closeness" id="mira-closeness-bar" style="width: 0%"></div>
-            </div>
-        </div>
-
-        <div class="state-card">
-            <h3>Emotion Profile</h3>
-            <div class="state-value" id="mira-emotion">--</div>
-        </div>
     </div>
 
     <!-- Bottom tabs -->
@@ -116,9 +48,8 @@
             <button data-tab="episodes">Episodes</button>
             <button data-tab="relationship">Relationship</button>
         </div>
-        <div class="tab-companion-toggle">
-            <button class="active-kai" id="tab-cid-kai" onclick="setTabCompanion('kai')">Kai</button>
-            <button id="tab-cid-mira" onclick="setTabCompanion('mira')">Mira</button>
+        <div class="tab-companion-toggle" id="tab-companion-toggle">
+            <!-- Populated dynamically -->
         </div>
         <div class="tab-content active" id="tab-facts">
             <div class="empty-state">No facts yet</div>

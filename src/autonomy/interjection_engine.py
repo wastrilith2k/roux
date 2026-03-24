@@ -41,6 +41,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from src.config.persona_config import get_persona_config
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -193,9 +194,9 @@ class InterjectionEngine:
             conn = self._get_connection()
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 # Get last 20 messages for conversation context + intimate detection
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT sender_name, message_text, timestamp
-                    FROM messages
+                    FROM {T.MESSAGES}
                     ORDER BY timestamp DESC
                     LIMIT 20
                 """)
@@ -348,8 +349,8 @@ class InterjectionEngine:
             conn = self._get_connection()
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 _pc = get_persona_config()
-                cursor.execute("""
-                    SELECT message_text FROM messages
+                cursor.execute(f"""
+                    SELECT message_text FROM {T.MESSAGES}
                     WHERE sender_name = %s
                       AND (source LIKE '%%proactive%%'
                            OR source = 'websocket_interjection'
@@ -733,7 +734,7 @@ Respond with JSON only:
             conn = self._get_connection()
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "SELECT timestamp FROM messages ORDER BY timestamp DESC LIMIT 1"
+                    f"SELECT timestamp FROM {T.MESSAGES} ORDER BY timestamp DESC LIMIT 1"
                 )
                 row = cursor.fetchone()
                 if row:

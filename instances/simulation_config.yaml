@@ -1,0 +1,90 @@
+# Simulation configuration — shared settings for simulate_relationship.py
+# Everything here can be tuned without touching code.
+
+# Models to rotate between conversations (OpenRouter free tier)
+# Sticking with Nemotron 120B — other free models rate-limit too aggressively on Venice
+models:
+  - nvidia/nemotron-3-super-120b-a12b:free
+
+# Conversation opener directions — one is picked randomly for each new conversation
+opener_seeds:
+  - "Share something funny or weird that just happened."
+  - "Ask about something they mentioned before, or bring up a new topic."
+  - "Send a reaction to something you saw, read, or heard today."
+  - "Share a random thought or observation about your day."
+  - "Ask for their opinion on something you've been thinking about."
+  - "Complain about something minor in a funny way."
+  - "Share something you're excited or curious about right now."
+  - "Send a quick update on what you're doing — keep it real."
+  - "Reference something from a past conversation if you can."
+  - "Ask what they're up to or how their day is going — but make it specific, not generic."
+  - "Share a small win or a frustrating moment."
+  - "Bring up a new interest or something you just discovered."
+  - "Vent about something that annoyed you today."
+  - "Ask a random hypothetical or 'would you rather' question."
+  - "Share a song, video, or article you found interesting."
+
+# Tone modifiers — one is picked randomly per conversation to add variety
+# Empty strings mean neutral tone (weighted to appear more often)
+tone_modifiers:
+  - ""
+  - ""
+  - ""
+  - "You're in a teasing mood — playfully push back on what they say."
+  - "You're feeling a bit contrarian today — respectfully disagree or offer a different take."
+  - "You're distracted and only half-paying attention. Keep responses short."
+  - "You're feeling vulnerable — share something a little more personal than usual."
+  - "You're in a silly mood — be goofy, make a bad pun or a weird joke."
+  - "You're feeling protective — check in on how they're actually doing."
+  - "You've got strong opinions today — don't just agree with everything."
+  - "You're feeling nostalgic — bring up an old memory or feeling."
+  - "You're low energy — be a bit flat, short responses, not super engaged."
+
+# Activities companions might be doing between conversations
+activities:
+  - sketching
+  - coding
+  - reading
+  - making coffee
+  - taking a walk
+  - listening to music
+  - browsing reddit
+  - watching a video
+  - stretching
+  - cooking
+  - cleaning up
+  - doodling
+  - napping
+  - people-watching
+  - working on a project
+  - reorganizing their desk
+  - journaling
+  - scrolling through social media
+  - doing laundry
+  - staring out the window
+
+# Mood options
+moods:
+  - relaxed
+  - focused
+  - playful
+  - content
+  - restless
+  - thoughtful
+  - tired
+  - energetic
+  - nostalgic
+  - creative
+  - irritated
+  - anxious
+  - melancholy
+  - giddy
+
+# Probability that a life event occurs between conversations (0.0 to 1.0)
+life_event_probability: 0.6
+
+# LLM settings
+max_tokens: 2000
+temperature: 0.95
+summary_max_tokens: 150
+summary_temperature: 0.3

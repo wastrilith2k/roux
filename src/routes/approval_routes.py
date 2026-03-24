@@ -24,6 +24,8 @@ from flask import Blueprint, request, jsonify, g
 from functools import wraps
 import logging
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 approval_bp = Blueprint('approvals', __name__, url_prefix='/api/approvals')
@@ -185,7 +187,7 @@ def get_llm_review(fact_id: int):
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
-                "SELECT * FROM pending_facts WHERE id = %s",
+                f"SELECT * FROM {T.PENDING_FACTS} WHERE id = %s",
                 (fact_id,)
             )
             pending = cursor.fetchone()

@@ -42,6 +42,8 @@ from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, asdict
 from zoneinfo import ZoneInfo
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 PST = ZoneInfo('America/Los_Angeles')
@@ -269,8 +271,8 @@ Respond with ONLY the JSON array:"""
             conn = self._get_connection()
             with conn.cursor() as cursor:
                 for step in steps:
-                    cursor.execute("""
-                        INSERT INTO companion_goal_steps
+                    cursor.execute(f"""
+                        INSERT INTO {T.COMPANION_GOAL_STEPS}
                         (id, goal_id, user_email, step_number, description,
                          action_type, parameters, status, depends_on, wait_for,
                          attempts, max_attempts)
@@ -304,13 +306,13 @@ Respond with ONLY the JSON array:"""
         try:
             conn = self._get_connection()
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT s.id, s.goal_id, s.user_email, s.step_number, s.description,
                            s.action_type, s.parameters, s.status, s.depends_on, s.wait_for,
                            s.outcome, s.outcome_quality, s.created_at, s.completed_at,
                            s.attempts, s.max_attempts
-                    FROM companion_goal_steps s
-                    JOIN companion_goals g ON s.goal_id = g.id
+                    FROM {T.COMPANION_GOAL_STEPS} s
+                    JOIN {T.COMPANION_GOALS} g ON s.goal_id = g.id
                     WHERE s.user_email = %s
                     AND s.status IN ('pending', 'ready')
                     AND g.status = 'active'
@@ -357,13 +359,13 @@ Respond with ONLY the JSON array:"""
         try:
             conn = self._get_connection()
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT s.id, s.goal_id, s.user_email, s.step_number, s.description,
                            s.action_type, s.parameters, s.status, s.depends_on, s.wait_for,
                            s.outcome, s.outcome_quality, s.created_at, s.completed_at,
                            s.attempts, s.max_attempts
-                    FROM companion_goal_steps s
-                    JOIN companion_goals g ON s.goal_id = g.id
+                    FROM {T.COMPANION_GOAL_STEPS} s
+                    JOIN {T.COMPANION_GOALS} g ON s.goal_id = g.id
                     WHERE s.user_email = %s
                     AND s.action_type = 'relate'
                     AND s.status IN ('pending', 'ready')
@@ -388,8 +390,8 @@ Respond with ONLY the JSON array:"""
         try:
             conn = self._get_connection()
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT id FROM companion_goal_steps
+                cursor.execute(f"""
+                    SELECT id FROM {T.COMPANION_GOAL_STEPS}
                     WHERE user_email = %s AND status = 'completed'
                 """, (user_email,))
                 return {row[0] for row in cursor.fetchall()}
@@ -407,13 +409,13 @@ Respond with ONLY the JSON array:"""
         try:
             conn = self._get_connection()
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT s.id, s.goal_id, s.user_email, s.step_number, s.description,
                            s.action_type, s.parameters, s.status, s.depends_on, s.wait_for,
                            s.outcome, s.outcome_quality, s.created_at, s.completed_at,
                            s.attempts, s.max_attempts
-                    FROM companion_goal_steps s
-                    JOIN companion_goals g ON s.goal_id = g.id
+                    FROM {T.COMPANION_GOAL_STEPS} s
+                    JOIN {T.COMPANION_GOALS} g ON s.goal_id = g.id
                     WHERE s.user_email = %s
                     AND s.action_type IN ('suppress', 'being')
                     AND s.status IN ('pending', 'ready', 'in_progress')
@@ -431,12 +433,12 @@ Respond with ONLY the JSON array:"""
         try:
             conn = self._get_connection()
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT g.id, g.goal, g.motivation, g.category, g.progress, g.status,
                            g.actions_taken, g.created_at, g.updated_at, g.deadline, g.priority,
                            g.goal_mode, g.energy_cost
-                    FROM companion_goals g
-                    LEFT JOIN companion_goal_steps s ON g.id = s.goal_id
+                    FROM {T.COMPANION_GOALS} g
+                    LEFT JOIN {T.COMPANION_GOAL_STEPS} s ON g.id = s.goal_id
                     WHERE g.user_email = %s
                     AND g.status = 'active'
                     AND s.id IS NULL
@@ -465,12 +467,12 @@ Respond with ONLY the JSON array:"""
         try:
             conn = self._get_connection()
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT id, goal_id, user_email, step_number, description,
                            action_type, parameters, status, depends_on, wait_for,
                            outcome, outcome_quality, created_at, completed_at,
                            attempts, max_attempts
-                    FROM companion_goal_steps
+                    FROM {T.COMPANION_GOAL_STEPS}
                     WHERE goal_id = %s
                     ORDER BY step_number ASC
                 """, (goal_id,))
@@ -492,8 +494,8 @@ Respond with ONLY the JSON array:"""
         try:
             conn = self._get_connection()
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE companion_goal_steps
+                cursor.execute(f"""
+                    UPDATE {T.COMPANION_GOAL_STEPS}
                     SET status = 'completed',
                         outcome = %s,
                         outcome_quality = %s,
@@ -523,8 +525,8 @@ Respond with ONLY the JSON array:"""
         try:
             conn = self._get_connection()
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE companion_goal_steps
+                cursor.execute(f"""
+                    UPDATE {T.COMPANION_GOAL_STEPS}
                     SET attempts = attempts + 1,
                         status = CASE
                             WHEN attempts + 1 >= max_attempts THEN 'blocked'
@@ -547,12 +549,12 @@ Respond with ONLY the JSON array:"""
         try:
             conn = self._get_connection()
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT
                         COUNT(*) as total,
                         COUNT(*) FILTER (WHERE status = 'completed') as completed,
                         COUNT(*) FILTER (WHERE status = 'skipped') as skipped
-                    FROM companion_goal_steps
+                    FROM {T.COMPANION_GOAL_STEPS}
                     WHERE goal_id = %s
                 """, (goal_id,))
 
@@ -563,8 +565,8 @@ Respond with ONLY the JSON array:"""
                 total, completed, skipped = row
                 progress = (completed + skipped) / total
 
-                cursor.execute("""
-                    UPDATE companion_goals
+                cursor.execute(f"""
+                    UPDATE {T.COMPANION_GOALS}
                     SET progress = %s, updated_at = %s
                     WHERE id = %s
                 """, (progress, datetime.now(PST), goal_id))

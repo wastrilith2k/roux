@@ -23,6 +23,8 @@ from functools import wraps
 from datetime import datetime, timedelta
 from contextlib import contextmanager
 
+from src.database import tables as T
+
 @contextmanager
 def get_db():
     """Get PostgreSQL database connection"""
@@ -51,34 +53,8 @@ def get_db():
         conn.close()
 
 def init_users_db():
-    """Initialize users table (already created by migration, but this ensures they exist)"""
-    with get_db() as conn:
-        cursor = conn.cursor()
-
-        # Users table (already created by migration script)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                email TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_login TIMESTAMP
-            )
-        ''')
-
-        # Sessions table (already created by migration script)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS sessions (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL,
-                session_token TEXT UNIQUE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                expires_at TIMESTAMP NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users (id)
-            )
-        ''')
-
-    print("✅ PostgreSQL auth tables initialized")
+    """No-op: auth tables are created by the schema migration system."""
+    pass
 
 def hash_password(password: str) -> str:
     """Hash a password with salt"""
@@ -101,7 +77,7 @@ def create_user(email: str, password: str) -> bool:
         with get_db() as conn:
             cursor = conn.cursor()
             password_hash = hash_password(password)
-            cursor.execute('INSERT INTO users (email, password_hash) VALUES (%s, %s)', (email, password_hash))
+            cursor.execute(f'INSERT INTO public.{T.USERS} (email, password_hash) VALUES (%s, %s)', (email, password_hash))
         return True
     except psycopg2.IntegrityError:
         return False  # User already exists
@@ -110,23 +86,32 @@ def authenticate_user(email: str, password: str) -> dict:
     """Authenticate a user and create a session"""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM users WHERE email = %s', (email,))
+        cursor.execute(f'SELECT * FROM public.{T.USERS} WHERE email = %s', (email,))
         user = cursor.fetchone()
 
         if not user or not verify_password(password, user['password_hash']):
             return None
 
         # Update last login
-        cursor.execute('UPDATE users SET last_login = %s WHERE id = %s', (datetime.now(), user['id']))
+        cursor.execute(f'UPDATE public.{T.USERS} SET last_login = %s WHERE id = %s', (datetime.now(), user['id']))
 
         # Create session token
         session_token = secrets.token_urlsafe(32)
         expires_at = datetime.now() + timedelta(days=30)
 
-        cursor.execute('''
-            INSERT INTO sessions (user_id, session_token, expires_at)
+        cursor.execute(f'''
+            INSERT INTO public.{T.SESSIONS} (user_id, session_token, expires_at)
             VALUES (%s, %s, %s)
         ''', (user['id'], session_token, expires_at))
+
+        # Ensure user's data schema exists
+        try:
+            from src.database.schema_manager import ensure_user_schema
+            ensure_user_schema(conn, email)
+        except Exception as e:
+            # Don't fail login if schema creation fails
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to ensure user schema: {e}")
 
         return {
             'user_id': user['id'],
@@ -139,10 +124,10 @@ def verify_session(session_token: str) -> dict:
     with get_db() as conn:
         cursor = conn.cursor()
 
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT u.id, u.email, s.expires_at
-            FROM sessions s
-            JOIN users u ON s.user_id = u.id
+            FROM public.{T.SESSIONS} s
+            JOIN public.{T.USERS} u ON s.user_id = u.id
             WHERE s.session_token = %s
         ''', (session_token,))
 
@@ -168,13 +153,13 @@ def logout_user(session_token: str):
     """Delete a session (logout)"""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('DELETE FROM sessions WHERE session_token = %s', (session_token,))
+        cursor.execute(f'DELETE FROM public.{T.SESSIONS} WHERE session_token = %s', (session_token,))
 
 def change_password(email: str, old_password: str, new_password: str) -> bool:
     """Change a user's password"""
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM users WHERE email = %s', (email,))
+        cursor.execute(f'SELECT * FROM public.{T.USERS} WHERE email = %s', (email,))
         user = cursor.fetchone()
 
         if not user:
@@ -186,7 +171,7 @@ def change_password(email: str, old_password: str, new_password: str) -> bool:
 
         # Update to new password
         new_hash = hash_password(new_password)
-        cursor.execute('UPDATE users SET password_hash = %s WHERE email = %s', (new_hash, email))
+        cursor.execute(f'UPDATE public.{T.USERS} SET password_hash = %s WHERE email = %s', (new_hash, email))
 
     return True
 

@@ -34,6 +34,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict
 
+from src.database import tables as T
+
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
@@ -121,7 +123,7 @@ class Observer:
 
         # Find the last observation's last_message_id
         result = db.execute(
-            """SELECT last_message_id FROM observations
+            f"""SELECT last_message_id FROM {T.OBSERVATIONS}
                WHERE user_email = %s
                ORDER BY observation_date DESC, id DESC LIMIT 1""",
             (user_email,)
@@ -131,7 +133,7 @@ class Observer:
 
         # Count unprocessed messages
         result = db.execute(
-            """SELECT COUNT(*) as cnt FROM messages
+            f"""SELECT COUNT(*) as cnt FROM {T.MESSAGES}
                WHERE email = %s AND id > %s""",
             (user_email, last_observed_id)
         )
@@ -144,7 +146,7 @@ class Observer:
 
         # Estimate token count (rough: 1 token ≈ 4 chars)
         result = db.execute(
-            """SELECT SUM(LENGTH(message_text)) as total_chars FROM messages
+            f"""SELECT SUM(LENGTH(message_text)) as total_chars FROM {T.MESSAGES}
                WHERE email = %s AND id > %s""",
             (user_email, last_observed_id)
         )
@@ -173,7 +175,7 @@ class Observer:
 
         # Find where we left off
         result = db.execute(
-            """SELECT last_message_id FROM observations
+            f"""SELECT last_message_id FROM {T.OBSERVATIONS}
                WHERE user_email = %s
                ORDER BY observation_date DESC, id DESC LIMIT 1""",
             (user_email,)
@@ -183,8 +185,8 @@ class Observer:
 
         # Get unprocessed messages
         result = db.execute(
-            """SELECT id, sender_name, message_text, timestamp
-               FROM messages
+            f"""SELECT id, sender_name, message_text, timestamp
+               FROM {T.MESSAGES}
                WHERE email = %s AND id > %s
                ORDER BY timestamp ASC, id ASC""",
             (user_email, last_observed_id)
@@ -400,7 +402,7 @@ Output JSON: {{"topics": "...", "emotional_tone": "..."}}"""},
     def _store_observation(self, db, obs: Observation):
         """Store observation in database."""
         result = db.execute(
-            """INSERT INTO observations
+            f"""INSERT INTO {T.OBSERVATIONS}
                (user_email, observation_date, time_range, content,
                 message_count, raw_token_count, compressed_token_count,
                 compression_ratio, topics, emotional_tone,
@@ -448,12 +450,12 @@ class Reflector:
 
         # Get observations older than 7 days not yet in a reflection
         result = db.execute(
-            """SELECT COUNT(*) as cnt FROM observations
+            f"""SELECT COUNT(*) as cnt FROM {T.OBSERVATIONS}
                WHERE user_email = %s
                  AND observation_date <= %s
                  AND id NOT IN (
                      SELECT UNNEST(string_to_array(observation_ids, ','))::int
-                     FROM observation_reflections
+                     FROM {T.OBSERVATION_REFLECTIONS}
                      WHERE user_email = %s
                  )""",
             (user_email, cutoff, user_email)
@@ -476,13 +478,13 @@ class Reflector:
 
         # Get unreflected observations
         result = db.execute(
-            """SELECT id, observation_date, content, topics, emotional_tone
-               FROM observations
+            f"""SELECT id, observation_date, content, topics, emotional_tone
+               FROM {T.OBSERVATIONS}
                WHERE user_email = %s
                  AND observation_date <= %s
                  AND id NOT IN (
                      SELECT UNNEST(string_to_array(observation_ids, ','))::int
-                     FROM observation_reflections
+                     FROM {T.OBSERVATION_REFLECTIONS}
                      WHERE user_email = %s
                  )
                ORDER BY observation_date ASC""",
@@ -539,7 +541,7 @@ OBSERVATIONS:
 
             # Store reflection
             result = db.execute(
-                """INSERT INTO observation_reflections
+                f"""INSERT INTO {T.OBSERVATION_REFLECTIONS}
                    (user_email, period_type, period_start, period_end,
                     content, themes, observation_ids, observation_count)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
@@ -662,8 +664,8 @@ class ObservationManager:
         # 1. Recent observations (last 7 days - always include)
         recent_cutoff = date.today() - timedelta(days=7)
         result = db.execute(
-            """SELECT observation_date, time_range, content, topics, emotional_tone
-               FROM observations
+            f"""SELECT observation_date, time_range, content, topics, emotional_tone
+               FROM {T.OBSERVATIONS}
                WHERE user_email = %s AND observation_date >= %s
                ORDER BY observation_date DESC""",
             (user_email, recent_cutoff)
@@ -685,7 +687,7 @@ class ObservationManager:
 
                 result = db.execute(
                     f"""SELECT observation_date, time_range, content, topics, emotional_tone
-                       FROM observations
+                       FROM {T.OBSERVATIONS}
                        WHERE user_email = %s
                          AND observation_date < %s
                          AND observation_date >= %s
@@ -705,8 +707,8 @@ class ObservationManager:
         # 3. Get most recent weekly reflection
         reflection_text = ""
         result = db.execute(
-            """SELECT content, period_start, period_end, themes
-               FROM observation_reflections
+            f"""SELECT content, period_start, period_end, themes
+               FROM {T.OBSERVATION_REFLECTIONS}
                WHERE user_email = %s
                ORDER BY period_end DESC LIMIT 1""",
             (user_email,)
@@ -749,21 +751,21 @@ class ObservationManager:
         db = get_db()
 
         result = db.execute(
-            """SELECT
+            f"""SELECT
                    COUNT(*) as total_observations,
                    SUM(message_count) as total_messages_covered,
                    AVG(compression_ratio) as avg_compression_ratio,
                    MIN(observation_date) as earliest_date,
                    MAX(observation_date) as latest_date
-               FROM observations
+               FROM {T.OBSERVATIONS}
                WHERE user_email = %s""",
             (user_email,)
         )
         row = result.fetchone()
 
         result2 = db.execute(
-            """SELECT COUNT(*) as total_reflections
-               FROM observation_reflections
+            f"""SELECT COUNT(*) as total_reflections
+               FROM {T.OBSERVATION_REFLECTIONS}
                WHERE user_email = %s""",
             (user_email,)
         )

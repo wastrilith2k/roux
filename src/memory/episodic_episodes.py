@@ -37,6 +37,8 @@ from zoneinfo import ZoneInfo
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 PST = ZoneInfo('America/Los_Angeles')
@@ -118,8 +120,8 @@ class EpisodeStore:
         conn = self._get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
-                    SELECT * FROM episodes
+                cursor.execute(f"""
+                    SELECT * FROM {T.EPISODES}
                     WHERE user_email = %s AND resolution = 'ongoing'
                     ORDER BY started_at DESC
                     LIMIT 1
@@ -143,8 +145,8 @@ class EpisodeStore:
         conn = self._get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
-                    INSERT INTO episodes (user_email, topic, trigger, emotional_state, started_at)
+                cursor.execute(f"""
+                    INSERT INTO {T.EPISODES} (user_email, topic, trigger, emotional_state, started_at)
                     VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
                     RETURNING *
                 """, (user_email, topic, trigger, emotional_state))
@@ -170,8 +172,8 @@ class EpisodeStore:
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE episodes
+                cursor.execute(f"""
+                    UPDATE {T.EPISODES}
                     SET ended_at = CURRENT_TIMESTAMP,
                         resolution = %s,
                         satisfaction = %s,
@@ -192,23 +194,23 @@ class EpisodeStore:
         try:
             with conn.cursor() as cursor:
                 # Get current turn count
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT COALESCE(MAX(turn_number), 0) + 1 as next_turn
-                    FROM episode_messages
+                    FROM {T.EPISODE_MESSAGES}
                     WHERE episode_id = %s::uuid
                 """, (episode_id,))
                 next_turn = cursor.fetchone()[0]
 
                 # Add message
-                cursor.execute("""
-                    INSERT INTO episode_messages (episode_id, message_id, turn_number)
+                cursor.execute(f"""
+                    INSERT INTO {T.EPISODE_MESSAGES} (episode_id, message_id, turn_number)
                     VALUES (%s::uuid, %s, %s)
                     ON CONFLICT (episode_id, message_id) DO NOTHING
                 """, (episode_id, message_id, next_turn))
 
                 # Update message count
-                cursor.execute("""
-                    UPDATE episodes
+                cursor.execute(f"""
+                    UPDATE {T.EPISODES}
                     SET message_count = message_count + 1,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE episode_id = %s::uuid
@@ -226,8 +228,8 @@ class EpisodeStore:
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE episodes
+                cursor.execute(f"""
+                    UPDATE {T.EPISODES}
                     SET topic = %s, updated_at = CURRENT_TIMESTAMP
                     WHERE episode_id = %s::uuid
                 """, (topic, episode_id))
@@ -243,8 +245,8 @@ class EpisodeStore:
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE episodes
+                cursor.execute(f"""
+                    UPDATE {T.EPISODES}
                     SET emotional_state = %s, updated_at = CURRENT_TIMESTAMP
                     WHERE episode_id = %s::uuid
                 """, (emotional_state, episode_id))
@@ -266,8 +268,8 @@ class EpisodeStore:
         try:
             cutoff = datetime.now(PST) - timedelta(days=days_back)
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
-                    SELECT * FROM episodes
+                cursor.execute(f"""
+                    SELECT * FROM {T.EPISODES}
                     WHERE user_email = %s
                       AND started_at > %s
                     ORDER BY started_at DESC
@@ -289,8 +291,8 @@ class EpisodeStore:
         conn = self._get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
-                    SELECT * FROM episodes
+                cursor.execute(f"""
+                    SELECT * FROM {T.EPISODES}
                     WHERE user_email = %s
                       AND LOWER(topic) LIKE %s
                       AND resolution != 'ongoing'
@@ -308,8 +310,8 @@ class EpisodeStore:
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT MAX(timestamp) FROM messages
+                cursor.execute(f"""
+                    SELECT MAX(timestamp) FROM {T.MESSAGES}
                     WHERE email = %s AND sender_name = 'User'
                 """, (user_email,))
                 result = cursor.fetchone()
@@ -370,10 +372,10 @@ def score_episode_satisfaction(episode_id: str, store: EpisodeStore = None) -> O
 
         # Get the episode's messages
         with conn.cursor() as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT m.sender_name, m.message_text
-                FROM episode_messages em
-                JOIN messages m ON m.id = em.message_id
+                FROM {T.EPISODE_MESSAGES} em
+                JOIN {T.MESSAGES} m ON m.id = em.message_id
                 WHERE em.episode_id = %s::uuid
                 ORDER BY em.turn_number
                 LIMIT 15

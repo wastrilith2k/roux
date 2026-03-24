@@ -4,7 +4,6 @@ Fireworks AI Provider Implementation
 Uses Fireworks AI API with Kimi K2 model (via Fireworks).
 """
 
-import aiohttp
 import requests
 import logging
 from typing import Dict, List, Optional
@@ -54,6 +53,7 @@ class FireworksProvider(LLMProvider):
         }
 
         try:
+            import aiohttp
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     self.base_url,

@@ -7,6 +7,8 @@ from datetime import datetime
 from typing import Dict, Any
 from zoneinfo import ZoneInfo
 
+from src.database import tables as T
+
 
 def get_system_status() -> Dict[str, Any]:
     """
@@ -65,15 +67,15 @@ def get_system_status() -> Dict[str, Any]:
             cursor = conn.cursor()
 
             # Message count
-            cursor.execute("SELECT COUNT(*) FROM messages")
+            cursor.execute(f"SELECT COUNT(*) FROM {T.MESSAGES}")
             msg_count = cursor.fetchone()[0]
 
             # Messages with embeddings
-            cursor.execute("SELECT COUNT(*) FROM messages WHERE embedding_vec IS NOT NULL")
+            cursor.execute(f"SELECT COUNT(*) FROM {T.MESSAGES} WHERE embedding_vec IS NOT NULL")
             embedded_count = cursor.fetchone()[0]
 
             # Fact count
-            cursor.execute("SELECT COUNT(*) FROM facts")
+            cursor.execute(f"SELECT COUNT(*) FROM {T.FACTS}")
             fact_count = cursor.fetchone()[0]
 
             cursor.close()

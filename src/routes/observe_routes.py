@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from flask import Blueprint, jsonify, request
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 PST = ZoneInfo('America/Los_Angeles')
@@ -47,6 +48,22 @@ def _companion_email(companion_id: str) -> str:
 # REST endpoints (all GET, no auth)
 # ---------------------------------------------------------------------------
 
+@observe_bp.route('/companions')
+def observe_companions():
+    """List all companions that have messages in the database."""
+    try:
+        db = _get_db()
+        result = db.execute(
+            f"SELECT DISTINCT companion_id FROM {T.MESSAGES} ORDER BY companion_id"
+        )
+        rows = result.fetchall() or []
+        companions = [r['companion_id'] for r in rows if r.get('companion_id')]
+        return jsonify(companions)
+    except Exception as e:
+        logger.error(f"observe_companions error: {e}")
+        return jsonify([])
+
+
 @observe_bp.route('/status')
 def observe_status():
     """Simulation status — clock time, day, running state from Redis."""
@@ -67,28 +84,45 @@ def observe_status():
 
 @observe_bp.route('/messages')
 def observe_messages():
-    """Recent messages for a companion."""
-    companion_id = request.args.get('companion_id', 'kai')
+    """Recent messages — supports filtering by multiple companion_ids."""
+    companion_ids = request.args.getlist('companion_id')  # Supports multiple
     since = request.args.get('since')
-    limit = min(int(request.args.get('limit', 50)), 200)
+    limit = min(int(request.args.get('limit', 100)), 500)
 
     try:
         db = _get_db()
-        if since:
+        if since and companion_ids:
+            placeholders = ','.join(['%s'] * len(companion_ids))
             result = db.execute(
-                """SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
-                   FROM messages
-                   WHERE companion_id = %s AND timestamp > %s
+                f"""SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
+                   FROM {T.MESSAGES}
+                   WHERE companion_id IN ({placeholders}) AND timestamp > %s
                    ORDER BY timestamp DESC LIMIT %s""",
-                (companion_id, since, limit)
+                tuple(companion_ids) + (since, limit)
+            )
+        elif since:
+            result = db.execute(
+                f"""SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
+                   FROM {T.MESSAGES}
+                   WHERE timestamp > %s
+                   ORDER BY timestamp DESC LIMIT %s""",
+                (since, limit)
+            )
+        elif companion_ids:
+            placeholders = ','.join(['%s'] * len(companion_ids))
+            result = db.execute(
+                f"""SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
+                   FROM {T.MESSAGES}
+                   WHERE companion_id IN ({placeholders})
+                   ORDER BY timestamp DESC LIMIT %s""",
+                tuple(companion_ids) + (limit,)
             )
         else:
             result = db.execute(
-                """SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
-                   FROM messages
-                   WHERE companion_id = %s
+                f"""SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
+                   FROM {T.MESSAGES}
                    ORDER BY timestamp DESC LIMIT %s""",
-                (companion_id, limit)
+                (limit,)
             )
         rows = result.fetchall() or []
         messages = []
@@ -106,6 +140,55 @@ def observe_messages():
         return jsonify([])
 
 
+@observe_bp.route('/state', methods=['POST'])
+def update_state():
+    """Update emotional/relationship state for a companion."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    companion_id = data.get('companion_id')
+    if not companion_id:
+        return jsonify({'error': 'companion_id required'}), 400
+
+    try:
+        db = _get_db()
+        updates = []
+        params = []
+
+        # Updatable fields
+        if 'closeness_score' in data:
+            updates.append('closeness_score = %s')
+            params.append(int(data['closeness_score']))
+        if 'emotion_profile' in data:
+            updates.append('emotion_profile = %s')
+            params.append(data['emotion_profile'])
+        if 'romance_level' in data:
+            updates.append('romance_level = %s')
+            params.append(float(data['romance_level']))
+        if 'cooldown_active' in data:
+            updates.append('cooldown_active = %s')
+            params.append(bool(data['cooldown_active']))
+        if 'internal_state' in data:
+            updates.append('internal_state = %s')
+            params.append(json.dumps(data['internal_state']))
+
+        if not updates:
+            return jsonify({'error': 'No valid fields to update'}), 400
+
+        params.append(companion_id)
+        db.execute(
+            f"UPDATE {T.USER_STATE} SET {', '.join(updates)} WHERE companion_id = %s",
+            tuple(params)
+        )
+
+        logger.info(f"State updated for {companion_id}: {list(data.keys())}")
+        return jsonify({'success': True, 'updated': list(data.keys())})
+    except Exception as e:
+        logger.error(f"update_state error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @observe_bp.route('/state')
 def observe_state():
     """Internal state + user_state for a companion."""
@@ -115,9 +198,9 @@ def observe_state():
         db = _get_db()
         # user_state row
         result = db.execute(
-            """SELECT closeness_score, romance_level, emotion_profile,
+            f"""SELECT closeness_score, romance_level, emotion_profile,
                       internal_state, cooldown_active
-               FROM user_state
+               FROM {T.USER_STATE}
                WHERE companion_id = %s
                LIMIT 1""",
             (companion_id,)
@@ -163,9 +246,9 @@ def observe_facts():
     try:
         db = _get_db()
         result = db.execute(
-            """SELECT subject, predicate, object, confidence, importance, category,
+            f"""SELECT subject, predicate, object, confidence, importance, category,
                       created_at, updated_at
-               FROM facts
+               FROM {T.FACTS}
                WHERE user_email = %s AND archived_at IS NULL
                ORDER BY updated_at DESC LIMIT %s""",
             (email, limit)
@@ -197,9 +280,9 @@ def observe_opinions():
     try:
         db = _get_db()
         result = db.execute(
-            """SELECT topic, opinion, confidence, evidence_count, category,
+            f"""SELECT topic, opinion, confidence, evidence_count, category,
                       evidence_summary, created_at, updated_at
-               FROM companion_opinions
+               FROM {T.COMPANION_OPINIONS}
                WHERE companion_id = %s
                ORDER BY updated_at DESC""",
             (companion_id,)
@@ -233,7 +316,7 @@ def observe_curiosity():
         # Curiosity is stored in the state table as JSON
         state_key = f'proactive_curiosity_{companion_id}'
         result = db.execute(
-            "SELECT value FROM state WHERE key = %s",
+            f"SELECT value FROM {T.STATE} WHERE key = %s",
             (state_key,)
         )
         row = result.fetchone()
@@ -258,9 +341,9 @@ def observe_goals():
     try:
         db = _get_db()
         result = db.execute(
-            """SELECT id, goal, motivation, category, progress, status,
+            f"""SELECT id, goal, motivation, category, progress, status,
                       actions_taken, created_at
-               FROM companion_goals
+               FROM {T.COMPANION_GOALS}
                WHERE user_email = %s AND status = 'active'
                ORDER BY created_at DESC""",
             (email,)
@@ -294,9 +377,9 @@ def observe_episodes():
     try:
         db = _get_db()
         result = db.execute(
-            """SELECT episode_id, started_at, ended_at, summary, significance,
+            f"""SELECT episode_id, started_at, ended_at, summary, significance,
                       emotional_arc, topics
-               FROM episodes
+               FROM {T.EPISODES}
                WHERE user_email = %s
                ORDER BY started_at DESC LIMIT %s""",
             (email, limit)
@@ -329,8 +412,8 @@ def observe_relationship():
         db = _get_db()
         # Relationship evaluation
         result = db.execute(
-            """SELECT evaluation, evaluated_at, evaluation_count
-               FROM _companion_relationship_eval
+            f"""SELECT evaluation, evaluated_at, evaluation_count
+               FROM {T.RELATIONSHIP_EVAL}
                WHERE user_email = %s
                ORDER BY evaluated_at DESC LIMIT 1""",
             (email,)

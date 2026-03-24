@@ -33,6 +33,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+from src.database import tables as T
+
 # Auth - only allow the configured chat ID
 AUTHORIZED_CHAT_ID = os.environ.get('TELEGRAM_OPS_CHAT_ID')
 TOKEN = os.environ.get('TELEGRAM_OPS_BOT_TOKEN')
@@ -419,9 +421,9 @@ async def cmd_companion(update, context):
             password=os.environ.get('POSTGRES_PASSWORD', '')
         )
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT COUNT(*) as count, MAX(timestamp) as latest
-                FROM messages
+                FROM {T.MESSAGES}
                 WHERE timestamp > NOW() - INTERVAL '24 hours'
             """)
             result = cur.fetchone()

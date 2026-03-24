@@ -29,6 +29,7 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0, '/app')
 
 from src.celery_app import celery_app
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ def get_event_groups(days_back: int = 14) -> List[Dict]:
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             # Find groups with multiple events
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT
                     subject,
                     event_type,
@@ -68,7 +69,7 @@ def get_event_groups(days_back: int = 14) -> List[Dict]:
                     ARRAY_AGG(id ORDER BY created_at ASC) as event_ids,
                     MIN(created_at) as first_event,
                     MAX(created_at) as last_event
-                FROM synthesized_events
+                FROM {T.SYNTHESIZED_EVENTS}
                 WHERE created_at > %s
                   AND subject != 'SKIP'
                   AND (superseded_by IS NULL OR superseded_by = 0)
@@ -103,10 +104,10 @@ def get_events_by_ids(event_ids: List[int]) -> List[Dict]:
         )
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT id, event_type, subject, title, timeline, narrative,
                        outcome, impact, base_importance, created_at, user_email
-                FROM synthesized_events
+                FROM {T.SYNTHESIZED_EVENTS}
                 WHERE id = ANY(%s)
                 ORDER BY created_at ASC
             """, (event_ids,))
@@ -312,8 +313,8 @@ def create_consolidated_event(
 
         with conn.cursor() as cursor:
             # Insert consolidated event
-            cursor.execute("""
-                INSERT INTO synthesized_events (
+            cursor.execute(f"""
+                INSERT INTO {T.SYNTHESIZED_EVENTS} (
                     event_type, subject, title, timeline, narrative,
                     outcome, impact, source_message_ids, base_importance,
                     user_email, is_consolidated, consolidated_from,
@@ -342,8 +343,8 @@ def create_consolidated_event(
 
             if consolidated_id:
                 # Mark original events as superseded
-                cursor.execute("""
-                    UPDATE synthesized_events
+                cursor.execute(f"""
+                    UPDATE {T.SYNTHESIZED_EVENTS}
                     SET superseded_by = %s, updated_at = CURRENT_TIMESTAMP
                     WHERE id = ANY(%s)
                 """, (consolidated_id, original_ids))
@@ -485,13 +486,13 @@ def consolidate_events_for_subject(self, subject: str, event_type: str = None, d
         cutoff = datetime.now(PST) - timedelta(days=days_back)
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            query = """
+            query = f"""
                 SELECT
                     subject,
                     event_type,
                     COUNT(*) as event_count,
                     ARRAY_AGG(id ORDER BY created_at ASC) as event_ids
-                FROM synthesized_events
+                FROM {T.SYNTHESIZED_EVENTS}
                 WHERE subject = %s
                   AND created_at > %s
                   AND (superseded_by IS NULL OR superseded_by = 0)

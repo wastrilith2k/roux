@@ -67,10 +67,13 @@ services:
       FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2-instruct-0905'
       ANTHROPIC_API_KEY: '${ANTHROPIC_API_KEY}'
       OPENAI_API_KEY: '${OPENAI_API_KEY}'
+      OPENROUTER_API_KEY: '${OPENROUTER_API_KEY}'
+      OPENROUTER_MODEL: '${OPENROUTER_MODEL:-nousresearch/hermes-3-llama-3.1-405b:free}'
+      OPENROUTER_TOOL_MODEL: '${OPENROUTER_TOOL_MODEL:-openrouter/hunter-alpha}'
       # Neo4j Configuration
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: ''
+      NEO4J_GRAPHITI_URI: bolt://neo4j:7687
+      NEO4J_GRAPHITI_USER: neo4j
+      NEO4J_GRAPHITI_PASSWORD: ''
       # Entity Extraction
       ENTITY_EXTRACTOR: 'openai'
       # Prompt Configuration
@@ -89,11 +92,15 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       # Environment marker
       ENVIRONMENT: development
+      # Which companion to load (matches instances/<name>/)
+      COMPANION_ID: '${COMPANION_ID:-kai}'
     volumes:
       - app_dev_data:/app/data
       - ./data/entity_profiles:/app/data/entity_profiles:ro
+      - ./instances:/app/instances:ro
       - ./prompts:/app/prompts:ro
       - ./scripts:/app/scripts:ro
+      - ./public:/app/public:ro
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
       - ./src:/app/src
@@ -129,10 +136,13 @@ services:
       FIREWORKS_API_KEY: '${FIREWORKS_API_KEY}'
       FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2-instruct-0905'
       OPENAI_API_KEY: '${OPENAI_API_KEY}'
+      OPENROUTER_API_KEY: '${OPENROUTER_API_KEY}'
+      OPENROUTER_MODEL: '${OPENROUTER_MODEL:-nousresearch/hermes-3-llama-3.1-405b:free}'
+      OPENROUTER_TOOL_MODEL: '${OPENROUTER_TOOL_MODEL:-openrouter/hunter-alpha}'
       # Neo4j Configuration
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: ''
+      NEO4J_GRAPHITI_URI: bolt://neo4j:7687
+      NEO4J_GRAPHITI_USER: neo4j
+      NEO4J_GRAPHITI_PASSWORD: ''
       ENTITY_EXTRACTOR: 'openai'
       ENVIRONMENT: development
     volumes:

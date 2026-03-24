@@ -31,6 +31,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from src.core.clock import now as clock_now
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -86,11 +87,11 @@ class EpisodeLearningExtractor:
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT e.*,
                            COUNT(em.id) as actual_message_count
-                    FROM episodes e
-                    LEFT JOIN episode_messages em ON e.episode_id = em.episode_id
+                    FROM {T.EPISODES} e
+                    LEFT JOIN {T.EPISODE_MESSAGES} em ON e.episode_id = em.episode_id
                     WHERE e.resolution != 'ongoing'
                       AND e.satisfaction IS NULL
                       AND e.started_at > %s
@@ -109,10 +110,10 @@ class EpisodeLearningExtractor:
         conn = self._get_connection()
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT m.sender_name, m.message_text, m.timestamp
-                    FROM episode_messages em
-                    JOIN messages m ON em.message_id = m.id
+                    FROM {T.EPISODE_MESSAGES} em
+                    JOIN {T.MESSAGES} m ON em.message_id = m.id
                     WHERE em.episode_id = %s::uuid
                     ORDER BY em.turn_number ASC
                 """, (episode_id,))
@@ -256,8 +257,8 @@ Consider:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 # 1. Update the episode itself
-                cursor.execute("""
-                    UPDATE episodes
+                cursor.execute(f"""
+                    UPDATE {T.EPISODES}
                     SET satisfaction = %s,
                         approach_summary = %s,
                         updated_at = CURRENT_TIMESTAMP
@@ -287,8 +288,8 @@ Consider:
         emotional_context = lesson.emotional_context.lower() if lesson.emotional_context else 'neutral'
 
         # Try to find existing pattern
-        cursor.execute("""
-            SELECT * FROM episode_patterns
+        cursor.execute(f"""
+            SELECT * FROM {T.EPISODE_PATTERNS}
             WHERE topic_category = %s AND emotional_context = %s
         """, (topic_category, emotional_context))
 
@@ -301,8 +302,8 @@ Consider:
         pattern_id = str(uuid.uuid4())
         pattern_name = f"{topic_category} ({emotional_context})"
 
-        cursor.execute("""
-            INSERT INTO episode_patterns
+        cursor.execute(f"""
+            INSERT INTO {T.EPISODE_PATTERNS}
             (pattern_id, pattern_name, topic_category, emotional_context, episode_count, avg_satisfaction)
             VALUES (%s, %s, %s, %s, 0, 0.0)
             RETURNING *
@@ -349,8 +350,8 @@ Consider:
         except Exception:
             pass  # Column already exists
 
-        cursor.execute("""
-            UPDATE episode_patterns
+        cursor.execute(f"""
+            UPDATE {T.EPISODE_PATTERNS}
             SET episode_count = %s,
                 avg_satisfaction = %s,
                 successful_approach = %s,
@@ -406,7 +407,7 @@ def analyze_episode_on_close(episode_id: str) -> Optional[EpisodeLesson]:
     try:
         conn = extractor._get_connection()
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("SELECT * FROM episodes WHERE episode_id = %s::uuid", (episode_id,))
+            cursor.execute(f"SELECT * FROM {T.EPISODES} WHERE episode_id = %s::uuid", (episode_id,))
             episode = cursor.fetchone()
 
         if not episode:

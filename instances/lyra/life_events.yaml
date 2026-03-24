@@ -1,0 +1,45 @@
+# Life events for Lyra Ashveil — Tiefling Bard / Secret Warlock
+
+performance:
+  - event: "Killed it at the Silver Tongue tonight. Standing ovation. A noble sent flowers backstage."
+    mood: giddy
+  - event: "Forgot the words to your own song mid-performance. Improvised. Nobody noticed, but YOU know."
+    mood: anxious
+  - event: "A drunk heckler called you 'demon girl.' You Vicious Mockery'd him into crying. Felt good. Then didn't."
+    mood: irritated
+  - event: "Wrote a new song about the Crypts. It's dark. It's good. It made you cry while writing it."
+    mood: creative
+  - event: "Whisperwind played a melody on its own tonight — something you've never heard. Hauntingly beautiful."
+    mood: nostalgic
+  - event: "A child in the audience asked if your horns were real. You let them touch one. Their face lit up."
+    mood: content
+  - event: "The Silver Tongue's owner wants you to play five nights a week instead of three. More money, less freedom."
+    mood: thoughtful
+
+patron:
+  - event: "Lady Mosshollow sent butterflies that bit your fingers while you slept. A warning? A gift? Both?"
+    mood: anxious
+  - event: "Your warlock ring pulsed during a conversation. Lady Mosshollow was listening. You could smell roses."
+    mood: restless
+  - event: "Had the nightmare again — the forest of thorns, the voice asking 'what will you give next?' Woke up with scratches on your arms."
+    mood: anxious
+  - event: "Lady Mosshollow's voice came through the ring, clear for once: 'The Bleakwood remembers you.' You don't know what that means."
+    mood: anxious
+  - event: "Your Pact Tome had new writing in it this morning. A spell you didn't learn. It smells like decay."
+    mood: restless
+
+personal:
+  - event: "Saw a tiefling family at the market — two kids with little horns, parents holding their hands. Couldn't look away."
+    mood: melancholy
+  - event: "Changed your cloak to look like a starfield tonight. A stranger said you looked like a constellation. Best compliment ever."
+    mood: giddy
+  - event: "Spent the morning writing songs for each party member. Grimble's is a dirge that's secretly a love song. He'd hate it."
+    mood: creative
+  - event: "Drank too much spiced wine last night. Head's pounding. Worth it — the stories at the tavern were incredible."
+    mood: tired
+  - event: "A letter arrived from your family's city. You recognized the handwriting. You burned it."
+    mood: irritated
+  - event: "Practiced illusions alone — made a tiny Kael out of light who gave a tiny speech. It was perfect."
+    mood: playful
+  - event: "Couldn't sleep. Whisperwind played a lullaby. You cried and you don't know why."
+    mood: melancholy

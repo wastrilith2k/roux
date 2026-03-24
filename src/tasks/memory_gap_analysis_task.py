@@ -25,6 +25,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 
 from src.celery_app import celery_app
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -129,12 +130,12 @@ def _find_stale_entities(conn) -> List[Dict]:
         from psycopg2.extras import RealDictCursor
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT subject,
                        COUNT(*) as fact_count,
                        MAX(last_mentioned) as last_update,
                        AVG(importance) as avg_importance
-                FROM facts
+                FROM {T.FACTS}
                 WHERE archived_at IS NULL
                 GROUP BY subject
                 HAVING COUNT(*) >= 3
@@ -184,13 +185,13 @@ def _find_incomplete_relationships(conn, user_email: str) -> List[Dict]:
         primary_user = get_persona_config().primary_user_name
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT r.target_entity,
                        r.relationship_type,
                        r.confidence,
                        COUNT(f.id) as fact_count
-                FROM relationships r
-                LEFT JOIN facts f
+                FROM {T.RELATIONSHIPS} r
+                LEFT JOIN {T.FACTS} f
                     ON LOWER(f.subject) = LOWER(r.target_entity)
                     AND f.archived_at IS NULL
                 WHERE r.valid_until IS NULL
@@ -253,9 +254,9 @@ def _find_unresolved_events(conn) -> List[Dict]:
         from psycopg2.extras import RealDictCursor
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT id, title, subject, event_type, outcome, updated_at, base_importance
-                FROM synthesized_events
+                FROM {T.SYNTHESIZED_EVENTS}
                 WHERE outcome = 'ongoing'
                   AND updated_at < NOW() - INTERVAL '10 days'
                   AND (superseded_by IS NULL OR superseded_by = 0)

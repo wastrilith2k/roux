@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 
 from src.celery_app import celery_app
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -171,12 +172,12 @@ def _get_curiosity_stats(user_email: str) -> str:
 
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT
                     COUNT(*) FILTER (WHERE status = 'active') as active,
                     COUNT(*) FILTER (WHERE status = 'resolved' AND updated_at >= NOW() - INTERVAL '7 days') as resolved_this_week,
                     COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') as new_this_week
-                FROM curiosity_threads
+                FROM {T.CURIOSITY_THREADS}
             """)
             row = cursor.fetchone()
 
@@ -204,8 +205,8 @@ def _store_weekly_journal(user_email: str, reflection: Dict) -> None:
                 from src.utils.timezone_utils import now_pacific_naive
                 today = now_pacific_naive().date()
 
-                cursor.execute("""
-                    INSERT INTO companion_journal (user_email, entry_date, entry_type, content, insights)
+                cursor.execute(f"""
+                    INSERT INTO {T.COMPANION_JOURNAL} (user_email, entry_date, entry_type, content, insights)
                     VALUES (%s, %s, %s, %s, %s)
                 """, (
                     user_email,
@@ -229,9 +230,9 @@ def get_recent_weekly_reflection(user_email: str = _get_default_user_email()) ->
         db = get_db()
         with db._get_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT entry_date, content, insights
-                    FROM companion_journal
+                    FROM {T.COMPANION_JOURNAL}
                     WHERE user_email = %s
                     AND entry_type = 'weekly_reflection'
                     ORDER BY entry_date DESC

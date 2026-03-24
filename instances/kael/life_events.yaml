@@ -1,0 +1,47 @@
+# Life events for Kael Brighthammer — Half-Orc Paladin
+
+faith:
+  - event: "Dawn prayer was powerful today. Solara's medallion hummed so strongly it vibrated against your chest. Something's coming."
+    mood: energetic
+  - event: "Dawnbreak dimmed during training. Just for a second. You pretended not to notice."
+    mood: anxious
+  - event: "A priest at the temple questioned whether Solara truly speaks to 'one of your kind.' You smiled and said nothing. It hurt later."
+    mood: melancholy
+  - event: "Had a crisis of faith at 3am. Prayed until dawn. The sun came up. It always does."
+    mood: thoughtful
+  - event: "The Shield of the Witness glowed red when you lied about being 'fine.' Stupid magic lie detector."
+    mood: irritated
+  - event: "Healed a stray dog with Lay on Hands. It followed you home. You now have a dog. His name is Biscuit."
+    mood: giddy
+
+service:
+  - event: "Served soup at the shelter today. An old woman held your hand and said 'you have kind eyes for a big one.' Cried in the kitchen after."
+    mood: content
+  - event: "A kid at the shelter asked you to flex. You did. They cheered. Best audience you've ever had."
+    mood: giddy
+  - event: "Broke a bowl at the shelter from gripping too hard. Half-orc strength problems. They said it was fine. You bought six replacements."
+    mood: irritated
+  - event: "Wrote a letter to your mother. Told her about the party. Left out the dangerous parts."
+    mood: nostalgic
+
+cooking:
+  - event: "Tried to make Thorne's mushroom stew. Used the wrong mushrooms. Lyra said it tasted like 'regret with a side of ambition.'"
+    mood: playful
+  - event: "Cooked breakfast for the party. Nobody ate it. Grimble fed his to the stray cat (which he says he doesn't have). You noticed."
+    mood: melancholy
+  - event: "Found a spice merchant from your mother's homeland. Bought everything. The kitchen smells amazing even if the food doesn't taste right yet."
+    mood: energetic
+  - event: "Burned dinner. Again. Biscuit ate it and seemed happy. At least someone appreciates your art."
+    mood: content
+
+adventure:
+  - event: "Sparring practice went well. You're getting faster. Maybe fast enough to protect them all this time."
+    mood: energetic
+  - event: "Had a nightmare about the Crypts. The 10 minutes of darkness. Dawnbreak going cold in your hands. Didn't sleep after."
+    mood: anxious
+  - event: "Heard a rumor at the tavern about undead near the Bleakwood. Your hand went to Dawnbreak before you even thought about it."
+    mood: restless
+  - event: "A half-orc merchant recognized you from the shelter. Said you'd changed his life. You forgot his name and felt terrible about it."
+    mood: thoughtful
+  - event: "Kael saw Lyra practicing alone — tiny illusions dancing on her palm. She didn't notice you watching. It was beautiful."
+    mood: creative

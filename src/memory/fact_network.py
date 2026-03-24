@@ -41,6 +41,8 @@ from enum import Enum
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 
@@ -75,7 +77,6 @@ class FactNetwork:
 
     def __init__(self):
         self._conn = None
-        self._ensure_table()
 
     def _get_connection(self):
         """Get database connection."""
@@ -88,46 +89,6 @@ class FactNetwork:
                 password=os.environ.get('POSTGRES_PASSWORD', '')
             )
         return self._conn
-
-    def _ensure_table(self):
-        """Ensure fact_links table exists."""
-        conn = self._get_connection()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS fact_links (
-                        id SERIAL PRIMARY KEY,
-                        source_fact_id INTEGER NOT NULL REFERENCES facts(id) ON DELETE CASCADE,
-                        target_fact_id INTEGER NOT NULL REFERENCES facts(id) ON DELETE CASCADE,
-                        link_type VARCHAR(50) NOT NULL,
-                        strength FLOAT NOT NULL DEFAULT 0.5,
-                        context TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-                        UNIQUE(source_fact_id, target_fact_id, link_type)
-                    )
-                """)
-
-                # Indexes for efficient traversal
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_fact_links_source
-                    ON fact_links(source_fact_id)
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_fact_links_target
-                    ON fact_links(target_fact_id)
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_fact_links_type
-                    ON fact_links(link_type)
-                """)
-
-                conn.commit()
-                logger.debug("fact_links table ensured")
-
-        except Exception as e:
-            logger.warning(f"Could not ensure fact_links table: {e}")
-            conn.rollback()
 
     def create_link(
         self,
@@ -148,11 +109,11 @@ class FactNetwork:
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO fact_links (source_fact_id, target_fact_id, link_type, strength, context)
+                cursor.execute(f"""
+                    INSERT INTO {T.FACT_LINKS} (source_fact_id, target_fact_id, link_type, strength, context)
                     VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (source_fact_id, target_fact_id, link_type)
-                    DO UPDATE SET strength = GREATEST(fact_links.strength, EXCLUDED.strength),
+                    DO UPDATE SET strength = GREATEST({T.FACT_LINKS}.strength, EXCLUDED.strength),
                                   context = EXCLUDED.context
                     RETURNING id
                 """, (source_fact_id, target_fact_id, link_type, strength, context))
@@ -192,11 +153,11 @@ class FactNetwork:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 # Outgoing links (this fact -> other facts)
                 if direction in ("outgoing", "both"):
-                    query = """
+                    query = f"""
                         SELECT f.*, fl.link_type, fl.strength, fl.context as link_context,
                                'outgoing' as link_direction
-                        FROM fact_links fl
-                        JOIN facts f ON fl.target_fact_id = f.id
+                        FROM {T.FACT_LINKS} fl
+                        JOIN {T.FACTS} f ON fl.target_fact_id = f.id
                         WHERE fl.source_fact_id = %s
                           AND fl.strength >= %s
                           AND f.archived_at IS NULL
@@ -212,11 +173,11 @@ class FactNetwork:
 
                 # Incoming links (other facts -> this fact)
                 if direction in ("incoming", "both"):
-                    query = """
+                    query = f"""
                         SELECT f.*, fl.link_type, fl.strength, fl.context as link_context,
                                'incoming' as link_direction
-                        FROM fact_links fl
-                        JOIN facts f ON fl.source_fact_id = f.id
+                        FROM {T.FACT_LINKS} fl
+                        JOIN {T.FACTS} f ON fl.source_fact_id = f.id
                         WHERE fl.target_fact_id = %s
                           AND fl.strength >= %s
                           AND f.archived_at IS NULL
@@ -316,8 +277,8 @@ class FactNetwork:
             try:
                 conn = self._get_connection()
                 with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                    cursor.execute("""
-                        SELECT id, subject FROM facts
+                    cursor.execute(f"""
+                        SELECT id, subject FROM {T.FACTS}
                         WHERE id = ANY(%s) AND archived_at IS NULL
                     """, (list(seed_fact_ids),))
                     for row in cursor.fetchall():
@@ -392,8 +353,8 @@ class FactNetwork:
 
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 fact_ids = [fid for fid, _ in activated_ids]
-                cursor.execute("""
-                    SELECT * FROM facts
+                cursor.execute(f"""
+                    SELECT * FROM {T.FACTS}
                     WHERE id = ANY(%s)
                     AND archived_at IS NULL
                 """, (fact_ids,))
@@ -534,18 +495,18 @@ class FactNetwork:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 # Get candidate facts to link with
                 if recent_fact_ids:
-                    cursor.execute("""
+                    cursor.execute(f"""
                         SELECT id, subject, predicate, object, importance
-                        FROM facts
+                        FROM {T.FACTS}
                         WHERE id = ANY(%s)
                         AND id != %s
                         AND archived_at IS NULL
                     """, (recent_fact_ids, new_fact_id))
                 else:
                     # Get recent facts about same subject or high importance
-                    cursor.execute("""
+                    cursor.execute(f"""
                         SELECT id, subject, predicate, object, importance
-                        FROM facts
+                        FROM {T.FACTS}
                         WHERE id != %s
                         AND archived_at IS NULL
                         AND (
@@ -768,7 +729,7 @@ LINK: 37 same_event 0.9 Both about January crisis"""
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT
                         COUNT(*) as total_links,
                         COUNT(DISTINCT source_fact_id) as facts_with_outgoing,
@@ -778,7 +739,7 @@ LINK: 37 same_event 0.9 Both about January crisis"""
                         COUNT(*) FILTER (WHERE link_type = 'causes') as causes_count,
                         COUNT(*) FILTER (WHERE link_type = 'similar') as similar_count,
                         COUNT(*) FILTER (WHERE link_type = 'same_event') as same_event_count
-                    FROM fact_links
+                    FROM {T.FACT_LINKS}
                 """)
                 return dict(cursor.fetchone())
 

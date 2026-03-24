@@ -47,6 +47,8 @@ import requests
 from typing import Optional, Callable
 from threading import Thread
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 # Telegram bot token from environment
@@ -681,7 +683,7 @@ class TelegramBridge:
                 )
                 cursor = conn.cursor()
                 cursor.execute(
-                    'SELECT status, cloudinary_url, runcomfy_url FROM image_generation_requests WHERE task_id = %s',
+                    f'SELECT status, cloudinary_url, runcomfy_url FROM {T.IMAGE_GENERATION_REQUESTS} WHERE task_id = %s',
                     (task_id,)
                 )
                 row = cursor.fetchone()

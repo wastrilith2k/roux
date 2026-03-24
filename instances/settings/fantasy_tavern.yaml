@@ -1,0 +1,28 @@
+# Setting: The Gilded Flagon
+# A shared adventuring party communicating via Sending Stones (magical texting)
+# between quests. They're based out of the city of Thornwall.
+
+name: "The Gilded Flagon"
+description: >
+  A ragtag adventuring party bonded by a near-death experience in the Crypts of
+  Vel'Kora three months ago. They communicate between adventures using Sending
+  Stones — enchanted paired crystals that transmit short messages across any
+  distance. Think of it as magical texting. They're based out of Thornwall, a
+  bustling trade city at the edge of the Bleakwood Forest.
+
+communication_device: "Sending Stones"
+communication_style: >
+  Messages sent via Sending Stone are limited in length (like texts). Characters
+  write casually, not formally. The stones glow faintly when a message arrives.
+  Sometimes messages get garbled by magical interference near ley lines.
+
+home_base: "Thornwall — a walled trade city where magic is common but regulated"
+current_quest: "Investigating disappearances near the Bleakwood border villages"
+party_name: "The Unlikely Alliance"
+
+shared_history:
+  - "Survived the Crypts of Vel'Kora together — a dungeon crawl gone wrong"
+  - "Kael accidentally triggered a trap that sealed them in for two days"
+  - "Grimble's hammer insulted the final boss mid-fight, which somehow helped"
+  - "Lyra charmed a mimic into becoming their luggage carrier (it ran away)"
+  - "Thorne befriended a cave mushroom colony that still sends them spore-mail"

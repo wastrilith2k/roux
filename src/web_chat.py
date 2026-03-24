@@ -326,18 +326,8 @@ def init_scheduled_jobs(socketio=None):
         except Exception as e:
             print(f"⚠️  Ops Bot not available: {e}")
 
-        # Register hourly semantic memory extraction job (if available)
-        try:
-            from src.tasks.semantic_memory.hourly_semantic_extract import run_hourly_extraction
-            unified_scheduler.register_interval_job(
-                job_id='semantic_memory_extraction',
-                func=run_hourly_extraction,
-                hours=1,
-                description='Extract biographical memories from recent conversations'
-            )
-            print("✅ Semantic memory extraction job registered (hourly)")
-        except ImportError as e:
-            print(f"⚠️  Semantic memory extraction not available: {e}")
+        # REMOVED: Semantic memory extraction — module was never completed
+        # If re-implemented, register hourly job here
 
         # Register value inference job (daily at 3 AM)
         # Analyzes the companion's messages to infer hidden values and personality

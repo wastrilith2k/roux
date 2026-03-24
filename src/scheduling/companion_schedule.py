@@ -25,6 +25,7 @@ import random
 from datetime import datetime, time, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 from src.utils.timezone_utils import now_pacific_naive
+from src.database import tables as T
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'utils'))
@@ -981,9 +982,9 @@ def get_recent_conversation_context(limit: int = 5) -> str:
         )
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT sender_name, message_text, timestamp
-                FROM messages
+                FROM {T.MESSAGES}
                 ORDER BY timestamp DESC
                 LIMIT %s
             """, (limit,))

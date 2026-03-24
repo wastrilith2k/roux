@@ -34,6 +34,8 @@ from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, asdict
 from zoneinfo import ZoneInfo
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 PST = ZoneInfo('America/Los_Angeles')
@@ -102,10 +104,9 @@ class GoalManager:
             user_email = get_persona_config().primary_user_email
         self.user_email = user_email
         self._conn = None
-        self._ensure_table()
 
     # -----------------------------------------------------------------
-    # Database connection & schema
+    # Database connection
     # -----------------------------------------------------------------
 
     def _get_connection(self):
@@ -120,41 +121,6 @@ class GoalManager:
                 password=os.environ.get('POSTGRES_PASSWORD', '')
             )
         return self._conn
-
-    def _ensure_table(self):
-        """Create companion_goals table and indexes if they don't exist."""
-        try:
-            conn = self._get_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS companion_goals (
-                        id VARCHAR(50) PRIMARY KEY,
-                        user_email VARCHAR(255),
-                        goal TEXT NOT NULL,
-                        motivation TEXT,
-                        category VARCHAR(50),
-                        progress REAL DEFAULT 0.0,
-                        status VARCHAR(20) DEFAULT 'active',
-                        actions_taken JSONB DEFAULT '[]'::jsonb,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        deadline TIMESTAMP,
-                        priority REAL DEFAULT 0.5
-                    )
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_goals_status
-                    ON companion_goals(user_email, status)
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_goals_category
-                    ON companion_goals(user_email, category)
-                """)
-            conn.commit()
-        except Exception as e:
-            logger.error(f"Error ensuring goals table: {e}")
-            if self._conn:
-                self._conn.rollback()
 
     # -----------------------------------------------------------------
     # Create
@@ -198,8 +164,8 @@ class GoalManager:
         try:
             conn = self._get_connection()
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO companion_goals
+                cursor.execute(f"""
+                    INSERT INTO {T.COMPANION_GOALS}
                     (id, user_email, goal, motivation, category, priority, deadline,
                      goal_mode, energy_cost, created_at, updated_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -265,11 +231,11 @@ class GoalManager:
         try:
             conn = self._get_connection()
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT id, goal, motivation, category, progress, status,
                            actions_taken, created_at, updated_at, deadline, priority,
                            goal_mode, energy_cost
-                    FROM companion_goals
+                    FROM {T.COMPANION_GOALS}
                     WHERE user_email = %s AND status = 'active'
                     ORDER BY priority DESC, created_at DESC
                     LIMIT %s
@@ -286,11 +252,11 @@ class GoalManager:
         try:
             conn = self._get_connection()
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT id, goal, motivation, category, progress, status,
                            actions_taken, created_at, updated_at, deadline, priority,
                            goal_mode, energy_cost
-                    FROM companion_goals
+                    FROM {T.COMPANION_GOALS}
                     WHERE id = %s AND user_email = %s
                 """, (goal_id, self.user_email))
 
@@ -343,8 +309,8 @@ class GoalManager:
             with conn.cursor() as cursor:
                 if action:
                     # Append action to the JSONB array
-                    cursor.execute("""
-                        UPDATE companion_goals
+                    cursor.execute(f"""
+                        UPDATE {T.COMPANION_GOALS}
                         SET progress = %s,
                             actions_taken = actions_taken || %s::jsonb,
                             updated_at = %s,
@@ -353,8 +319,8 @@ class GoalManager:
                         RETURNING id
                     """, (progress, json.dumps([action]), now, progress, goal_id, self.user_email))
                 else:
-                    cursor.execute("""
-                        UPDATE companion_goals
+                    cursor.execute(f"""
+                        UPDATE {T.COMPANION_GOALS}
                         SET progress = %s,
                             updated_at = %s,
                             status = CASE WHEN %s >= 1.0 THEN 'achieved' ELSE status END
@@ -380,8 +346,8 @@ class GoalManager:
         try:
             conn = self._get_connection()
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE companion_goals
+                cursor.execute(f"""
+                    UPDATE {T.COMPANION_GOALS}
                     SET status = 'abandoned',
                         updated_at = %s,
                         motivation = motivation || ' [Abandoned: ' || %s || ']'

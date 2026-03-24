@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 
 from src.celery_app import celery_app
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -176,9 +177,9 @@ def _get_weekly_reflections(user_email: str, weeks: int = 5) -> List[Dict]:
         db = get_db()
         with db._get_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT entry_date, content, insights
-                    FROM companion_journal
+                    FROM {T.COMPANION_JOURNAL}
                     WHERE user_email = %s
                     AND entry_type = 'weekly_reflection'
                     AND entry_date >= CURRENT_DATE - INTERVAL '%s weeks'
@@ -214,9 +215,9 @@ def _get_opinion_changes(user_email: str) -> str:
         )
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT topic, stance, confidence, reasoning
-                FROM companion_opinions
+                FROM {T.COMPANION_OPINIONS}
                 WHERE updated_at >= NOW() - INTERVAL '30 days'
                 ORDER BY updated_at DESC
                 LIMIT 5
@@ -251,12 +252,12 @@ def _get_goal_progress(user_email: str) -> str:
         )
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT
                     COUNT(*) FILTER (WHERE status = 'completed' AND updated_at >= NOW() - INTERVAL '30 days') as completed,
                     COUNT(*) FILTER (WHERE status = 'active') as active,
                     COUNT(*) FILTER (WHERE status = 'stalled') as stalled
-                FROM companion_goals
+                FROM {T.COMPANION_GOALS}
                 WHERE user_email = %s
             """, (user_email,))
             row = cursor.fetchone()
@@ -285,8 +286,8 @@ def _store_monthly_journal(user_email: str, reflection: Dict) -> None:
                 from src.utils.timezone_utils import now_pacific_naive
                 today = now_pacific_naive().date()
 
-                cursor.execute("""
-                    INSERT INTO companion_journal (user_email, entry_date, entry_type, content, insights)
+                cursor.execute(f"""
+                    INSERT INTO {T.COMPANION_JOURNAL} (user_email, entry_date, entry_type, content, insights)
                     VALUES (%s, %s, %s, %s, %s)
                 """, (
                     user_email,

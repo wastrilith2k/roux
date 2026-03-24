@@ -29,6 +29,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
 from src.utils.timezone_utils import now_pacific_naive
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -315,7 +316,7 @@ class InternalStateManager:
                 from psycopg2.extras import RealDictCursor
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
                 cursor.execute(
-                    'SELECT internal_state FROM user_state WHERE email = %s',
+                    f'SELECT internal_state FROM {T.USER_STATE} WHERE email = %s',
                     (user_email,)
                 )
                 row = cursor.fetchone()
@@ -335,8 +336,8 @@ class InternalStateManager:
 
             with self.db._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
-                    UPDATE user_state
+                cursor.execute(f'''
+                    UPDATE {T.USER_STATE}
                     SET internal_state = %s
                     WHERE email = %s
                 ''', (json.dumps(state.to_dict()), user_email))

@@ -15,6 +15,14 @@ sys.path.insert(0, src_dir)
 
 from flask import Blueprint, request, jsonify, session
 from src.database.simple_auth import authenticate_user, create_user, logout_user, token_required, change_password
+from src.auth.auth_provider import (
+    auth_token_required,
+    auth_token_optional,
+    verify_token,
+    get_user_info,
+    get_auth_provider,
+)
+# Backwards-compatible aliases
 from src.auth.firebase_auth import (
     firebase_token_required,
     firebase_auth_optional,
@@ -24,8 +32,8 @@ from src.auth.firebase_auth import (
     create_custom_token
 )
 
-# Initialize Firebase on module load
-initialize_firebase()
+# Initialize the configured auth provider on module load
+get_auth_provider()
 
 # Create blueprint
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
@@ -134,13 +142,13 @@ def change_password_endpoint():
         return jsonify({'error': 'Current password is incorrect'}), 401
 
 
-# ========== Firebase Authentication Endpoints ==========
+# ========== Provider-Agnostic Token Endpoints ==========
 
-@auth_bp.route('/firebase/verify', methods=['POST'])
-def firebase_verify():
-    """Verify Firebase ID token and return user info.
+@auth_bp.route('/verify', methods=['POST'])
+def verify_id_token():
+    """Verify an ID token (Firebase or Cognito) and return user info.
 
-    Request body: {"idToken": "<firebase_id_token>"}
+    Request body: {"idToken": "<id_token>"}
     Response: User info if valid, error if not
     """
     data = request.json
@@ -149,29 +157,82 @@ def firebase_verify():
     if not id_token:
         return jsonify({'error': 'idToken required'}), 400
 
-    # Verify token
-    claims = verify_firebase_token(id_token)
+    claims = verify_token(id_token)
     if not claims:
         return jsonify({'error': 'Invalid or expired token'}), 401
 
-    # Get full user info
-    user_info = get_firebase_user_info(claims.get('uid'))
+    user_info = get_user_info(claims.get('uid'))
     if not user_info:
         return jsonify({'error': 'User not found'}), 404
 
     return jsonify({
         'success': True,
         'user': user_info,
-        'email': user_info['email'],
-        'uid': user_info['uid']
+        'email': user_info.get('email'),
+        'uid': user_info.get('uid')
+    })
+
+
+@auth_bp.route('/user-info', methods=['GET'])
+@auth_token_required
+def auth_user_info():
+    """Get authenticated user's info from ID token."""
+    user_info = get_user_info(request.user_id)
+    if not user_info:
+        return jsonify({'error': 'User not found'}), 404
+
+    return jsonify({
+        'success': True,
+        'user': user_info
+    })
+
+
+@auth_bp.route('/token-logout', methods=['POST'])
+@auth_token_required
+def auth_token_logout():
+    """Logout (token-based auth).
+
+    For Firebase / Cognito the token is managed client-side.
+    This endpoint exists for any server-side cleanup needed.
+    """
+    return jsonify({
+        'success': True,
+        'message': 'Tokens should be discarded on client side'
+    })
+
+
+# ========== Legacy Firebase-Specific Endpoints (kept for backwards compat) ==========
+
+@auth_bp.route('/firebase/verify', methods=['POST'])
+def firebase_verify():
+    """Verify Firebase ID token (legacy endpoint, delegates to /verify)."""
+    data = request.json
+    id_token = data.get('idToken')
+
+    if not id_token:
+        return jsonify({'error': 'idToken required'}), 400
+
+    claims = verify_token(id_token)
+    if not claims:
+        return jsonify({'error': 'Invalid or expired token'}), 401
+
+    user_info = get_user_info(claims.get('uid'))
+    if not user_info:
+        return jsonify({'error': 'User not found'}), 404
+
+    return jsonify({
+        'success': True,
+        'user': user_info,
+        'email': user_info.get('email'),
+        'uid': user_info.get('uid')
     })
 
 
 @auth_bp.route('/firebase/user-info', methods=['GET'])
-@firebase_token_required
+@auth_token_required
 def firebase_user_info():
-    """Get authenticated user's info from Firebase token."""
-    user_info = get_firebase_user_info(request.user_id)
+    """Get user info (legacy Firebase endpoint)."""
+    user_info = get_user_info(request.user_id)
     if not user_info:
         return jsonify({'error': 'User not found'}), 404
 
@@ -182,14 +243,10 @@ def firebase_user_info():
 
 
 @auth_bp.route('/firebase/logout', methods=['POST'])
-@firebase_token_required
+@auth_token_required
 def firebase_logout():
-    """Logout Firebase user.
-
-    Note: Firebase doesn't require server-side logout.
-    Frontend should discard the ID token.
-    """
+    """Logout (legacy Firebase endpoint)."""
     return jsonify({
         'success': True,
-        'message': 'Firebase tokens should be discarded on client side'
+        'message': 'Tokens should be discarded on client side'
     })

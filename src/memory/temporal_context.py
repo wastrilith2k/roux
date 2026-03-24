@@ -30,6 +30,8 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from zoneinfo import ZoneInfo
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 PST = ZoneInfo('America/Los_Angeles')
@@ -63,9 +65,9 @@ def get_recent_significant_events(
             from psycopg2.extras import RealDictCursor
             cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT id, subject, predicate, object, importance, created_at
-                FROM facts
+                FROM {T.FACTS}
                 WHERE (user_email = %s OR user_email IS NULL)
                   AND created_at > %s
                   AND importance >= %s
@@ -144,9 +146,9 @@ def get_recent_notable_messages(
             # This is safer than f-string interpolation
             patterns = [f'%{kw}%' for kw in significant_keywords]
 
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT id, sender_name, message_text, timestamp
-                FROM messages
+                FROM {T.MESSAGES}
                 WHERE email = %s
                   AND timestamp > %s
                   AND sender_name = 'User'

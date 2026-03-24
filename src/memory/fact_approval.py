@@ -38,6 +38,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from src.core.clock import now as clock_now
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,6 @@ class FactApprovalService:
 
     def __init__(self):
         self._conn = None
-        self._ensure_table_exists()
 
     def _get_connection(self):
         """Get database connection."""
@@ -95,45 +95,6 @@ class FactApprovalService:
                 password=os.environ.get('POSTGRES_PASSWORD', '')
             )
         return self._conn
-
-    def _ensure_table_exists(self):
-        """Create pending_facts table if it doesn't exist."""
-        conn = self._get_connection()
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS pending_facts (
-                        id SERIAL PRIMARY KEY,
-                        subject VARCHAR(255) NOT NULL,
-                        predicate VARCHAR(255),
-                        fact_text TEXT NOT NULL,
-                        category VARCHAR(50),
-                        confidence FLOAT DEFAULT 0.7,
-                        importance INTEGER DEFAULT 5,
-                        sensitivity VARCHAR(50) NOT NULL,
-                        sensitivity_reason TEXT,
-                        llm_review TEXT,
-                        llm_recommendation VARCHAR(20),
-                        status VARCHAR(20) DEFAULT 'pending',
-                        user_email VARCHAR(255),
-                        message_id INTEGER,
-                        source_message TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        reviewed_at TIMESTAMP,
-                        reviewed_by VARCHAR(255),
-                        edit_note TEXT
-                    )
-                """)
-                # Index for quick pending lookups
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_pending_facts_status
-                    ON pending_facts(status, user_email)
-                """)
-            conn.commit()
-            logger.info("pending_facts table ready")
-        except Exception as e:
-            logger.error(f"Error creating pending_facts table: {e}")
-            conn.rollback()
 
     def detect_sensitivity(self, fact: Dict[str, Any]) -> tuple[FactSensitivity, str]:
         """
@@ -173,8 +134,8 @@ class FactApprovalService:
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO pending_facts (
+                cursor.execute(f"""
+                    INSERT INTO {T.PENDING_FACTS} (
                         subject, predicate, fact_text, category, confidence,
                         importance, sensitivity, sensitivity_reason,
                         status, user_email, message_id, source_message
@@ -209,15 +170,15 @@ class FactApprovalService:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 if user_email:
-                    cursor.execute("""
-                        SELECT * FROM pending_facts
+                    cursor.execute(f"""
+                        SELECT * FROM {T.PENDING_FACTS}
                         WHERE status = 'pending' AND user_email = %s
                         ORDER BY created_at DESC
                         LIMIT %s
                     """, (user_email, limit))
                 else:
-                    cursor.execute("""
-                        SELECT * FROM pending_facts
+                    cursor.execute(f"""
+                        SELECT * FROM {T.PENDING_FACTS}
                         WHERE status = 'pending'
                         ORDER BY created_at DESC
                         LIMIT %s
@@ -234,7 +195,7 @@ class FactApprovalService:
             # Get the pending fact
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(
-                    "SELECT * FROM pending_facts WHERE id = %s",
+                    f"SELECT * FROM {T.PENDING_FACTS} WHERE id = %s",
                     (fact_id,)
                 )
                 pending = cursor.fetchone()
@@ -260,8 +221,8 @@ class FactApprovalService:
 
             # Update pending status
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE pending_facts
+                cursor.execute(f"""
+                    UPDATE {T.PENDING_FACTS}
                     SET status = %s, reviewed_at = %s, reviewed_by = %s
                     WHERE id = %s
                 """, (
@@ -285,8 +246,8 @@ class FactApprovalService:
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE pending_facts
+                cursor.execute(f"""
+                    UPDATE {T.PENDING_FACTS}
                     SET status = %s, reviewed_at = %s, reviewed_by = %s, edit_note = %s
                     WHERE id = %s
                 """, (
@@ -316,7 +277,7 @@ class FactApprovalService:
             # Get the pending fact
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(
-                    "SELECT * FROM pending_facts WHERE id = %s",
+                    f"SELECT * FROM {T.PENDING_FACTS} WHERE id = %s",
                     (fact_id,)
                 )
                 pending = cursor.fetchone()
@@ -341,8 +302,8 @@ class FactApprovalService:
 
             # Update pending status
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE pending_facts
+                cursor.execute(f"""
+                    UPDATE {T.PENDING_FACTS}
                     SET status = %s, reviewed_at = %s, reviewed_by = %s,
                         edit_note = %s
                     WHERE id = %s
@@ -443,8 +404,8 @@ Return ONLY valid JSON:"""
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE pending_facts
+                cursor.execute(f"""
+                    UPDATE {T.PENDING_FACTS}
                     SET llm_review = %s, llm_recommendation = %s
                     WHERE id = %s
                 """, (

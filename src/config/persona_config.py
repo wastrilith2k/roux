@@ -130,6 +130,10 @@ def _load_config(companion_id: str = None) -> PersonaConfig:
     project_root = _find_project_root()
 
     # Determine which YAML to load
+    # Check COMPANION_ID env var if no explicit companion_id passed
+    if not companion_id:
+        companion_id = os.environ.get('COMPANION_ID')
+
     if companion_id:
         yaml_path = project_root / 'instances' / companion_id / 'persona.yaml'
     else:

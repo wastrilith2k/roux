@@ -27,6 +27,8 @@ import traceback
 from datetime import datetime
 from typing import Optional
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 # In-memory buffer for when DB is unavailable
@@ -42,40 +44,6 @@ def _get_connection():
     except Exception:
         return None
 
-
-def _ensure_table(conn):
-    """Create error_log table if it doesn't exist."""
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS error_log (
-                    id SERIAL PRIMARY KEY,
-                    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    module VARCHAR(100),
-                    function_name VARCHAR(100),
-                    companion_id VARCHAR(50),
-                    error_type VARCHAR(200),
-                    error_message TEXT,
-                    stack_trace TEXT,
-                    context TEXT,
-                    resolved BOOLEAN DEFAULT FALSE
-                )
-            """)
-            cur.execute("""
-                CREATE INDEX IF NOT EXISTS idx_error_log_timestamp
-                ON error_log (timestamp DESC)
-            """)
-            cur.execute("""
-                CREATE INDEX IF NOT EXISTS idx_error_log_companion
-                ON error_log (companion_id, timestamp DESC)
-            """)
-            conn.commit()
-    except Exception as e:
-        logger.debug(f"Could not ensure error_log table: {e}")
-        try:
-            conn.rollback()
-        except Exception:
-            pass
 
 
 def record_error(
@@ -102,10 +70,9 @@ def record_error(
             return
 
         try:
-            _ensure_table(conn)
             with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO error_log
+                cur.execute(f"""
+                    INSERT INTO {T.ERROR_LOG}
                         (module, function_name, companion_id, error_type, error_message, stack_trace, context)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """, (module, function_name, companion_id, error_type, error_message, stack, context))
@@ -156,8 +123,8 @@ def _flush_buffer(conn):
     try:
         with conn.cursor() as cur:
             for err in _error_buffer:
-                cur.execute("""
-                    INSERT INTO error_log
+                cur.execute(f"""
+                    INSERT INTO {T.ERROR_LOG}
                         (timestamp, module, function_name, companion_id,
                          error_type, error_message, stack_trace, context)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
@@ -188,7 +155,6 @@ def get_recent_errors(
             return []
 
         try:
-            _ensure_table(conn)
             conditions = []
             params = []
 
@@ -209,7 +175,7 @@ def get_recent_errors(
                 cur.execute(f"""
                     SELECT id, timestamp, module, function_name, companion_id,
                            error_type, error_message, stack_trace, context, resolved
-                    FROM error_log
+                    FROM {T.ERROR_LOG}
                     {where}
                     ORDER BY timestamp DESC
                     LIMIT %s

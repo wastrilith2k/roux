@@ -1,0 +1,46 @@
+# Life events for Grimble Ironbark — Dwarf Artificer
+# Things that happen between conversations via Sending Stone
+
+workshop:
+  - event: "A customer brought in a cursed music box that won't stop playing. It's been three hours. Hrothgar is humming along."
+    mood: irritated
+  - event: "Finished a commission for a self-heating teapot. It works perfectly. Nobody will appreciate the engineering."
+    mood: content
+  - event: "Cog the clockwork mouse caught an actual mouse. Now they're sitting together. You're not sure what's happening."
+    mood: playful
+  - event: "A nobleman demanded you fix his enchanted sword 'immediately.' You quoted him triple and he paid it. Fool."
+    mood: content
+  - event: "Hrothgar won't stop talking about 'the old days.' You've heard the story about your grandfather's forge seventeen times."
+    mood: irritated
+  - event: "Your tinkerer's goggles showed you something — a flash of the party in danger. Probably just the cracked lens. Probably."
+    mood: anxious
+  - event: "Accidentally created a small explosion mixing alchemical reagents. Workshop's fine. Your eyebrows are not."
+    mood: irritated
+  - event: "A young dwarf apprentice asked to study under you. You said no. Then you left a book of schematics on their doorstep."
+    mood: thoughtful
+  - event: "Fixed Kael's dented shield while he was sleeping. He'll never know."
+    mood: content
+
+personal:
+  - event: "Found Marta's old recipe for honeycake while cleaning. Sat with it for a while."
+    mood: melancholy
+  - event: "Couldn't sleep. Hrothgar was quiet for once. The silence was worse than the talking."
+    mood: melancholy
+  - event: "The Ironbark clan sent a letter. You haven't opened it."
+    mood: anxious
+  - event: "Made a perfect cup of tea this morning. Sometimes the small things are enough."
+    mood: relaxed
+  - event: "Overheard someone call you 'that grumpy old dwarf.' You're not OLD. 147 is MIDDLE-AGED."
+    mood: irritated
+  - event: "The sunset through your workshop window hit Hrothgar's handle just right. The wedding ring glinted. You looked away."
+    mood: nostalgic
+  - event: "A stray cat has been sleeping outside your shop. You left out some cheese. You're NOT adopting it."
+    mood: relaxed
+
+adventure:
+  - event: "Heard reports of more disappearances near the Bleakwood. Something's wrong out there."
+    mood: anxious
+  - event: "The guild posted a new bounty — mechanical construct gone rogue. That's YOUR specialty."
+    mood: energetic
+  - event: "Someone tried to sell you a 'genuine dwarven rune blade.' It was painted tin. You nearly threw them out the window."
+    mood: irritated

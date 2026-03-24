@@ -42,6 +42,8 @@ from zoneinfo import ZoneInfo
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 PST = ZoneInfo('America/Los_Angeles')
@@ -156,71 +158,6 @@ class RelationshipStore:
             )
         return self._conn
 
-    def ensure_table(self):
-        """Create relationships table if not exists."""
-        conn = self._get_connection()
-
-        try:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS relationships (
-                        id SERIAL PRIMARY KEY,
-                        source_entity VARCHAR(255) NOT NULL,
-                        relationship_type VARCHAR(50) NOT NULL,
-                        target_entity VARCHAR(255) NOT NULL,
-
-                        -- Quality metrics
-                        confidence FLOAT DEFAULT 0.7,
-                        mention_count INTEGER DEFAULT 1,
-                        last_verified TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-                        -- Temporal validity
-                        valid_from TIMESTAMP,
-                        valid_until TIMESTAMP,  -- NULL means still valid
-
-                        -- Context
-                        context TEXT,
-                        source_message_id INTEGER,
-                        user_email VARCHAR(255),
-
-                        -- Flags
-                        is_primary BOOLEAN DEFAULT TRUE,
-                        contradiction_notes TEXT,
-
-                        -- Timestamps
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-                        -- Ensure unique relationship per entity pair and type
-                        UNIQUE(source_entity, relationship_type, target_entity, user_email)
-                    )
-                """)
-
-                # Indexes for efficient querying
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_rel_source
-                    ON relationships(source_entity)
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_rel_target
-                    ON relationships(target_entity)
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_rel_type
-                    ON relationships(relationship_type)
-                """)
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_rel_valid
-                    ON relationships(valid_until) WHERE valid_until IS NULL
-                """)
-
-                conn.commit()
-                logger.info("Ensured relationships table exists")
-
-        except Exception as e:
-            logger.error(f"Failed to create relationships table: {e}")
-            conn.rollback()
-
     def store_relationship(
         self,
         source_entity: str,
@@ -256,9 +193,9 @@ class RelationshipStore:
         try:
             with conn.cursor() as cursor:
                 # Check for existing relationship
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT id, confidence, mention_count
-                    FROM relationships
+                    FROM {T.RELATIONSHIPS}
                     WHERE source_entity = %s
                     AND relationship_type = %s
                     AND target_entity = %s
@@ -276,8 +213,8 @@ class RelationshipStore:
                     new_confidence = (old_confidence * old_count + confidence) / new_count
                     new_confidence = min(0.99, new_confidence)  # Cap at 0.99
 
-                    cursor.execute("""
-                        UPDATE relationships
+                    cursor.execute(f"""
+                        UPDATE {T.RELATIONSHIPS}
                         SET confidence = %s,
                             mention_count = %s,
                             last_verified = CURRENT_TIMESTAMP,
@@ -295,8 +232,8 @@ class RelationshipStore:
                 )
 
                 # Insert new relationship
-                cursor.execute("""
-                    INSERT INTO relationships (
+                cursor.execute(f"""
+                    INSERT INTO {T.RELATIONSHIPS} (
                         source_entity, relationship_type, target_entity,
                         confidence, context, source_message_id, user_email,
                         valid_from, contradiction_notes
@@ -346,8 +283,8 @@ class RelationshipStore:
         }
 
         if relationship_type in exclusive_types:
-            cursor.execute("""
-                SELECT target_entity FROM relationships
+            cursor.execute(f"""
+                SELECT target_entity FROM {T.RELATIONSHIPS}
                 WHERE source_entity = %s
                 AND relationship_type = %s
                 AND target_entity != %s
@@ -364,8 +301,8 @@ class RelationshipStore:
         # Check for inverse contradictions (A parent of B, but B parent of A)
         inverse = INVERSE_RELATIONSHIPS.get(relationship_type)
         if inverse and inverse != relationship_type:
-            cursor.execute("""
-                SELECT id FROM relationships
+            cursor.execute(f"""
+                SELECT id FROM {T.RELATIONSHIPS}
                 WHERE source_entity = %s
                 AND relationship_type = %s
                 AND target_entity = %s
@@ -396,8 +333,8 @@ class RelationshipStore:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 if include_as_target:
                     # Get relationships where entity is source OR target
-                    query = """
-                        SELECT * FROM relationships
+                    query = f"""
+                        SELECT * FROM {T.RELATIONSHIPS}
                         WHERE (source_entity = %s OR target_entity = %s)
                         AND confidence >= %s
                         AND (user_email = %s OR user_email IS NULL)
@@ -405,8 +342,8 @@ class RelationshipStore:
                     params = [entity, entity, min_confidence, user_email]
                 else:
                     # Only where entity is source
-                    query = """
-                        SELECT * FROM relationships
+                    query = f"""
+                        SELECT * FROM {T.RELATIONSHIPS}
                         WHERE source_entity = %s
                         AND confidence >= %s
                         AND (user_email = %s OR user_email IS NULL)
@@ -438,8 +375,8 @@ class RelationshipStore:
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
-                    SELECT * FROM relationships
+                cursor.execute(f"""
+                    SELECT * FROM {T.RELATIONSHIPS}
                     WHERE ((source_entity = %s AND target_entity = %s)
                            OR (source_entity = %s AND target_entity = %s))
                     AND valid_until IS NULL
@@ -463,8 +400,8 @@ class RelationshipStore:
 
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE relationships
+                cursor.execute(f"""
+                    UPDATE {T.RELATIONSHIPS}
                     SET valid_until = CURRENT_TIMESTAMP,
                         context = COALESCE(context || '; ', '') || %s,
                         updated_at = CURRENT_TIMESTAMP
@@ -533,7 +470,7 @@ class RelationshipStore:
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT
                         COUNT(*) as total_relationships,
                         COUNT(*) FILTER (WHERE valid_until IS NULL) as active_relationships,
@@ -541,14 +478,14 @@ class RelationshipStore:
                         COUNT(DISTINCT target_entity) as unique_targets,
                         AVG(confidence) as avg_confidence,
                         AVG(mention_count) as avg_mentions
-                    FROM relationships
+                    FROM {T.RELATIONSHIPS}
                 """)
                 stats = dict(cursor.fetchone())
 
                 # Get relationship type distribution
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT relationship_type, COUNT(*) as count
-                    FROM relationships
+                    FROM {T.RELATIONSHIPS}
                     WHERE valid_until IS NULL
                     GROUP BY relationship_type
                     ORDER BY count DESC
@@ -571,7 +508,6 @@ def get_relationship_store() -> RelationshipStore:
     global _store
     if _store is None:
         _store = RelationshipStore()
-        _store.ensure_table()
     return _store
 
 

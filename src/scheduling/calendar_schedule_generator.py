@@ -29,6 +29,8 @@ import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
+from src.database import tables as T
+
 logger = logging.getLogger(__name__)
 
 # Path to store the Google Calendar ID (only used if sync is enabled)
@@ -457,9 +459,10 @@ def _get_narrative_context() -> str:
         conn = _get_db_connection()
         from psycopg2.extras import RealDictCursor
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("""
+            # Last few messages for conversational context
+            cursor.execute(f"""
                 SELECT sender_name, message_text, timestamp
-                FROM messages
+                FROM {T.MESSAGES}
                 ORDER BY timestamp DESC
                 LIMIT 5
             """)
