@@ -134,6 +134,60 @@ class TestEmptyLLMResponse:
         assert result.is_memory_query is True
 
 
+class TestLLMPostCorrection:
+    """Regression tests for issue #1: LLM returns query_type != 'none' but is_memory_query=False."""
+
+    @pytest.mark.parametrize("query_type", ['factual', 'specific_event', 'emotional_vague'])
+    def test_llm_disagreement_corrected(self, classifier, query_type):
+        """When LLM returns a real query_type but is_memory_query=False, the post-LLM
+        override must force is_memory_query=True."""
+        llm_response = f'{{"is_memory_query": false, "query_type": "{query_type}", "search_terms": ["test"], "confidence": 0.9, "reasoning": "test"}}'
+        with patch('src.llm.fireworks_models.call_fireworks', return_value=llm_response), \
+             patch.object(classifier, '_get_client', return_value=None):
+            result = classifier._classify_with_llm("test query")
+        assert result.is_memory_query is True, (
+            f"query_type='{query_type}' must force is_memory_query=True"
+        )
+        assert result.query_type == query_type
+
+    def test_llm_none_stays_false(self, classifier):
+        """query_type='none' should keep is_memory_query=False."""
+        llm_response = '{"is_memory_query": false, "query_type": "none", "search_terms": [], "confidence": 0.9, "reasoning": "not a memory query"}'
+        with patch('src.llm.fireworks_models.call_fireworks', return_value=llm_response), \
+             patch.object(classifier, '_get_client', return_value=None):
+            result = classifier._classify_with_llm("Hello there")
+        assert result.is_memory_query is False
+        assert result.query_type == 'none'
+
+    def test_who_is_factual_corrected(self, classifier):
+        """Reproduce issue #1: 'Who is Jesse?' → LLM says factual but is_memory_query=False."""
+        llm_response = '{"is_memory_query": false, "query_type": "factual", "search_terms": ["Jesse"], "confidence": 0.95, "reasoning": "Asking for factual information about a person"}'
+        with patch('src.llm.fireworks_models.call_fireworks', return_value=llm_response), \
+             patch.object(classifier, '_get_client', return_value=None):
+            result = classifier._classify_with_llm("Who is Jesse?")
+        assert result.is_memory_query is True
+        assert result.query_type == 'factual'
+        assert 'Jesse' in result.search_terms
+
+    def test_what_did_i_tell_you_corrected(self, classifier):
+        """'What did I tell you about my job?' with LLM disagreement."""
+        llm_response = '{"is_memory_query": false, "query_type": "specific_event", "search_terms": ["job"], "confidence": 0.9, "reasoning": "Asking about a past conversation"}'
+        with patch('src.llm.fireworks_models.call_fireworks', return_value=llm_response), \
+             patch.object(classifier, '_get_client', return_value=None):
+            result = classifier._classify_with_llm("What did I tell you about my job?")
+        assert result.is_memory_query is True
+        assert result.query_type == 'specific_event'
+
+    def test_remember_that_thing_corrected(self, classifier):
+        """'Remember that thing I mentioned?' with LLM disagreement."""
+        llm_response = '{"is_memory_query": false, "query_type": "emotional_vague", "search_terms": ["mentioned"], "confidence": 0.8, "reasoning": "Vague reference to past"}'
+        with patch('src.llm.fireworks_models.call_fireworks', return_value=llm_response), \
+             patch.object(classifier, '_get_client', return_value=None):
+            result = classifier._classify_with_llm("Remember that thing I mentioned?")
+        assert result.is_memory_query is True
+        assert result.query_type == 'emotional_vague'
+
+
 class TestIssue3KeywordPreFilterTooRestrictive:
     """Regression tests for issue #3: keyword pre-filter misses valid memory queries."""
 
