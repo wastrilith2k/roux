@@ -39,7 +39,11 @@ class MemoryQueryClassifier:
         'that time', 'the time', 'do you know', 'tell me about', 'what about',
         'how did', 'where did', 'who was', 'what was', 'what happened',
         'did we', 'have we', 'did i', 'have i', 'used to', 'back when',
-        'ago', 'before', 'earlier', 'yesterday', 'last week', 'last month'
+        'ago', 'before', 'earlier', 'yesterday', 'last week', 'last month',
+        'mentioned', 'told you', 'told me', 'said about', 'talked about',
+        'brought up', 'discussed', 'what did i', 'what did you',
+        'months ago', 'weeks ago', 'years ago', 'back in',
+        'childhood', 'growing up',
     ]
 
     def __init__(self):
@@ -71,7 +75,7 @@ class MemoryQueryClassifier:
             MemoryQueryResult with classification details
         """
         # Quick filter - skip obvious non-memory messages
-        if len(message) < 10 or not self._has_memory_keywords(message):
+        if len(message) < 5 or not self._has_memory_keywords(message):
             # Check for factual queries that might not have keywords
             factual_patterns = [
                 'where does', 'where is', 'who is',
@@ -219,6 +223,24 @@ IMPORTANT: Roleplay and present-tense conversation is NOT a memory query.
                 search_terms=search_terms,
                 confidence=0.6,
                 reasoning="Fallback: factual keywords detected"
+            )
+
+        # Check for past-conversation references
+        past_reference_patterns = [
+            'told you', 'told me', 'mentioned', 'said about',
+            'talked about', 'brought up', 'discussed',
+            'what did i', 'what did you',
+        ]
+        if any(p in message_lower for p in past_reference_patterns):
+            words = message.split()
+            search_terms = [w for w in words if len(w) > 4 and w.isalpha()][:5]
+
+            return MemoryQueryResult(
+                is_memory_query=True,
+                query_type='specific_event',
+                search_terms=search_terms,
+                confidence=0.6,
+                reasoning="Fallback: past conversation reference detected"
             )
 
         return MemoryQueryResult(
