@@ -196,6 +196,82 @@ class ContextBuilder:
             logger.warning(f"Parallel context build failed, falling back to sequential: {e}")
             return self._build_sequential(user_email, user_message, closeness_score)
 
+    def build_lightweight(self, user_email: str, user_message: str, closeness_score: int = 50) -> ConversationContext:
+        """
+        Build lightweight context for simple messages (fast path).
+
+        Only fetches the essential sources needed for casual conversation:
+        - conversation_turns (recent history)
+        - entity_profiles (identity ground truth)
+        - personality (companion traits)
+        - internal_state (mood/energy)
+        - scene_state (if in a scene)
+        - core_memory (narrative memory)
+
+        Skips: memories (pgvector search), graphiti (graph traversal), episodes,
+        observations, reflections, opinions, curiosity, biographies, relationship
+        dynamics, values, activities, events, fertility, user_context.
+
+        This typically completes in ~100-300ms vs ~500-2000ms for full build.
+        """
+        start_time = time.time()
+        self._source_timings = {}
+
+        context = ConversationContext(
+            user_email=user_email,
+            user_message=user_message,
+            closeness_score=closeness_score
+        )
+
+        def timed_fetch(name, func, *args):
+            source_start = time.time()
+            try:
+                result = func(*args)
+                elapsed = time.time() - source_start
+                return name, result, elapsed
+            except Exception as e:
+                elapsed = time.time() - source_start
+                logger.warning(f"Lightweight context source '{name}' failed after {elapsed:.2f}s: {e}")
+                return name, None, elapsed
+
+        # Only fetch essential sources
+        futures = []
+        futures.append(self._executor.submit(timed_fetch, 'entity_profiles', self._get_entity_profiles, user_message, user_email))
+        futures.append(self._executor.submit(timed_fetch, 'personality', self._get_personality, user_email))
+        futures.append(self._executor.submit(timed_fetch, 'internal_state', self._get_internal_state, user_email))
+        futures.append(self._executor.submit(timed_fetch, 'scene_state', self._get_scene_state, user_email))
+        futures.append(self._executor.submit(timed_fetch, 'core_memory', self._get_core_memory, user_email))
+        futures.append(self._executor.submit(timed_fetch, 'conversation_turns', self._get_conversation_history_structured, user_email))
+        futures.append(self._executor.submit(timed_fetch, 'schedule', self._get_time_awareness_context, user_email))
+
+        for future in futures:
+            try:
+                name, result, elapsed = future.result(timeout=10)
+                self._source_timings[name] = elapsed
+
+                if name == 'conversation_turns' and result is not None:
+                    if isinstance(result, tuple) and len(result) == 2:
+                        turns, continuity = result
+                        context.conversation_turns = turns or []
+                        context.continuity_context = continuity or ""
+                        if turns:
+                            from src.config.persona_config import get_persona_config
+                            _pc = get_persona_config()
+                            formatted = [f"{_pc.companion_short_name if t['role'] == 'assistant' else _pc.primary_user_name}: {t['content']}" for t in turns]
+                            context.conversation_history = "\n".join(formatted)
+                elif result is not None:
+                    setattr(context, name, result or "")
+            except Exception as e:
+                logger.warning(f"Failed to get lightweight context source: {e}")
+
+        total_time = time.time() - start_time
+        logger.info(
+            f"Lightweight context built in {total_time:.2f}s "
+            f"({len(futures)} sources, fast path)"
+        )
+
+        return context
+
     def _build_parallel(self, user_email: str, user_message: str, closeness_score: int) -> ConversationContext:
         """
         Build context with parallel fetching of all sources.

@@ -94,6 +94,13 @@ from .tool_reasoning import (
     TOOL_REASONING_ENABLED,
 )
 
+# Message complexity classification for fast path
+from .complexity_classifier import (
+    classify_message,
+    MessageComplexity,
+    FAST_PATH_ENABLED,
+)
+
 
 @dataclass
 class PipelineResult:
@@ -266,25 +273,52 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
             profiler.start(user_message)
 
         try:
-            # Step 1: Build context from 6 sources
+            # Step 0: Classify message complexity for fast path routing
+            classification = classify_message(user_message)
+            use_fast_path = (
+                FAST_PATH_ENABLED
+                and classification.complexity == MessageComplexity.SIMPLE
+                and not is_proactive_msg
+            )
+
+            if use_fast_path:
+                logger.info(
+                    f"Fast path: {classification.reason} "
+                    f"(confidence={classification.confidence:.2f})"
+                )
+
+            # Step 1: Build context — lightweight for simple messages, full for complex
             if profiler:
-                with profiler.stage("context_assembly"):
-                    context = self.context_builder.build(
-                        user_email=user_email,
-                        user_message=user_message,
-                        closeness_score=closeness_score
-                    )
-                # Attach per-source sub-timings from context builder
+                with profiler.stage("context_assembly", path="fast" if use_fast_path else "deep"):
+                    if use_fast_path:
+                        context = self.context_builder.build_lightweight(
+                            user_email=user_email,
+                            user_message=user_message,
+                            closeness_score=closeness_score
+                        )
+                    else:
+                        context = self.context_builder.build(
+                            user_email=user_email,
+                            user_message=user_message,
+                            closeness_score=closeness_score
+                        )
                 if hasattr(self.context_builder, '_source_timings'):
                     profiler.record_sub_timings(
                         "context_assembly", self.context_builder._source_timings
                     )
             else:
-                context = self.context_builder.build(
-                    user_email=user_email,
-                    user_message=user_message,
-                    closeness_score=closeness_score
-                )
+                if use_fast_path:
+                    context = self.context_builder.build_lightweight(
+                        user_email=user_email,
+                        user_message=user_message,
+                        closeness_score=closeness_score
+                    )
+                else:
+                    context = self.context_builder.build(
+                        user_email=user_email,
+                        user_message=user_message,
+                        closeness_score=closeness_score
+                    )
 
             # Step 1.1: Schedule interruption detection
             # If user starts chatting during a scheduled event, check if the
@@ -314,7 +348,11 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
             self._clear_addressed_thoughts(user_email, user_message)
 
             # Step 1.5: Memory validation (detect memory queries, retrieve verified records)
-            if profiler:
+            # Skip for fast path — simple messages don't need memory validation
+            if use_fast_path:
+                memory_context = MemoryContext(is_memory_query=False)
+                logger.debug("Fast path: skipping memory validation")
+            elif profiler:
                 with profiler.stage("memory_validation"):
                     memory_context = self.memory_agent.validate(user_message, user_email)
             else:
@@ -327,11 +365,14 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
 
             # Steps 1.6+1.7: Message analysis (merged mode detection + inner monologue)
             # Single LLM call replaces two separate calls for ~300-500ms latency savings
+            # Skip for fast path — saves an LLM call (~300-500ms)
             mode_detection = None
             monologue = None
             analysis = None  # Used by departure detection in step 1.8
 
-            if COMPANION_MESSAGE_ANALYZER_ENABLED:
+            if use_fast_path:
+                logger.debug("Fast path: skipping message analysis")
+            elif COMPANION_MESSAGE_ANALYZER_ENABLED:
                 try:
                     from .message_analyzer import get_message_analyzer
                     analyzer = get_message_analyzer()
@@ -462,7 +503,8 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                     raise PipelineCancelled("Cancelled before LLM call")
 
                 # Use tool-enabled path if code execution is enabled
-                if CODE_EXECUTION_ENABLED and self.code_executor.is_available():
+                # Fast path skips tools entirely — simple messages don't need them
+                if not use_fast_path and CODE_EXECUTION_ENABLED and self.code_executor.is_available():
                     response, model, tool_calls_made = self._call_llm_with_tools(
                         current_prompt, user_message, conversation_turns
                     )
@@ -470,6 +512,10 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                     response, model = self._call_llm(current_prompt, user_message, conversation_turns)
 
                 # Step 4: Post-generation validation
+                # Fast path skips validation — simple messages rarely have contradiction risk
+                if use_fast_path:
+                    break
+
                 validation = self.message_validator.validate(response, user_message)
 
                 if validation.contradictions_found > 0:
