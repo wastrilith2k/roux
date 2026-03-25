@@ -17,7 +17,6 @@ Environment safety: constructor validates that ENVIRONMENT and POSTGRES_DB match
 """
 import psycopg2
 from psycopg2.extras import RealDictCursor
-import arrow
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from contextlib import contextmanager
@@ -649,6 +648,7 @@ class CompanionDB:
 
             if row:
                 # Convert timestamps
+                import arrow
                 last_negative = arrow.get(row['last_negative_event']) if row['last_negative_event'] else None
                 last_message = arrow.get(row['last_message_time']) if row['last_message_time'] else None
 
@@ -777,6 +777,7 @@ class CompanionDB:
         state['cooldown_active'] = active
         state['badgering_count'] = badgering_count
         if active:
+            import arrow
             state['last_negative_event'] = arrow.now('America/Los_Angeles')
         self.save_state(email, state)
 
