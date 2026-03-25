@@ -30,7 +30,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # Feature flag
-VOICE_ENABLED = os.environ.get('COMPANION_VOICE_ENABLED', os.environ.get('COMPANION_VOICE_ENABLED', 'true')).lower() == 'true'
+VOICE_ENABLED = os.environ.get('COMPANION_VOICE_ENABLED', 'true').lower() == 'true'
 DEEPGRAM_API_KEY = os.environ.get('DEEPGRAM_API_KEY')
 ELEVENLABS_API_KEY = os.environ.get('ELEVENLABS_API_KEY')
 
@@ -38,11 +38,6 @@ ELEVENLABS_API_KEY = os.environ.get('ELEVENLABS_API_KEY')
 def _get_voice_config():
     from src.config.persona_config import get_persona_config
     return get_persona_config()
-
-_vc = _get_voice_config()
-EDGE_TTS_VOICE = _vc.edge_tts_fallback
-ELEVENLABS_VOICE_ID = _vc.elevenlabs_voice_id
-ELEVENLABS_MODEL = _vc.elevenlabs_model
 
 
 class VoiceService:
@@ -53,6 +48,13 @@ class VoiceService:
         self._elevenlabs_client = None
         self._initialized = False
         self._tts_engine: str = 'none'  # 'elevenlabs', 'edge_tts', or 'none'
+
+        # Read voice identity from persona config at init time (lazy, not import time)
+        vc = _get_voice_config()
+        self._edge_tts_voice = vc.edge_tts_fallback
+        self._elevenlabs_voice_id = vc.elevenlabs_voice_id
+        self._elevenlabs_model = vc.elevenlabs_model
+
         self._init_deepgram()
         self._init_tts()
 
@@ -77,14 +79,14 @@ class VoiceService:
                 from elevenlabs.client import ElevenLabs
                 self._elevenlabs_client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
                 self._tts_engine = 'elevenlabs'
-                logger.info(f"TTS engine: ElevenLabs (voice_id={ELEVENLABS_VOICE_ID}, model={ELEVENLABS_MODEL})")
+                logger.info(f"TTS engine: ElevenLabs (voice_id={self._elevenlabs_voice_id}, model={self._elevenlabs_model})")
             except Exception as e:
                 logger.error(f"Failed to initialize ElevenLabs: {e}")
                 self._tts_engine = 'edge_tts'
                 logger.info("TTS engine: Edge TTS (ElevenLabs init failed, falling back)")
         else:
             self._tts_engine = 'edge_tts'
-            logger.info(f"TTS engine: Edge TTS ({EDGE_TTS_VOICE}) — set ELEVENLABS_API_KEY for expressive voice")
+            logger.info(f"TTS engine: Edge TTS ({self._edge_tts_voice}) — set ELEVENLABS_API_KEY for expressive voice")
 
     def is_enabled(self) -> bool:
         """Check if voice processing is available."""
@@ -224,8 +226,8 @@ class VoiceService:
             # Generate audio via ElevenLabs
             audio_generator = self._elevenlabs_client.text_to_speech.convert(
                 text=text,
-                voice_id=ELEVENLABS_VOICE_ID,
-                model_id=ELEVENLABS_MODEL,
+                voice_id=self._elevenlabs_voice_id,
+                model_id=self._elevenlabs_model,
                 output_format="mp3_44100_128",
             )
 
@@ -293,11 +295,10 @@ class VoiceService:
                 except OSError:
                     pass
 
-    @staticmethod
-    async def _edge_tts_save(text: str, output_path: str):
+    async def _edge_tts_save(self, text: str, output_path: str):
         """Async helper to run edge_tts.Communicate.save()."""
         import edge_tts
-        communicate = edge_tts.Communicate(text, EDGE_TTS_VOICE)
+        communicate = edge_tts.Communicate(text, self._edge_tts_voice)
         await communicate.save(output_path)
 
 
