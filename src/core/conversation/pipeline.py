@@ -85,6 +85,22 @@ CURRENT TIME: {current_time}
 RECENT CONVERSATION:
 {recent_context}"""
 
+# Import the new structured tool reasoning module
+from .tool_reasoning import (
+    make_tool_decision,
+    build_tool_code,
+    build_verification_code,
+    ToolDecision,
+    TOOL_REASONING_ENABLED,
+)
+
+# Message complexity classification for fast path
+from .complexity_classifier import (
+    classify_message,
+    MessageComplexity,
+    FAST_PATH_ENABLED,
+)
+
 
 @dataclass
 class PipelineResult:
@@ -101,7 +117,15 @@ class PipelineResult:
     conversation_mode: Optional[str] = None  # Detected conversation mode
     inner_monologue: Optional[str] = None  # Pre-response reasoning (private)
     quality_score: Optional[float] = None  # Post-response quality score
+    profile: Optional[Any] = None  # Pipeline profiling data (when enabled)
 
+
+# Pipeline profiling
+from .pipeline_profiler import (
+    PipelineProfiler,
+    get_pipeline_profiler,
+    PROFILING_ENABLED,
+)
 
 # ---------------------------------------------------------------------------
 # Feature flags — toggle pipeline steps via environment variables
@@ -243,13 +267,67 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
         start_time = time.time()
         is_proactive_msg = extra_context.get('is_proactive_message', False) if extra_context else False
 
+        # Initialize profiler if enabled
+        profiler = get_pipeline_profiler() if PROFILING_ENABLED else None
+        if profiler:
+            profiler.start(user_message)
+
         try:
-            # Step 1: Build context from 6 sources
-            context = self.context_builder.build(
-                user_email=user_email,
-                user_message=user_message,
-                closeness_score=closeness_score
+            # Step 0: Classify message complexity for fast path routing
+            classification = classify_message(user_message)
+            use_fast_path = (
+                FAST_PATH_ENABLED
+                and classification.complexity == MessageComplexity.SIMPLE
+                and not is_proactive_msg
             )
+            force_tools = (
+                FAST_PATH_ENABLED
+                and classification.complexity == MessageComplexity.ACTION
+            )
+
+            if use_fast_path:
+                logger.info(
+                    f"Fast path: {classification.reason} "
+                    f"(confidence={classification.confidence:.2f})"
+                )
+            elif force_tools:
+                logger.info(
+                    f"Action path: {classification.reason} "
+                    f"(confidence={classification.confidence:.2f})"
+                )
+
+            # Step 1: Build context — lightweight for simple messages, full for complex
+            if profiler:
+                with profiler.stage("context_assembly", path="fast" if use_fast_path else "deep"):
+                    if use_fast_path:
+                        context = self.context_builder.build_lightweight(
+                            user_email=user_email,
+                            user_message=user_message,
+                            closeness_score=closeness_score
+                        )
+                    else:
+                        context = self.context_builder.build(
+                            user_email=user_email,
+                            user_message=user_message,
+                            closeness_score=closeness_score
+                        )
+                if hasattr(self.context_builder, '_source_timings'):
+                    profiler.record_sub_timings(
+                        "context_assembly", self.context_builder._source_timings
+                    )
+            else:
+                if use_fast_path:
+                    context = self.context_builder.build_lightweight(
+                        user_email=user_email,
+                        user_message=user_message,
+                        closeness_score=closeness_score
+                    )
+                else:
+                    context = self.context_builder.build(
+                        user_email=user_email,
+                        user_message=user_message,
+                        closeness_score=closeness_score
+                    )
 
             # Step 1.1: Schedule interruption detection
             # If user starts chatting during a scheduled event, check if the
@@ -279,7 +357,15 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
             self._clear_addressed_thoughts(user_email, user_message)
 
             # Step 1.5: Memory validation (detect memory queries, retrieve verified records)
-            memory_context = self.memory_agent.validate(user_message, user_email)
+            # Skip for fast path — simple messages don't need memory validation
+            if use_fast_path:
+                memory_context = MemoryContext(is_memory_query=False)
+                logger.debug("Fast path: skipping memory validation")
+            elif profiler:
+                with profiler.stage("memory_validation"):
+                    memory_context = self.memory_agent.validate(user_message, user_email)
+            else:
+                memory_context = self.memory_agent.validate(user_message, user_email)
             if memory_context.is_memory_query:
                 logger.info(
                     f"Memory validation: {memory_context.query_type} query, "
@@ -288,17 +374,26 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
 
             # Steps 1.6+1.7: Message analysis (merged mode detection + inner monologue)
             # Single LLM call replaces two separate calls for ~300-500ms latency savings
+            # Skip for fast path — saves an LLM call (~300-500ms)
             mode_detection = None
             monologue = None
             analysis = None  # Used by departure detection in step 1.8
 
-            if COMPANION_MESSAGE_ANALYZER_ENABLED:
+            if use_fast_path:
+                logger.debug("Fast path: skipping message analysis")
+            elif COMPANION_MESSAGE_ANALYZER_ENABLED:
                 try:
                     from .message_analyzer import get_message_analyzer
                     analyzer = get_message_analyzer()
-                    analysis = analyzer.analyze(
-                        user_message, context, context.scene_state or ""
-                    )
+                    if profiler:
+                        with profiler.stage("message_analysis"):
+                            analysis = analyzer.analyze(
+                                user_message, context, context.scene_state or ""
+                            )
+                    else:
+                        analysis = analyzer.analyze(
+                            user_message, context, context.scene_state or ""
+                        )
                     if analysis:
                         mode_detection = analysis.to_mode_detection()
                         monologue = analysis.to_inner_monologue()
@@ -376,10 +471,17 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                 raise PipelineCancelled("Cancelled before prompt assembly")
 
             # Step 2: Assemble the full prompt (now includes memory context + agent improvements)
-            full_prompt = self._assemble_prompt(
-                context, user_message, memory_context, extra_context,
-                mode_detection=mode_detection, monologue=monologue
-            )
+            if profiler:
+                with profiler.stage("prompt_assembly"):
+                    full_prompt = self._assemble_prompt(
+                        context, user_message, memory_context, extra_context,
+                        mode_detection=mode_detection, monologue=monologue
+                    )
+            else:
+                full_prompt = self._assemble_prompt(
+                    context, user_message, memory_context, extra_context,
+                    mode_detection=mode_detection, monologue=monologue
+                )
 
             # Save prompt for debugging (keep last 5)
             self._save_prompt_debug(full_prompt, user_email)
@@ -397,13 +499,21 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
             tool_calls_made = []  # Track any tool calls
             quality_score = None
 
+            # Start LLM profiling stage (covers call + tool execution + validation loop)
+            _llm_stage = profiler.stage("llm_call") if profiler else None
+            if _llm_stage:
+                _llm_stage.__enter__()
+
             while True:
                 # Check for cancellation before each LLM call attempt
                 if cancel_check and cancel_check():
+                    if _llm_stage:
+                        _llm_stage.__exit__(None, None, None)
                     raise PipelineCancelled("Cancelled before LLM call")
 
                 # Use tool-enabled path if code execution is enabled
-                if CODE_EXECUTION_ENABLED and self.code_executor.is_available():
+                # Fast path skips tools entirely — simple messages don't need them
+                if (force_tools or (not use_fast_path and CODE_EXECUTION_ENABLED)) and self.code_executor.is_available():
                     response, model, tool_calls_made = self._call_llm_with_tools(
                         current_prompt, user_message, conversation_turns
                     )
@@ -411,6 +521,10 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                     response, model = self._call_llm(current_prompt, user_message, conversation_turns)
 
                 # Step 4: Post-generation validation
+                # Fast path skips validation — simple messages rarely have contradiction risk
+                if use_fast_path:
+                    break
+
                 validation = self.message_validator.validate(response, user_message)
 
                 if validation.contradictions_found > 0:
@@ -474,6 +588,10 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
 
                     break
 
+            # Close LLM profiling stage
+            if _llm_stage:
+                _llm_stage.__exit__(None, None, None)
+
             # Step 5: Image intent detection (two-pass approach)
             # Skip for proactive messages - she's texting, not sending photos
             image_task_id = None
@@ -498,6 +616,9 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
             except Exception as e:
                 logger.debug(f"Observation trigger skipped: {e}")
 
+            # Finish profiling and attach to result
+            pipeline_profile = profiler.finish() if profiler else None
+
             return PipelineResult(
                 response=response,
                 context_used=context,
@@ -509,7 +630,8 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                 tool_calls=tool_calls_made,
                 conversation_mode=mode_detection.mode.value if mode_detection else None,
                 inner_monologue=monologue.thoughts if monologue else None,
-                quality_score=quality_score
+                quality_score=quality_score,
+                profile=pipeline_profile,
             )
 
         except PipelineCancelled:
@@ -1046,11 +1168,17 @@ Just write the message itself, nothing else.
         conversation_turns: list = None
     ) -> tuple[str, str, list]:
         """
-        Call the LLM with tool execution support (agentic loop).
+        Call the LLM with tool execution support.
 
-        This method enables the companion to execute Python code to accomplish tasks.
-        Instead of loading many tool schemas, she gets ONE tool: execute_code.
-        She writes Python to call the tools modules as needed.
+        Two-phase approach:
+        1. REASONING PHASE: Structured tool decision (make_tool_decision) determines
+           whether tools are needed, what action to take, and whether verification
+           is required before mutating external state.
+        2. EXECUTION PHASE: If tools are needed, execute verification first (if
+           required), then the tool action, then pass results to the main model.
+
+        Falls back to the legacy agentic loop if structured reasoning is disabled
+        or if the reasoning step produces a tool action we can't template.
 
         Args:
             system_prompt: Assembled system prompt
@@ -1060,15 +1188,93 @@ Just write the message itself, nothing else.
         Returns:
             Tuple of (response_text, model_name, tool_calls_made)
         """
+        # Phase 1: Structured tool reasoning
+        if TOOL_REASONING_ENABLED:
+            decision = make_tool_decision(
+                user_message=user_message,
+                conversation_turns=conversation_turns,
+            )
+
+            if not decision.needs_tool:
+                # Reasoning says no tool needed — go straight to main model
+                response, model = self._call_llm(system_prompt, user_message, conversation_turns)
+                return response, model, []
+
+            # Phase 2: Execute with verification guardrail
+            tool_calls_made = []
+
+            # Step 2a: Verification — check before acting on external mutations
+            if decision.verification_needed:
+                verification_code = build_verification_code(decision)
+                if verification_code:
+                    logger.info(f"Running pre-action verification: {decision.verification_query}")
+                    verification_result = self.code_executor.execute(verification_code)
+                    tool_calls_made.append({
+                        "tool": "verification",
+                        "code": verification_code[:200],
+                        "result": verification_result[:500] if verification_result else "(no output)"
+                    })
+                    logger.info(f"Verification result: {verification_result[:100]}...")
+
+            # Step 2b: Execute the tool action
+            tool_code = build_tool_code(decision)
+            if tool_code:
+                logger.info(f"Executing tool action: {decision.tool_action}")
+                result = self.code_executor.execute(tool_code)
+                tool_calls_made.append({
+                    "tool": decision.tool_action,
+                    "code": tool_code[:200],
+                    "result": result[:500] if result else "(no output)"
+                })
+                logger.info(f"Tool result: {result[:100]}...")
+            else:
+                # Structured reasoning decided a tool is needed but we have no
+                # template — fall through to legacy agentic loop
+                logger.info(
+                    f"No code template for action '{decision.tool_action}' "
+                    f"— falling back to legacy tool loop"
+                )
+                return self._call_llm_with_tools_legacy(
+                    system_prompt, user_message, conversation_turns
+                )
+
+            # Step 2c: Pass tool results to main model for personality response
+            if tool_calls_made:
+                tool_context = "\n\n[TOOL RESULTS - Use this information in your response]\n"
+                for tc in tool_calls_made:
+                    tool_context += f"Tool: {tc['tool']}\nResult: {tc['result']}\n---\n"
+                enhanced_prompt = system_prompt + tool_context
+                response, model = self._call_llm(enhanced_prompt, user_message, conversation_turns)
+                return response, model, tool_calls_made
+
+            # No tool calls actually made (edge case) — just call main model
+            response, model = self._call_llm(system_prompt, user_message, conversation_turns)
+            return response, model, []
+
+        # Fallback: tool reasoning disabled, use legacy loop
+        return self._call_llm_with_tools_legacy(
+            system_prompt, user_message, conversation_turns
+        )
+
+    def _call_llm_with_tools_legacy(
+        self,
+        system_prompt: str,
+        user_message: str,
+        conversation_turns: list = None
+    ) -> tuple[str, str, list]:
+        """
+        Legacy agentic tool loop (GPT-4o-mini routing + execute_code).
+
+        Preserved as fallback when structured tool reasoning is disabled or
+        when the reasoning step produces an action we can't template.
+        """
         from src.core.code_executor import EXECUTE_CODE_TOOL
 
-        # Build minimal tool-routing prompt for GPT-4o-mini
-        # (The full companion personality prompt causes it to roleplay instead of routing)
         recent_context = ""
         if conversation_turns:
+            from src.config.persona_config import get_persona_config
+            _pc = get_persona_config()
             for turn in conversation_turns[-6:]:
-                from src.config.persona_config import get_persona_config
-                _pc = get_persona_config()
                 role_label = _pc.primary_user_name if turn["role"] == "user" else _pc.companion_short_name
                 recent_context += f"{role_label}: {turn['content'][:150]}\n"
 
@@ -1080,19 +1286,16 @@ Just write the message itself, nothing else.
         messages = [{"role": "system", "content": tool_prompt}]
         messages.append({"role": "user", "content": user_message})
 
-        logger.info(f"Tool routing: sending to GPT-4o-mini ({len(tool_prompt)} char prompt)")
+        logger.info(f"Legacy tool routing: sending to GPT-4o-mini ({len(tool_prompt)} char prompt)")
 
-        # Agentic loop - allow up to 5 tool calls
         MAX_TOOL_CALLS = 5
         tool_calls_made = []
         temperature = self._get_dynamic_temperature(user_message, system_prompt)
 
-        # Cost tracking
         from src.core.cost_tracker import get_cost_tracker
         cost_tracker = get_cost_tracker()
 
         for iteration in range(MAX_TOOL_CALLS + 1):
-            # Use OpenAI gpt-4o-mini for tool calling (much cheaper than Claude)
             try:
                 from src.llm.openai_provider import get_openai_tool_provider
 
@@ -1111,18 +1314,12 @@ Just write the message itself, nothing else.
 
             except Exception as e:
                 logger.error(f"Tool-enabled LLM call failed: {e}")
-                # Fall back to standard LLM
                 response, model = self._call_llm(system_prompt, user_message, conversation_turns)
                 return response, model, []
 
-            # Check if response is a tool call or text
             if isinstance(response, str):
-                logger.info(f"Tool routing: GPT-4o-mini returned text: {response[:80]}")
-                # gpt-4o-mini returned text - but we want the MAIN MODEL for personality
-                # If no tools were used, just call main model
-                # If tools WERE used, add tool context and call main model
+                logger.info(f"Legacy tool routing: GPT-4o-mini returned text: {response[:80]}")
                 if tool_calls_made:
-                    # Add tool results as context for main model
                     tool_context = "\n\n[TOOL RESULTS - Use this information in your response]\n"
                     for tc in tool_calls_made:
                         tool_context += f"Tool: {tc['tool']}\nResult: {tc['result']}\n---\n"
@@ -1130,17 +1327,14 @@ Just write the message itself, nothing else.
                     response, model = self._call_llm(enhanced_prompt, user_message, conversation_turns)
                     return response, model, tool_calls_made
                 else:
-                    # No tools needed - use main model for personality response
                     response, model = self._call_llm(system_prompt, user_message, conversation_turns)
                     return response, model, []
 
             if isinstance(response, dict) and response.get("type") == "tool_use":
-                # Tool call requested
                 tool_name = response.get("tool_name")
                 tool_input = response.get("tool_input", {})
                 tool_use_id = response.get("tool_use_id")
 
-                # Track cost for this tool call
                 usage = response.get("usage", {})
                 if usage:
                     cost_tracker.record_call(
@@ -1156,19 +1350,16 @@ Just write the message itself, nothing else.
                     code = tool_input.get("code", "")
                     logger.debug(f"Executing code: {code[:100]}...")
 
-                    # Execute the code
                     result = self.code_executor.execute(code)
 
                     tool_calls_made.append({
                         "tool": tool_name,
-                        "code": code[:200],  # Truncate for logging
+                        "code": code[:200],
                         "result": result[:500] if result else "(no output)"
                     })
 
                     logger.info(f"Code execution result: {result[:100]}...")
 
-                    # Add tool result to conversation
-                    # OpenAI format for tool results
                     import json
                     messages.append({
                         "role": "assistant",
@@ -1188,14 +1379,11 @@ Just write the message itself, nothing else.
                         "content": result
                     })
 
-                    # Continue loop to get next response
                     continue
 
-            # Unexpected response format
             logger.warning(f"Unexpected response format: {type(response)}")
             return str(response), "unknown", tool_calls_made
 
-        # Hit max iterations
         logger.warning(f"Hit max tool calls ({MAX_TOOL_CALLS})")
         return "i'm not able to check right now, can you ask me again in a bit?", "gpt-4o-mini", tool_calls_made
 

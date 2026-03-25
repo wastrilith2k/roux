@@ -29,8 +29,9 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Feature flag
+# Feature flags
 VOICE_ENABLED = os.environ.get('COMPANION_VOICE_ENABLED', 'true').lower() == 'true'
+STREAMING_TTS_ENABLED = os.environ.get('COMPANION_STREAMING_TTS_ENABLED', 'false').lower() == 'true'
 DEEPGRAM_API_KEY = os.environ.get('DEEPGRAM_API_KEY')
 ELEVENLABS_API_KEY = os.environ.get('ELEVENLABS_API_KEY')
 
@@ -38,6 +39,38 @@ ELEVENLABS_API_KEY = os.environ.get('ELEVENLABS_API_KEY')
 def _get_voice_config():
     from src.config.persona_config import get_persona_config
     return get_persona_config()
+
+
+def split_sentences(text: str) -> list[str]:
+    """
+    Split text into sentences for streaming TTS.
+
+    Splits on sentence-ending punctuation (.!?) while handling common
+    abbreviations and edge cases. Returns non-empty sentences only.
+    """
+    if not text or not text.strip():
+        return []
+
+    # Split on sentence boundaries: period, exclamation, question mark
+    # followed by whitespace or end of string.
+    # Negative lookbehind avoids splitting on common abbreviations.
+    parts = re.split(
+        r'(?<=[.!?])\s+',
+        text.strip()
+    )
+
+    sentences = [s.strip() for s in parts if s.strip()]
+
+    # Merge very short fragments (< 10 chars) with the previous sentence
+    # to avoid sending tiny audio chunks
+    merged = []
+    for s in sentences:
+        if merged and len(s) < 10:
+            merged[-1] = merged[-1] + ' ' + s
+        else:
+            merged.append(s)
+
+    return merged
 
 
 class VoiceService:
@@ -110,6 +143,9 @@ class VoiceService:
             logger.error("Deepgram client not initialized")
             return None
 
+        import time as _time
+        stt_start = _time.time()
+
         try:
             with open(audio_file_path, 'rb') as f:
                 buffer_data = f.read()
@@ -130,15 +166,17 @@ class VoiceService:
                 .transcript
             )
 
+            stt_ms = (_time.time() - stt_start) * 1000
             if transcript:
-                logger.info(f"Transcribed audio: {transcript[:80]}...")
+                logger.info(f"[PROFILE] STT transcription: {stt_ms:.0f}ms ({len(buffer_data)} bytes -> {len(transcript)} chars)")
                 return transcript.strip()
             else:
-                logger.warning("Deepgram returned empty transcript")
+                logger.warning(f"[PROFILE] STT transcription: {stt_ms:.0f}ms (empty result)")
                 return None
 
         except Exception as e:
-            logger.error(f"STT transcription failed: {e}", exc_info=True)
+            stt_ms = (_time.time() - stt_start) * 1000
+            logger.error(f"[PROFILE] STT transcription failed after {stt_ms:.0f}ms: {e}", exc_info=True)
             return None
 
     @staticmethod
@@ -208,12 +246,22 @@ class VoiceService:
         Returns:
             True if successful, False otherwise.
         """
+        import time as _time
+        tts_start = _time.time()
+
         if self._tts_engine == 'elevenlabs':
             text = self.clean_text_for_tts(text, allow_paralinguistics=True)
-            return self._synthesize_elevenlabs(text, output_path)
+            result = self._synthesize_elevenlabs(text, output_path)
         else:
             text = self.clean_text_for_tts(text, allow_paralinguistics=False)
-            return self._synthesize_edge_tts(text, output_path)
+            result = self._synthesize_edge_tts(text, output_path)
+
+        tts_ms = (_time.time() - tts_start) * 1000
+        logger.info(
+            f"[PROFILE] TTS generation ({self._tts_engine}): {tts_ms:.0f}ms "
+            f"({len(text)} chars, success={result})"
+        )
+        return result
 
     def _synthesize_elevenlabs(self, text: str, output_path: str) -> bool:
         """Synthesize speech using ElevenLabs API."""
@@ -292,6 +340,82 @@ class VoiceService:
             if mp3_path and os.path.exists(mp3_path):
                 try:
                     os.unlink(mp3_path)
+                except OSError:
+                    pass
+
+    # =========================================================================
+    # Streaming TTS — begin audio delivery on first complete sentence
+    # =========================================================================
+
+    def synthesize_speech_streaming(self, text: str):
+        """
+        Generate TTS audio in chunks, yielding each sentence's audio as it's ready.
+
+        Instead of waiting for the entire response to be synthesized, this splits
+        the text into sentences and yields (sentence_text, audio_bytes) tuples
+        as each sentence is converted. The caller can begin playback/delivery
+        on the first chunk while later sentences are still being generated.
+
+        Only supported with ElevenLabs (which has native streaming).
+        Falls back to single-chunk synthesis for Edge TTS.
+
+        Yields:
+            Tuples of (sentence_text: str, audio_bytes: bytes, is_last: bool)
+        """
+        import time as _time
+
+        if self._tts_engine == 'elevenlabs':
+            cleaned = self.clean_text_for_tts(text, allow_paralinguistics=True)
+        else:
+            cleaned = self.clean_text_for_tts(text, allow_paralinguistics=False)
+
+        sentences = split_sentences(cleaned)
+
+        if not sentences:
+            return
+
+        # ElevenLabs: stream each sentence independently
+        if self._tts_engine == 'elevenlabs' and self._elevenlabs_client:
+            for i, sentence in enumerate(sentences):
+                is_last = (i == len(sentences) - 1)
+                tts_start = _time.time()
+
+                try:
+                    audio_chunks = []
+                    audio_generator = self._elevenlabs_client.text_to_speech.convert(
+                        text=sentence,
+                        voice_id=self._elevenlabs_voice_id,
+                        model_id=self._elevenlabs_model,
+                        output_format="mp3_44100_128",
+                    )
+                    for chunk in audio_generator:
+                        audio_chunks.append(chunk)
+
+                    audio_bytes = b''.join(audio_chunks)
+                    tts_ms = (_time.time() - tts_start) * 1000
+
+                    if audio_bytes:
+                        logger.info(
+                            f"[PROFILE] Streaming TTS sentence {i+1}/{len(sentences)}: "
+                            f"{tts_ms:.0f}ms ({len(sentence)} chars -> {len(audio_bytes)} bytes)"
+                        )
+                        yield sentence, audio_bytes, is_last
+
+                except Exception as e:
+                    logger.error(f"Streaming TTS failed on sentence {i+1}: {e}")
+                    continue
+        else:
+            # Edge TTS fallback: synthesize entire text as single chunk
+            fd, tmp_path = tempfile.mkstemp(suffix='.ogg')
+            os.close(fd)
+            try:
+                if self.synthesize_speech(text, tmp_path):
+                    with open(tmp_path, 'rb') as f:
+                        audio_bytes = f.read()
+                    yield cleaned, audio_bytes, True
+            finally:
+                try:
+                    os.unlink(tmp_path)
                 except OSError:
                     pass
 

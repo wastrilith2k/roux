@@ -338,25 +338,31 @@ class TelegramBridge:
             self._send_reply(chat_id, "*blinks* sorry, something went wrong. try again?")
 
     def _generate_and_send_voice_response(self, chat_id: int, text: str):
-        """Convert response text to voice and send as voice note."""
+        """Convert response text to voice and send as voice note.
+
+        When STREAMING_TTS_ENABLED is true, sends each sentence as a
+        separate voice note as soon as it's synthesized — the first audio
+        chunk arrives before the full response is generated.
+        """
         from src.voice import get_voice_service
+        from src.voice.voice_service import STREAMING_TTS_ENABLED
 
         voice_service = get_voice_service()
-        ogg_path = None
 
+        if STREAMING_TTS_ENABLED:
+            self._generate_and_send_voice_streaming(chat_id, text, voice_service)
+            return
+
+        ogg_path = None
         try:
-            # Create temp file for the ogg output
             fd, ogg_path = tempfile.mkstemp(suffix='.ogg')
             os.close(fd)
 
             if voice_service.synthesize_speech(text, ogg_path):
-                # Send voice note
                 if not self._send_voice(chat_id, ogg_path):
-                    # Voice send failed — fall back to text
                     logger.warning("Voice send failed, falling back to text")
                     self._send_reply(chat_id, text)
             else:
-                # TTS failed — fall back to text
                 logger.warning("TTS synthesis failed, falling back to text")
                 self._send_reply(chat_id, text)
         finally:
@@ -365,6 +371,36 @@ class TelegramBridge:
                     os.unlink(ogg_path)
                 except OSError:
                     pass
+
+    def _generate_and_send_voice_streaming(self, chat_id: int, text: str, voice_service):
+        """Stream TTS — send each sentence as a voice note as it's ready."""
+        chunks_sent = 0
+
+        for sentence_text, audio_bytes, is_last in voice_service.synthesize_speech_streaming(text):
+            ogg_path = None
+            try:
+                fd, ogg_path = tempfile.mkstemp(suffix='.ogg')
+                with os.fdopen(fd, 'wb') as f:
+                    f.write(audio_bytes)
+
+                if self._send_voice(chat_id, ogg_path):
+                    chunks_sent += 1
+                else:
+                    logger.warning(f"Streaming voice send failed on chunk {chunks_sent + 1}")
+            except Exception as e:
+                logger.error(f"Streaming TTS chunk error: {e}")
+            finally:
+                if ogg_path and os.path.exists(ogg_path):
+                    try:
+                        os.unlink(ogg_path)
+                    except OSError:
+                        pass
+
+        if chunks_sent == 0:
+            logger.warning("Streaming TTS produced no audio, falling back to text")
+            self._send_reply(chat_id, text)
+        else:
+            logger.info(f"Streaming TTS: sent {chunks_sent} voice chunk(s)")
 
     # -------------------------------------------------------------------------
     # Photo message handling

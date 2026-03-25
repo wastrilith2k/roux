@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 class CodeExecutor:
     """Execute Python code in the sandboxed executor container."""
 
+    # How long to cache a negative availability check before retrying (seconds)
+    AVAILABILITY_TTL = 60
+
     def __init__(self, base_url: Optional[str] = None, default_timeout: int = 30):
         """Initialize the code executor client.
 
@@ -40,11 +43,23 @@ class CodeExecutor:
         )
         self.default_timeout = default_timeout
         self._available = None  # Cached availability status
+        self._available_checked_at = 0.0  # Timestamp of last check
 
     def is_available(self) -> bool:
-        """Check if the code executor service is available."""
+        """Check if the code executor service is available.
+
+        Caches results for AVAILABILITY_TTL seconds, then re-checks.
+        This prevents a single failed health check from permanently disabling
+        tools AND detects executor restarts/crashes after a positive check.
+        """
+        import time as _time
+
+        # Return cached result if within TTL
         if self._available is not None:
-            return self._available
+            elapsed = _time.time() - self._available_checked_at
+            if elapsed < self.AVAILABILITY_TTL:
+                return self._available
+            logger.info("Code executor availability TTL expired, rechecking...")
 
         try:
             response = requests.get(
@@ -55,6 +70,15 @@ class CodeExecutor:
         except Exception as e:
             logger.warning(f"Code executor not available: {e}")
             self._available = False
+
+        self._available_checked_at = _time.time()
+
+        if self._available:
+            logger.info("Code executor is available")
+        else:
+            logger.warning(
+                f"Code executor unavailable (will retry in {self.AVAILABILITY_TTL}s)"
+            )
 
         return self._available
 
