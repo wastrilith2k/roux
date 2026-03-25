@@ -851,7 +851,7 @@ Just write the message itself, nothing else.
 
         closing_lines = [
             get_current_time_context(),
-            f"You are {name}. {_pc.primary_user_name} is a separate person — his facts are his, yours are yours.",
+            f"You are {_companion}. {_pc.primary_user_name} is a separate person — his facts are his, yours are yours.",
             "Only reference details that appear in your provided memories.",
             "Answer his question directly first, then add your thoughts.",
         ]
@@ -1321,6 +1321,8 @@ Just write the message itself, nothing else.
             get_image_intent_detector,
             ImageIntentType
         )
+        from src.config.persona_config import get_persona_config
+        _companion = get_persona_config().companion_short_name
 
         detector = get_image_intent_detector()
         intent = detector.detect(
@@ -1365,7 +1367,7 @@ Just write the message itself, nothing else.
                     intent.prompt_suggestion or ''
                 ).strip()
                 if not intent.prompt_suggestion:
-                    intent.prompt_suggestion = f"{name} taking a casual selfie, warm natural lighting"
+                    intent.prompt_suggestion = f"{_companion} taking a casual selfie, warm natural lighting"
 
         if intent.confidence < 0.6:
             logger.debug(f"Image intent detected but low confidence: {intent.confidence}")

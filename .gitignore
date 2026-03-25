@@ -55,3 +55,4 @@ data/neo4j/
 
 # Node modules (if any frontend)
 node_modules/
+.claude/
