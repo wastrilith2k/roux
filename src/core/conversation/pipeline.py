@@ -701,6 +701,7 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
         'entity_profiles': 1,
         'core_memory': 1,
         'memory_validation': 1,
+        'presence_mode': 1,
         'memories': 2,
         'personality': 2,
         'relationship_dynamics': 3,
@@ -866,6 +867,10 @@ You disagree when you disagree. You are a partner, not a therapist.
             """Helper to add a droppable section with its configured priority."""
             priority = self.SECTION_PRIORITY.get(name, 5)
             droppable.append((name, priority, content))
+
+        # Presence mode (in_person vs texting — issue #26)
+        if context.presence_mode:
+            _add('presence_mode', f"<presence_mode>\n{context.presence_mode}\n</presence_mode>")
 
         # Entity profiles (YAML ground truth)
         if context.entity_profiles:
@@ -1087,13 +1092,21 @@ Just write the message itself, nothing else.
                     "</intimate_initiation>"
                 )
 
-        if extra_context and extra_context.get('source') == 'telegram-text':
+        # Texting mode: activated by presence mode (issue #26) or telegram channel
+        is_texting_by_presence = (
+            context.presence_mode and "TEXTING" in context.presence_mode
+        )
+        is_telegram_text = (
+            extra_context and extra_context.get('source') == 'telegram-text'
+        )
+        if is_texting_by_presence or is_telegram_text:
             instruction_sections.append(
-                "<texting_mode>\n"
-                "James is texting from his phone — you're not in the same room.\n"
-                "Keep it short (1-3 sentences typical), lowercase, casual. "
-                "You can use emojis sparingly. No physical actions or shared surroundings.\n"
-                "</texting_mode>"
+                f"<texting_mode>\n"
+                f"{_user} is texting — you're not in the same room.\n"
+                f"Keep it short (1-3 sentences typical), lowercase, casual. "
+                f"You can use emojis sparingly. No physical actions or shared surroundings.\n"
+                f"Do NOT describe touching {_user}, being near {_user}, or any physical interaction.\n"
+                f"</texting_mode>"
             )
 
         if extra_context and extra_context.get('source') == 'telegram-voice':
@@ -1137,6 +1150,10 @@ Just write the message itself, nothing else.
             "Only present [VERIFIED], [FROM PAST CONVERSATION], and [YOUR CURATED MEMORY] content as things you remember.",
             "Answer his question directly first, then add your thoughts.",
         ]
+
+        # Presence mode reminder (issue #26)
+        if is_texting_by_presence or is_telegram_text:
+            closing_lines.append(f"TEXTING MODE: No physical actions. You are communicating by text message, not in person.")
 
         # Scene state reminder if active
         if context.scene_state and not is_reconnection:

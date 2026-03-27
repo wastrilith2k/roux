@@ -84,6 +84,7 @@ class ConversationContext:
     session_summary: str = ""  # Compressed summary of older messages in long conversations (issue #23)
     relationship_dynamics: str = ""  # Gottman-informed relationship state (closeness, trust, wounds)
     relationship_evaluation: str = ""  # How the companion defines the relationship (from periodic evaluation)
+    presence_mode: str = ""  # Communication context: in_person or texting (issue #26)
 
     # Metadata
     user_email: str = ""
@@ -128,6 +129,7 @@ class ConversationContext:
         'schedule': '[SCHEDULE/CALENDAR]',
         'goals_context': '[YOUR GOALS]',
         'scene_state': '[CURRENT SCENE]',
+        'presence_mode': '[COMMUNICATION MODE]',
         'internal_state': '[YOUR INTERNAL STATE]',
         'temporal_context': '[RECENT EVENTS — VERIFIED]',
         'synthesized_events': '[EVENT NARRATIVE — DERIVED]',
@@ -147,6 +149,8 @@ class ConversationContext:
         from .token_budget import apply_source_budgets
 
         sections = {}
+        if self.presence_mode:
+            sections['presence_mode'] = self.presence_mode
         if self.scene_state:
             sections['scene_state'] = self.scene_state
         if self.internal_state:
@@ -340,6 +344,7 @@ class ContextBuilder:
         futures.append(self._executor.submit(timed_fetch, 'personality', self._get_personality, user_email))
         futures.append(self._executor.submit(timed_fetch, 'internal_state', self._get_internal_state, user_email))
         futures.append(self._executor.submit(timed_fetch, 'scene_state', self._get_scene_state, user_email))
+        futures.append(self._executor.submit(timed_fetch, 'presence_mode', self._get_presence_mode, user_email))
         futures.append(self._executor.submit(timed_fetch, 'conversation_turns', self._get_conversation_history_structured, user_email))
         futures.append(self._executor.submit(timed_fetch, 'schedule', self._get_time_awareness_context, user_email))
 
@@ -413,6 +418,7 @@ class ContextBuilder:
         futures.append(self._executor.submit(timed_fetch, 'personality', self._get_personality, user_email))
         futures.append(self._executor.submit(timed_fetch, 'internal_state', self._get_internal_state, user_email))
         futures.append(self._executor.submit(timed_fetch, 'scene_state', self._get_scene_state, user_email))
+        futures.append(self._executor.submit(timed_fetch, 'presence_mode', self._get_presence_mode, user_email))
         futures.append(self._executor.submit(timed_fetch, 'core_memory', self._get_core_memory, user_email))
         futures.append(self._executor.submit(timed_fetch, 'conversation_turns', self._get_conversation_history_structured, user_email))
         futures.append(self._executor.submit(timed_fetch, 'schedule', self._get_time_awareness_context, user_email))
@@ -492,6 +498,7 @@ class ContextBuilder:
         # Submit all tasks in parallel
         futures = []
         futures.append(self._executor.submit(timed_fetch, 'scene_state', self._get_scene_state, user_email))
+        futures.append(self._executor.submit(timed_fetch, 'presence_mode', self._get_presence_mode, user_email))
         futures.append(self._executor.submit(timed_fetch, 'internal_state', self._get_internal_state, user_email))
         futures.append(self._executor.submit(timed_fetch, 'fertility_context', self._get_fertility_context, user_email))
         futures.append(self._executor.submit(timed_fetch, 'user_context', self._get_user_context, user_email))
@@ -583,6 +590,7 @@ class ContextBuilder:
 
         # Build each source independently (errors don't cascade)
         context.scene_state = self._get_scene_state(user_email)
+        context.presence_mode = self._get_presence_mode(user_email)
         context.internal_state = self._get_internal_state(user_email)
         context.fertility_context = self._get_fertility_context(user_email)
         context.user_context = self._get_user_context(user_email)
@@ -704,6 +712,28 @@ class ContextBuilder:
 
         except Exception as e:
             logger.warning(f"Scene state error: {e}")
+            return ""
+
+    # =========================================================================
+    # Source 0.1: Presence Mode (in_person vs texting — issue #26)
+    # =========================================================================
+
+    def _get_presence_mode(self, user_email: str) -> str:
+        """
+        Get the current presence mode for communication context.
+
+        Determines whether the user and companion are physically co-located
+        (in_person) or communicating remotely (texting). Injected into every
+        conversation turn to constrain the companion's behavior.
+        """
+        try:
+            from src.core.presence_mode import get_presence_mode_manager
+
+            manager = get_presence_mode_manager()
+            return manager.format_for_prompt(user_email)
+
+        except Exception as e:
+            logger.warning(f"Presence mode error: {e}")
             return ""
 
     # =========================================================================

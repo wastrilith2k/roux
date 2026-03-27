@@ -62,6 +62,7 @@ SOURCE_TOKEN_BUDGETS = {
     'synthesized_events': 500,
     'fertility_context': 300,
     'user_context': 300,
+    'presence_mode': 200,
     'continuity_context': 400,
     'memory_validation': 800,
 }
@@ -82,6 +83,7 @@ REASONING_RESERVE = 4000
 
 TIER_1 = frozenset({
     'entity_profiles', 'personality', 'conversation_history', 'core_memory',
+    'presence_mode',
 })
 
 TIER_2 = frozenset({

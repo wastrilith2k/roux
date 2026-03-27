@@ -415,8 +415,17 @@ class SceneTracker:
             # Get current scene to merge with updates
             current_scene = self.get_scene_state(user_email)
 
-            # Telegram = not physically together (texting/calling remotely)
-            if source.startswith('telegram') and current_scene.physical_presence:
+            # Telegram or texting mode = not physically together
+            is_remote = source.startswith('telegram')
+            if not is_remote:
+                try:
+                    from src.core.presence_mode import get_presence_mode_manager, PresenceMode
+                    mode = get_presence_mode_manager().get_presence_mode(user_email)
+                    is_remote = (mode == PresenceMode.TEXTING)
+                except Exception:
+                    pass
+
+            if is_remote and current_scene.physical_presence:
                 current_scene.physical_presence = False
                 current_scene.physical_state = None
                 current_scene.posture = None
@@ -424,7 +433,7 @@ class SceneTracker:
                 current_scene.james_position = None
                 current_scene.companion_position = None
                 self.save_scene_state(user_email, current_scene)
-                logger.info("📱 Telegram message — physical_presence set to False (was together, now texting)")
+                logger.info("📱 Remote message — physical_presence set to False (texting mode or telegram)")
 
             # Extract scene elements using LLM, passing current scene for context
             extracted = self._extract_scene_elements(
