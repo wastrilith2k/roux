@@ -288,7 +288,8 @@ class SimulationRunner:
                 import json as _json
                 db.execute(
                     "UPDATE user_state SET internal_state = %s WHERE email = %s AND companion_id = %s",
-                    (_json.dumps(state), email, cid)
+                    (_json.dumps(state), email, cid),
+                    user_email=email
                 )
         except Exception as e:
             logger.warning(f"Failed to save internal states: {e}")
@@ -519,6 +520,9 @@ class SimulationRunner:
         num_exchanges = random.randint(2, 5)
         conv_id = self._new_conversation_id()
         self._current_conversation_id = conv_id
+        # All messages in this conversation are stored in the responder's schema,
+        # mirroring production where all messages live in the user's schema.
+        self._current_conv_email = f"{responder}@companion.local"
 
         # Rotate model for this conversation
         self._current_model = random.choice(self.MODEL_ROTATION)
@@ -574,17 +578,19 @@ class SimulationRunner:
 
         # Post-conversation processing — extract facts, relationships, curiosity
         # This runs the same logic as Celery tasks but inline
-        self._process_conversation(initiator, responder, conv_id)
+        self._process_conversation(initiator, responder, conv_id, self._current_conv_email)
 
-    def _process_conversation(self, initiator: str, responder: str, conv_id: int):
+    def _process_conversation(self, initiator: str, responder: str, conv_id: int, user_email: str = None):
         """Run post-conversation processing inline (normally done by Celery tasks).
         Extracts facts, relationships, and curiosity from the conversation."""
         try:
             from src.database.db import get_db
             db = get_db()
+            conv_email = user_email or f"{responder}@companion.local"
             result = db.execute(
                 "SELECT sender_name, message_text FROM messages WHERE conversation_id = %s ORDER BY timestamp ASC",
-                (conv_id,)
+                (conv_id,),
+                user_email=conv_email
             )
             rows = result.fetchall()
             if not rows or len(rows) < 2:
@@ -656,6 +662,7 @@ class SimulationRunner:
         try:
             from src.database.db import get_db
             db = get_db()
+            user_email = getattr(self, '_current_conv_email', f"{speaker}@companion.local")
             # Only pull messages involving companions in THIS simulation
             companion_placeholders = ','.join(['%s'] * len(self.companions))
             result = db.execute(
@@ -663,7 +670,8 @@ class SimulationRunner:
                    WHERE (companion_id = %s OR email = %s)
                      AND companion_id IN ({companion_placeholders})
                    ORDER BY timestamp DESC LIMIT %s""",
-                (speaker, f"{speaker}@companion.local") + tuple(self.companions) + (limit,)
+                (speaker, f"{speaker}@companion.local") + tuple(self.companions) + (limit,),
+                user_email=user_email
             )
             rows = result.fetchall()
             mapped = [{'sender': r['sender_name'], 'content': r['message_text'], 'conv_id': r.get('conversation_id')} for r in rows]
@@ -913,9 +921,11 @@ You communicate via {comm_device}. {comm_style}
         try:
             from src.database.db import get_db
             db = get_db()
+            user_email = getattr(self, '_current_conv_email', f"{listener}@companion.local")
             db.execute(
                 "INSERT INTO messages (email, sender_name, message_text, timestamp, companion_id, source, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (f"{listener}@companion.local", speaker, content, self.clock.now(), speaker, 'simulation', conv_id)
+                (f"{listener}@companion.local", speaker, content, self.clock.now(), speaker, 'simulation', conv_id),
+                user_email=user_email
             )
             logger.debug(f"      [{speaker}] {content[:80]}...")
         except Exception as e:
@@ -927,13 +937,15 @@ You communicate via {comm_device}. {comm_style}
         try:
             from src.database.db import get_db
             db = get_db()
+            conv_email = getattr(self, '_current_conv_email', f"{listener}@companion.local")
             if conversation_id:
                 # Current conversation only
                 result = db.execute(
                     """SELECT sender_name, message_text FROM messages
                        WHERE conversation_id = %s
                        ORDER BY timestamp DESC LIMIT %s""",
-                    (conversation_id, limit)
+                    (conversation_id, limit),
+                    user_email=conv_email
                 )
             else:
                 # All messages between this pair
@@ -944,7 +956,8 @@ You communicate via {comm_device}. {comm_style}
                        ORDER BY timestamp DESC LIMIT %s""",
                     (speaker, f"{listener}@companion.local",
                      listener, f"{speaker}@companion.local",
-                     limit)
+                     limit),
+                    user_email=conv_email
                 )
             rows = result.fetchall()
             mapped = [{'sender': r['sender_name'], 'role': 'assistant' if r['sender_name'] == speaker else 'user', 'content': r['message_text']} for r in rows]
@@ -1066,6 +1079,10 @@ You communicate via {comm_device}. {comm_style}
 
         for cid in self.companions:
             print(f"\n--- {cid.upper()} ---")
+            # Use the other companion's email to route to the schema where
+            # this companion's data lives (companion cid serves user "other")
+            other = [c for c in self.companions if c != cid][0]
+            summary_email = f"{other}@companion.local"
 
             # Count messages
             try:
@@ -1073,7 +1090,8 @@ You communicate via {comm_device}. {comm_style}
                 db = get_db()
                 result = db.execute(
                     "SELECT COUNT(*) as cnt FROM messages WHERE companion_id = %s",
-                    (cid,)
+                    (cid,),
+                    user_email=summary_email
                 )
                 row = result.fetchone()
                 print(f"  Total messages: {row['cnt'] if row else 0}")
@@ -1084,7 +1102,8 @@ You communicate via {comm_device}. {comm_style}
             try:
                 result = db.execute(
                     "SELECT topic, opinion_text FROM opinions WHERE companion_id = %s ORDER BY updated_at DESC LIMIT 5",
-                    (cid,)
+                    (cid,),
+                    user_email=summary_email
                 )
                 opinions = result.fetchall()
                 if opinions:
@@ -1100,7 +1119,8 @@ You communicate via {comm_device}. {comm_style}
             try:
                 result = db.execute(
                     "SELECT topic, urgency FROM curiosity_threads WHERE companion_id = %s AND resolved = false ORDER BY urgency DESC LIMIT 5",
-                    (cid,)
+                    (cid,),
+                    user_email=summary_email
                 )
                 threads = result.fetchall()
                 if threads:
