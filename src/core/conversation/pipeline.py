@@ -539,8 +539,8 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                         f"${_budget['spent']:.2f} / ${_budget['budget']:.2f} "
                         f"({_budget['percentage']:.0f}%)"
                     )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Budget check failed (non-fatal): {e}")
 
             # Start LLM profiling stage (covers call + tool execution + validation loop)
             _llm_stage = profiler.stage("llm_call") if profiler else None
@@ -1829,8 +1829,8 @@ Just write the message itself, nothing else.
                             service_type='tool_detection',
                             model=provider.get_model_name(),
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Cost tracking failed (non-fatal): {e}")
 
                 logger.info(f"Tool call requested: {tool_name}")
 
