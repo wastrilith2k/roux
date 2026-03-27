@@ -39,13 +39,16 @@ from src.utils.timezone_utils import now_pacific_naive
 # Module-level Redis singleton – avoids creating a new connection per call
 # ---------------------------------------------------------------------------
 _redis_client = None
+_redis_lock = threading.Lock()
 
 
 def _get_redis():
     global _redis_client
     if _redis_client is None:
-        redis_url = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
-        _redis_client = _redis_mod.from_url(redis_url)
+        with _redis_lock:
+            if _redis_client is None:
+                redis_url = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+                _redis_client = _redis_mod.from_url(redis_url)
     return _redis_client
 
 

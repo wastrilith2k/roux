@@ -9,6 +9,7 @@ The fix: A module-level ``_get_redis()`` singleton (matching the pattern in
 """
 
 import sys
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -92,6 +93,30 @@ class TestRedisSingleton:
                 "_get_redis() must return the same Redis client instance"
             )
             # from_url should only be called once (singleton)
+            mock_from_url.assert_called_once()
+
+    def test_thread_safe_singleton(self):
+        """_get_redis() must be thread-safe — concurrent calls produce one client."""
+        fake_client = MagicMock(name="redis_client")
+        barrier = threading.Barrier(4)
+        results = [None] * 4
+
+        def call_get_redis(idx):
+            barrier.wait()
+            results[idx] = chat_routes_mod._get_redis()
+
+        with patch.object(
+            chat_routes_mod._redis_mod, 'from_url', return_value=fake_client
+        ) as mock_from_url:
+            threads = [threading.Thread(target=call_get_redis, args=(i,)) for i in range(4)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            assert all(r is fake_client for r in results), (
+                "All threads must receive the same Redis client instance"
+            )
             mock_from_url.assert_called_once()
 
     def test_no_inline_redis_from_url_in_handlers(self):
