@@ -83,7 +83,7 @@ class OpenRouterProvider(OpenAIProvider):
             "base_url": OPENROUTER_BASE_URL,
             "default_headers": {
                 "HTTP-Referer": os.environ.get(
-                    "OPENROUTER_REFERER", "https://github.com/wastrilith2k/roux"
+                    "OPENROUTER_REFERER", "https://github.com/companion-framework/roux"
                 ),
                 "X-Title": os.environ.get("OPENROUTER_TITLE", "Companion Framework"),
             },

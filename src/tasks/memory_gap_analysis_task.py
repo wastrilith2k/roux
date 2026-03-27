@@ -290,15 +290,17 @@ def _find_unresolved_events(conn) -> List[Dict]:
 
 def _guess_category(entity: str) -> str:
     """Guess curiosity category from entity name."""
+    from src.config.persona_config import get_persona_config
+    _pc = get_persona_config()
     entity_lower = entity.lower()
 
-    # Known family members get 'family' category
-    family_names = ['jesse', 'kyler', 'alia', 'carol', 'mom', 'dad']
+    # Known family members get 'family' category (configured in persona.yaml)
+    family_names = _pc.family_names if _pc.family_names else ['mom', 'dad']
     if any(name in entity_lower for name in family_names):
         return 'family'
 
-    # Work-related
-    work_names = ['cavallo', 'act-on', 'work']
+    # Work-related (configured in persona.yaml)
+    work_names = _pc.work_names if _pc.work_names else ['work']
     if any(name in entity_lower for name in work_names):
         return 'work'
 

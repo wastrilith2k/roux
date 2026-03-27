@@ -4,7 +4,7 @@ Observe Routes — Read-only dashboard API for watching simulations.
 WHAT: Blueprint providing REST endpoints and a SocketIO namespace for the
       observation dashboard. Subscribes to Redis pub/sub 'simulation_events'
       and forwards events to connected /observe clients.
-WHY:  The simulation runner emits events as Kai and Mira talk. This module
+WHY:  The simulation runner emits events as companions talk. This module
       bridges those events to the browser so you can watch in real-time.
 HOW:  REST endpoints query PostgreSQL for aggregate data (facts, opinions,
       episodes, etc.). A background thread subscribes to Redis and pushes
@@ -32,16 +32,28 @@ def _get_db():
     return get_db()
 
 
+def _default_companion_id() -> str:
+    """Get the default companion_id from persona config (cached singleton)."""
+    from src.config.persona_config import get_persona_config
+    return get_persona_config().companion_short_name.lower()
+
+
 def _companion_email(companion_id: str) -> str:
     """Map companion_id to the email used in user_state/messages.
 
-    In the simulation, Kai's state is stored with email='mira@companion.local'
-    and companion_id='kai'. For querying messages/facts/opinions, we filter
-    by companion_id directly.
+    In multi-agent simulations, each companion's state is stored under its
+    peer's email. The mapping is loaded from companions.yaml so new
+    simulation pairs don't require source changes.
     """
-    other = {'kai': 'mira', 'mira': 'kai'}
-    peer = other.get(companion_id, companion_id)
-    return f"{peer}@companion.local"
+    from src.config.persona_config import get_persona_config
+    try:
+        _pc = get_persona_config(companion_id=companion_id)
+        email = _pc.primary_user_email
+        if email:
+            return email
+    except Exception:
+        pass
+    return f"{companion_id}@companion.local"
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +204,7 @@ def update_state():
 @observe_bp.route('/state')
 def observe_state():
     """Internal state + user_state for a companion."""
-    companion_id = request.args.get('companion_id', 'kai')
+    companion_id = request.args.get('companion_id', _default_companion_id())
 
     try:
         db = _get_db()
@@ -239,7 +251,7 @@ def observe_state():
 @observe_bp.route('/facts')
 def observe_facts():
     """Recent facts for a companion."""
-    companion_id = request.args.get('companion_id', 'kai')
+    companion_id = request.args.get('companion_id', _default_companion_id())
     limit = min(int(request.args.get('limit', 20)), 100)
     email = _companion_email(companion_id)
 
@@ -275,7 +287,7 @@ def observe_facts():
 @observe_bp.route('/opinions')
 def observe_opinions():
     """Opinions for a companion."""
-    companion_id = request.args.get('companion_id', 'kai')
+    companion_id = request.args.get('companion_id', _default_companion_id())
 
     try:
         db = _get_db()
@@ -308,7 +320,7 @@ def observe_opinions():
 @observe_bp.route('/curiosity')
 def observe_curiosity():
     """Active curiosity threads for a companion."""
-    companion_id = request.args.get('companion_id', 'kai')
+    companion_id = request.args.get('companion_id', _default_companion_id())
     email = _companion_email(companion_id)
 
     try:
@@ -335,7 +347,7 @@ def observe_curiosity():
 @observe_bp.route('/goals')
 def observe_goals():
     """Active goals for a companion."""
-    companion_id = request.args.get('companion_id', 'kai')
+    companion_id = request.args.get('companion_id', _default_companion_id())
     email = _companion_email(companion_id)
 
     try:
@@ -370,7 +382,7 @@ def observe_goals():
 @observe_bp.route('/episodes')
 def observe_episodes():
     """Recent episodes for a companion."""
-    companion_id = request.args.get('companion_id', 'kai')
+    companion_id = request.args.get('companion_id', _default_companion_id())
     limit = min(int(request.args.get('limit', 10)), 50)
     email = _companion_email(companion_id)
 
@@ -405,7 +417,7 @@ def observe_episodes():
 @observe_bp.route('/relationship')
 def observe_relationship():
     """Relationship metrics for a companion."""
-    companion_id = request.args.get('companion_id', 'kai')
+    companion_id = request.args.get('companion_id', _default_companion_id())
     email = _companion_email(companion_id)
 
     try:

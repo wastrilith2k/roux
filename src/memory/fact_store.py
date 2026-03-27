@@ -7,7 +7,7 @@ known pattern matching), contradiction detection (string + embedding
 similarity), hybrid search (BM25 + pgvector), and spreading activation
 retrieval through the fact network.
 
-WHY: The companion needs to recall what she knows about people and things.
+WHY: The companion needs to recall what it knows about people and things.
 Raw conversation messages are too noisy and verbose. The fact store holds
 distilled, structured knowledge -- each fact is a (subject, predicate,
 object) triple with confidence, importance, mention count, and temporal
@@ -165,13 +165,11 @@ class FactStore:
         # Hand-curated semantic equivalence classes for common repeated facts.
         # Each group maps variant phrasings to a canonical pattern name so
         # that "loves tea" and "prefers tea" are recognized as duplicates.
-        SEMANTIC_PATTERNS = {
-            "works_at_cavallo": ["works at cavallo", "employed at cavallo", "works for cavallo", "job at cavallo"],
-            "father_of_kids": ["father of jesse", "father of kyler", "parent of", "two sons", "has two sons"],
-            "married_to_alia": ["married to alia", "married alia", "legally married", "wife alia"],
-            "tea_preference": ["loves tea", "drinks tea", "prefers tea", "tea drinker"],
-            "no_coffee": ["doesn't drink coffee", "does not drink coffee", "no coffee", "never coffee"],
-        }
+        # Instance-specific patterns are loaded from persona.yaml; generic
+        # patterns that apply to any instance are defined here.
+        from src.config.persona_config import get_persona_config
+        _pc = get_persona_config()
+        SEMANTIC_PATTERNS = dict(_pc.semantic_patterns) if _pc.semantic_patterns else {}
 
         def get_pattern(text):
             text_lower = text.lower()

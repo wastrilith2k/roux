@@ -301,7 +301,7 @@ def main():
     parser = argparse.ArgumentParser(description='Generate simulation report')
     parser.add_argument('--output', type=str, default='report.html', help='Output file path')
     parser.add_argument('--json', type=str, help='Also export raw data as JSON')
-    parser.add_argument('--companions', nargs='+', default=['kai', 'mira'], help='Companion IDs')
+    parser.add_argument('--companions', nargs='+', required=True, help='Companion IDs (e.g. --companions kai mira)')
     args = parser.parse_args()
 
     project_root = find_project_root()

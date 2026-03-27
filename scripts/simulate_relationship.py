@@ -1092,8 +1092,8 @@ def main():
     parser.add_argument('--week', type=int, help='Run simulation for this week number')
     parser.add_argument('--rollback', type=str, help='Rollback to a checkpoint (e.g., "week1")')
     parser.add_argument('--summary', action='store_true', help='Print current state summary')
-    parser.add_argument('--companions', nargs='+', default=['kai', 'mira'],
-                        help='Companion IDs to simulate (default: kai mira)')
+    parser.add_argument('--companions', nargs='+', required=True,
+                        help='Companion IDs to simulate (e.g. --companions kai mira)')
     parser.add_argument('--config', type=str, default='instances/simulation_config.yaml',
                         help='Path to simulation config YAML (default: instances/simulation_config.yaml)')
     parser.add_argument('--with-analysis', action='store_true',

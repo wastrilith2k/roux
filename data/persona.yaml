@@ -52,3 +52,57 @@ voice:
 calendar:
   name: "Companion Schedule"
   id_file: "data/companion_calendar_id.txt"
+
+# Known entities — people, pets, and relationships relevant to this instance.
+# Used by retrieval agent, fact validation, memory gap analysis, and
+# semantic deduplication. Moving these here (instead of hardcoding in source)
+# means a new instance only needs to edit this file, not fork the codebase.
+known_entities:
+  # Each entry: label shown to the LLM, and optional category for gap analysis.
+  # Use {user} and {companion} as placeholders — they resolve at load time.
+  # entries:
+  #   - name: "Jesse"
+  #     label: "{user}'s 16yo son"
+  #     category: "family"
+  #   - name: "Tuck"
+  #     label: "{companion}'s cat"
+  #     category: "pet"
+  entries: []
+
+  # Pet names — events mentioning only pets (no humans) are filtered as
+  # non-human events. List pet names here so the filter works generically.
+  pet_names: []
+
+  # Valid children of the primary user — used by fact validation to reject
+  # hallucinated child names. Leave empty if not applicable.
+  user_children: []
+
+  # Family/close relation names for memory gap analysis category guessing.
+  family_names: []
+
+  # Work-related entity names for category guessing.
+  work_names: []
+
+# Semantic deduplication patterns — hand-curated equivalence classes for
+# frequently repeated facts. Each group maps variant phrasings to a
+# canonical pattern name so that "loves tea" and "prefers tea" are
+# recognized as duplicates. Instance-specific patterns go here.
+semantic_patterns:
+  # Example:
+  #   tea_preference: ["loves tea", "drinks tea", "prefers tea", "tea drinker"]
+  #   no_coffee: ["doesn't drink coffee", "does not drink coffee", "no coffee"]
+
+# Fact validation — patterns that indicate hallucinated/invalid facts.
+# Each entry is [subject_fragment, keyword_fragment]. If both match a fact,
+# it's rejected. Use {companion} and {user} as placeholders.
+invalid_fact_patterns:
+  # These apply generically: the companion doesn't have children.
+  - ["{companion}", "has a child"]
+  - ["{companion}", "has a son"]
+  - ["{companion}", "has a daughter"]
+  - ["{companion}", "{c_possessive} child"]
+  - ["{companion}", "{c_possessive} son"]
+  - ["{companion}", "{c_possessive} daughter"]
+  - ["{companion}", "parent of"]
+  - ["{companion}", "has_child"]
+  - ["{companion}", "has_lady_love"]

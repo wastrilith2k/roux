@@ -19,7 +19,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -74,6 +74,15 @@ class PersonaConfig:
     elevenlabs_model: str
     edge_tts_fallback: str
 
+    # --- Instance-specific entity and fact configuration ---
+    known_entity_entries: List[Dict[str, str]] = field(default_factory=list)
+    pet_names: List[str] = field(default_factory=list)
+    user_children: List[str] = field(default_factory=list)
+    family_names: List[str] = field(default_factory=list)
+    work_names: List[str] = field(default_factory=list)
+    semantic_patterns: Dict[str, List[str]] = field(default_factory=dict)
+    invalid_fact_patterns: List[List[str]] = field(default_factory=list)
+
     @property
     def companion_pronouns(self) -> Dict[str, str]:
         return {
@@ -91,6 +100,40 @@ class PersonaConfig:
             "possessive": self.user_pronoun_possessive,
             "reflexive": self.user_pronoun_reflexive,
         }
+
+    def get_known_entities_dict(self) -> Dict[str, str]:
+        """Build the KNOWN_ENTITIES dict for the retrieval agent.
+
+        Always includes the user and companion; adds any entries from
+        known_entity_entries in persona.yaml. Resolves {user} and
+        {companion} placeholders in labels.
+        """
+        user = self.primary_user_name
+        companion = self.companion_short_name
+        entities: Dict[str, str] = {
+            user.lower(): f'{user} (the user)',
+            companion.lower(): f'{companion} (AI companion)',
+        }
+        for entry in self.known_entity_entries:
+            name = entry.get('name', '')
+            label = entry.get('label', name)
+            label = label.replace('{user}', user).replace('{companion}', companion)
+            if name:
+                entities[name.lower()] = f'{name} ({label})' if label != name else name
+        return entities
+
+    def get_resolved_invalid_fact_patterns(self) -> List[List[str]]:
+        """Return invalid_fact_patterns with {companion}/{user}/{c_possessive} resolved."""
+        user = self.primary_user_name.lower()
+        companion = self.companion_short_name.lower()
+        c_possessive = self.companion_pronoun_possessive
+        resolved = []
+        for pattern in self.invalid_fact_patterns:
+            if len(pattern) >= 2:
+                subj = pattern[0].replace('{companion}', companion).replace('{user}', user).replace('{c_possessive}', c_possessive)
+                kw = pattern[1].replace('{companion}', companion).replace('{user}', user).replace('{c_possessive}', c_possessive)
+                resolved.append([subj, kw])
+        return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +208,9 @@ def _load_config(companion_id: str = None) -> PersonaConfig:
     image = data.get('image', {})
     calendar = data.get('calendar', {})
     voice = data.get('voice', {})
+    known_entities = data.get('known_entities', {})
+    semantic_patterns_raw = data.get('semantic_patterns', {}) or {}
+    invalid_fact_patterns_raw = data.get('invalid_fact_patterns', []) or []
 
     # Build config with YAML values (or sensible defaults)
     config = PersonaConfig(
@@ -201,6 +247,14 @@ def _load_config(companion_id: str = None) -> PersonaConfig:
         elevenlabs_voice_id=voice.get('elevenlabs_voice_id', 'gJx1vCzNCD1EQHT212Ls'),
         elevenlabs_model=voice.get('elevenlabs_model', 'eleven_v3'),
         edge_tts_fallback=voice.get('edge_tts_fallback', 'en-US-AvaNeural'),
+
+        known_entity_entries=known_entities.get('entries', []) or [],
+        pet_names=known_entities.get('pet_names', []) or [],
+        user_children=known_entities.get('user_children', []) or [],
+        family_names=known_entities.get('family_names', []) or [],
+        work_names=known_entities.get('work_names', []) or [],
+        semantic_patterns=semantic_patterns_raw,
+        invalid_fact_patterns=invalid_fact_patterns_raw,
     )
 
     # --- Env-var overrides (highest priority) ---
