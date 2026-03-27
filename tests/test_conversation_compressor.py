@@ -467,3 +467,91 @@ class TestNoDeadCodeStub:
         args, kwargs = mock_compress.call_args
         assert len(args) == 1  # Only older_messages
         assert 'existing_summary' not in kwargs
+
+
+# ---------------------------------------------------------------------------
+# Regression test for issue #62: invalid provider string in compressor
+# ---------------------------------------------------------------------------
+
+class TestCompressorProviderChain:
+    """
+    Regression test for issue #62: compress_messages passed
+    primary="openai:gpt-4o-mini" to get_resilient_provider_chain(), which
+    didn't match any branch — compression silently never ran.
+    """
+
+    def test_compress_messages_passes_valid_primary(self):
+        """
+        compress_messages should pass primary='openai' (not 'openai:gpt-4o-mini')
+        to get_resilient_provider_chain, so OpenAI is added as primary provider.
+        """
+        from src.memory.conversation_compressor import compress_messages
+
+        messages = _make_messages(5)
+
+        with patch('src.config.persona_config.get_persona_config', _fake_persona), \
+             patch('src.llm.provider_factory.generate_sync', return_value="[Session summary]") as mock_gen, \
+             patch('src.llm.provider_factory.get_resilient_provider_chain') as mock_chain:
+            mock_chain.return_value = MagicMock()
+
+            compress_messages(messages)
+
+        # Verify get_resilient_provider_chain was called with primary="openai"
+        mock_chain.assert_called_once_with(primary="openai")
+
+    def test_openai_primary_creates_openai_provider_first(self):
+        """
+        get_resilient_provider_chain(primary='openai') should place OpenAI
+        as the first provider in the chain (not just as a fallback).
+        """
+        from src.llm.provider_factory import get_resilient_provider_chain
+        from src.llm.openai_provider import OpenAIProvider
+
+        env = {
+            'OPENAI_API_KEY': 'test-key',
+            'LLM_PROVIDER': 'fireworks',
+        }
+        with patch.dict('os.environ', env, clear=True):
+            chain = get_resilient_provider_chain(primary="openai")
+
+        # First provider should be OpenAI
+        assert isinstance(chain.providers[0], OpenAIProvider)
+        assert 'gpt-4o-mini' in chain.providers[0].get_model_name()
+
+    def test_openai_primary_not_duplicated_in_fallback(self):
+        """
+        When primary='openai', OpenAI should not appear twice in the chain
+        (once as primary and again as fallback).
+        """
+        from src.llm.provider_factory import get_resilient_provider_chain
+        from src.llm.openai_provider import OpenAIProvider
+        from src.llm.openrouter_provider import OpenRouterProvider
+
+        env = {
+            'OPENAI_API_KEY': 'test-key',
+            'LLM_PROVIDER': 'fireworks',
+        }
+        with patch.dict('os.environ', env, clear=True):
+            chain = get_resilient_provider_chain(primary="openai")
+
+        openai_providers = [
+            p for p in chain.providers
+            if isinstance(p, OpenAIProvider) and not isinstance(p, OpenRouterProvider)
+        ]
+        assert len(openai_providers) == 1, (
+            f"Expected exactly 1 OpenAI provider, got {len(openai_providers)}"
+        )
+
+    def test_invalid_primary_string_would_produce_empty_chain(self):
+        """
+        Verify the original bug: passing an unrecognised primary like
+        'openai:gpt-4o-mini' with no other API keys configured results
+        in ValueError (empty provider list). This is the failure mode
+        that caused compression to silently skip.
+        """
+        import pytest
+        from src.llm.provider_factory import get_resilient_provider_chain
+
+        with patch.dict('os.environ', {}, clear=True):
+            with pytest.raises(ValueError, match="No LLM providers configured"):
+                get_resilient_provider_chain(primary="openai:gpt-4o-mini")

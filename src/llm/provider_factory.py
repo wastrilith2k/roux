@@ -257,7 +257,7 @@ def get_resilient_provider_chain(
     Default order: Ollama (local) → OpenRouter → Fireworks → DeepSeek direct → OpenAI → Anthropic
 
     Args:
-        primary: Override primary provider ('fireworks' or 'anthropic')
+        primary: Override primary provider ('fireworks', 'anthropic', 'openai', or 'ollama')
         fallback: Override fallback provider ('fireworks' or 'anthropic')
         model_override: Per-request model override (e.g. 'deepseek/deepseek-chat').
                        When set and OpenRouter is configured, creates an OpenRouter
@@ -324,6 +324,13 @@ def get_resilient_provider_chain(
             providers.append(AnthropicProvider(api_key=api_key, model=model))
             logger.debug(f"Added Anthropic primary: {model}")
 
+    elif primary == "openai":
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key:
+            openai_model = os.getenv("OPENAI_FALLBACK_MODEL", "gpt-4o-mini")
+            providers.append(OpenAIProvider(api_key=openai_key, model=openai_model))
+            logger.debug(f"Added OpenAI primary: {openai_model}")
+
     # Fallback 2: DeepSeek direct API (OpenAI-compatible)
     deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
     if deepseek_api_key:
@@ -338,7 +345,7 @@ def get_resilient_provider_chain(
 
     # Fallback 3: OpenAI (gpt-4o-mini — cheap and reliable)
     openai_api_key = os.getenv("OPENAI_API_KEY")
-    if openai_api_key:
+    if openai_api_key and primary != "openai":
         openai_model = os.getenv("OPENAI_FALLBACK_MODEL", "gpt-4o-mini")
         providers.append(OpenAIProvider(api_key=openai_api_key, model=openai_model))
         logger.debug(f"Added OpenAI fallback: {openai_model}")
