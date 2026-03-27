@@ -41,8 +41,8 @@ from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
-# LLM for analysis (large model for quality)
-FIREWORKS_MODEL = "accounts/fireworks/models/kimi-k2-instruct-0905"
+# LLM for analysis
+from src.config.models import FIREWORKS_DEFAULT_MODEL as FIREWORKS_MODEL
 
 # Human-readable category descriptions (used in prompt output)
 CATEGORIES = {

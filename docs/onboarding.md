@@ -263,7 +263,7 @@ pytest tests/test_persona_config.py -v   # run a specific test file
 |---|---|---|
 | `FIREWORKS_API_KEY` | -- | Primary LLM provider API key |
 | `FIREWORKS_MODEL` | `accounts/fireworks/models/deepseek-v3p2` | Primary model |
-| `FIREWORKS_FALLBACK_MODEL` | `accounts/fireworks/models/kimi-k2-instruct-0905` | Fallback model |
+| `FIREWORKS_FALLBACK_MODEL` | `accounts/fireworks/models/kimi-k2p5-instruct` | Fallback model |
 | `OPENAI_API_KEY` | -- | Used for entity extraction and embeddings |
 | `ANTHROPIC_API_KEY` | -- | Claude API (used for autonomous task narratives) |
 | `DEEPSEEK_API_KEY` | -- | Direct DeepSeek API access |

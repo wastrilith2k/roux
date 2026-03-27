@@ -25,6 +25,7 @@ import random
 from datetime import datetime, time, timedelta
 from typing import Dict, List, Optional, Tuple, Any
 from src.utils.timezone_utils import now_pacific_naive
+from src.config.models import FIREWORKS_DEFAULT_MODEL as FIREWORKS_MODEL
 from src.database import tables as T
 import sys
 
@@ -1102,7 +1103,7 @@ Examples of good outputs:
 Just output the activity description, nothing else:"""
 
         response = client.chat.completions.create(
-            model="accounts/fireworks/models/kimi-k2-instruct-0905",
+            model=FIREWORKS_MODEL,
             max_tokens=50,
             temperature=0.8,  # Variety
             messages=[{"role": "user", "content": prompt}]
@@ -1211,7 +1212,7 @@ Return as JSON array only, no other text:
 ]"""
 
         response = client.chat.completions.create(
-            model="accounts/fireworks/models/kimi-k2-instruct-0905",
+            model=FIREWORKS_MODEL,
             max_tokens=400,
             temperature=0.9,  # High variety
             messages=[{"role": "user", "content": prompt}]

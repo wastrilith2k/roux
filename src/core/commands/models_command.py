@@ -19,10 +19,8 @@ def get_model_info() -> Dict[str, Any]:
     # Main conversation
     llm_provider = os.environ.get("LLM_PROVIDER", "fireworks")
     if llm_provider == "fireworks":
-        main_model = os.environ.get(
-            "FIREWORKS_MODEL",
-            "accounts/fireworks/models/kimi-k2-instruct-0905"
-        )
+        from src.config.models import FIREWORKS_DEFAULT_MODEL
+        main_model = FIREWORKS_DEFAULT_MODEL
         models.append({
             'task': 'Main Conversation',
             'model': main_model.split('/')[-1],
@@ -59,7 +57,7 @@ def get_model_info() -> Dict[str, Any]:
     for task, notes in heavy_tasks:
         models.append({
             'task': task,
-            'model': 'kimi-k2-instruct-0905',
+            'model': FIREWORKS_DEFAULT_MODEL.split('/')[-1],
             'provider': 'Fireworks',
             'notes': notes
         })

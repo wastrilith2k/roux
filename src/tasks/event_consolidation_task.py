@@ -35,8 +35,8 @@ logger = logging.getLogger(__name__)
 
 PST = ZoneInfo('America/Los_Angeles')
 
-# Use Fireworks 235B for quality synthesis
-FIREWORKS_MODEL = "accounts/fireworks/models/kimi-k2-instruct-0905"
+# Use Fireworks model for quality synthesis
+from src.config.models import FIREWORKS_DEFAULT_MODEL as FIREWORKS_MODEL
 
 
 def get_event_groups(days_back: int = 14) -> List[Dict]:

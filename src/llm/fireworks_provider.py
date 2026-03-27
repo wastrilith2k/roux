@@ -19,7 +19,7 @@ class FireworksProvider(LLMProvider):
     def __init__(
         self,
         api_key: str,
-        model: str = "accounts/fireworks/models/kimi-k2-instruct-0905",
+        model: str = "accounts/fireworks/models/kimi-k2p5-instruct",
         base_url: str = "https://api.fireworks.ai/inference/v1/chat/completions"
     ):
         self.api_key = api_key

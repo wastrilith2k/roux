@@ -31,8 +31,8 @@ from .claim_extractor import Claim
 
 logger = logging.getLogger(__name__)
 
-# Use Fireworks 235B model for quality verification
-FIREWORKS_MODEL = "accounts/fireworks/models/kimi-k2-instruct-0905"
+# Use Fireworks model for quality verification
+from src.config.models import FIREWORKS_DEFAULT_MODEL as FIREWORKS_MODEL
 
 
 @dataclass

@@ -9,7 +9,7 @@ WHAT: The central decision engine for proactive messaging.  For each check cycle
 
       Decision flow inside should_reach_out():
         Hard guards  ->  Natural Partner Triggers  ->  High-urgency curiosity
-        ->  Double-text threshold  ->  LLM decision (kimi-k2-instruct-0905)
+        ->  Double-text threshold  ->  LLM decision (kimi-k2p5-instruct)
 
 WHY:  A companion that only responds on command feels hollow.  This engine makes
       her initiate naturally -- not on timers, but based on genuine internal
@@ -52,8 +52,8 @@ from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
-# LLM for decision making (235B for quality)
-FIREWORKS_MODEL = "accounts/fireworks/models/kimi-k2-instruct-0905"
+# LLM for decision making
+from src.config.models import FIREWORKS_DEFAULT_MODEL as FIREWORKS_MODEL
 PST = ZoneInfo('America/Los_Angeles')
 
 

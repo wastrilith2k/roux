@@ -36,6 +36,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, asdict, field
 from zoneinfo import ZoneInfo
 
+from src.config.models import FIREWORKS_DEFAULT_MODEL as FIREWORKS_MODEL
 from src.database import tables as T
 
 logger = logging.getLogger(__name__)
@@ -319,7 +320,7 @@ Reply with ONLY one word: James, {_companion_name}, Jesse, Kyler, Alia, Carol, F
 /no_think"""
 
         response = client.chat.completions.create(
-            model="accounts/fireworks/models/kimi-k2-instruct-0905",
+            model=FIREWORKS_MODEL,
             max_tokens=10,
             temperature=0.0,
             messages=[{"role": "user", "content": prompt}]

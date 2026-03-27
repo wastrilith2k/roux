@@ -304,12 +304,14 @@ def get_resilient_provider_chain(
     if primary == "fireworks" and fireworks_api_key:
         from .fireworks_provider import FireworksProvider
         # Primary: Fireworks with configured model (e.g. DeepSeek v3)
-        model = os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/kimi-k2-instruct-0905")
+        from src.config.models import FIREWORKS_DEFAULT_MODEL
+        model = FIREWORKS_DEFAULT_MODEL
         providers.append(FireworksProvider(api_key=fireworks_api_key, model=model))
         logger.debug(f"Added Fireworks primary: {model}")
 
         # Fallback 1: Fireworks Kimi K2 (different model, same provider)
-        fallback_model = os.getenv("FIREWORKS_FALLBACK_MODEL", "accounts/fireworks/models/kimi-k2-instruct-0905")
+        from src.config.models import FIREWORKS_FALLBACK_MODEL
+        fallback_model = FIREWORKS_FALLBACK_MODEL
         if fallback_model != model:
             providers.append(FireworksProvider(api_key=fireworks_api_key, model=fallback_model))
             logger.debug(f"Added Fireworks fallback: {fallback_model}")
@@ -432,10 +434,8 @@ def get_llm_provider(
 
         # Default Fireworks model
         if model is None:
-            model = os.getenv(
-                "FIREWORKS_MODEL",
-                "accounts/fireworks/models/kimi-k2-instruct-0905"
-            )
+            from src.config.models import FIREWORKS_DEFAULT_MODEL as _fw_default
+            model = _fw_default
 
         from .fireworks_provider import FireworksProvider
         return FireworksProvider(api_key=api_key, model=model)

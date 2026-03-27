@@ -50,7 +50,7 @@ COMPANION_INTIMATE_INITIATION_ENABLED = os.environ.get(
     'COMPANION_INTIMATE_INITIATION_ENABLED', 'true').lower() == 'true'
 
 # ---- LLM configuration ----
-FIREWORKS_MODEL = "accounts/fireworks/models/kimi-k2-instruct-0905"
+from src.config.models import FIREWORKS_DEFAULT_MODEL as FIREWORKS_MODEL
 PST = ZoneInfo('America/Los_Angeles')
 
 # ---- Guard thresholds ----

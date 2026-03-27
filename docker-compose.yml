@@ -82,9 +82,9 @@ services:
       # LLM Configuration
       FIREWORKS_API_KEY: '${FIREWORKS_API_KEY}'
       # FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3'  # 404 as of 2026-02-09
-      # FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2-instruct-0905'
+      # FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2p5-instruct'
       FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3p2'
-      FIREWORKS_FALLBACK_MODEL: 'accounts/fireworks/models/kimi-k2-instruct-0905'
+      FIREWORKS_FALLBACK_MODEL: 'accounts/fireworks/models/kimi-k2p5-instruct'
       DEEPSEEK_API_KEY: '${DEEPSEEK_API_KEY}'
       ANTHROPIC_API_KEY: '${ANTHROPIC_API_KEY}'
       OPENAI_API_KEY: '${OPENAI_API_KEY}'
@@ -177,9 +177,9 @@ services:
       ANTHROPIC_API_KEY: '${ANTHROPIC_API_KEY}'
       FIREWORKS_API_KEY: '${FIREWORKS_API_KEY}'
       # FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3'  # 404 as of 2026-02-09
-      # FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2-instruct-0905'
+      # FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2p5-instruct'
       FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3p2'
-      FIREWORKS_FALLBACK_MODEL: 'accounts/fireworks/models/kimi-k2-instruct-0905'
+      FIREWORKS_FALLBACK_MODEL: 'accounts/fireworks/models/kimi-k2p5-instruct'
       DEEPSEEK_API_KEY: '${DEEPSEEK_API_KEY}'
       OPENAI_API_KEY: '${OPENAI_API_KEY}'
       # Graphiti Neo4j (Knowledge Graph Memory)
