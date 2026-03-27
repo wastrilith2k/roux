@@ -34,14 +34,16 @@ from src.database import tables as T
 logger = logging.getLogger(__name__)
 
 # Path to store the Google Calendar ID (only used if sync is enabled)
+from src.utils.path_utils import get_data_dir as _get_data_dir
+
 CALENDAR_ID_FILE = os.path.join(
-    os.environ.get('DATA_DIR', '/app/data'),
+    os.environ.get('DATA_DIR', _get_data_dir()),
     'companion_calendar_id.txt'
 )
 
 # Path to store daily plans (JSON cache for fast reads)
 DAILY_PLANS_DIR = os.path.join(
-    os.environ.get('DATA_DIR', '/app/data'),
+    os.environ.get('DATA_DIR', _get_data_dir()),
     'companion_daily_plans'
 )
 
