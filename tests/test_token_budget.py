@@ -30,6 +30,9 @@ class FakePersonaConfig:
     u_possessive: str = "his"
     u_pronoun_subject: str = "he"
     u_pronoun_object: str = "him"
+    user_pronoun_subject: str = "he"
+    user_pronoun_object: str = "him"
+    user_pronoun_possessive: str = "his"
     primary_user_email: str = "test@test.com"
 
 

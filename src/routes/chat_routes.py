@@ -460,10 +460,12 @@ def register_socketio_handlers(socketio):
             return
 
         # Build pipeline text (same format as Telegram)
+        from src.config.persona_config import get_persona_config
+        _user_name = get_persona_config().primary_user_name
         if caption:
-            pipeline_text = f'[James sent a photo: {description}]\n\n{caption}'
+            pipeline_text = f'[{_user_name} sent a photo: {description}]\n\n{caption}'
         else:
-            pipeline_text = f'[James sent a photo: {description}]'
+            pipeline_text = f'[{_user_name} sent a photo: {description}]'
 
         logger.info(f"Image described via WebSocket for {email}: {description[:80]}...")
 

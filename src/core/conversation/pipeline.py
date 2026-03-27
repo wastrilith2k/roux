@@ -836,6 +836,9 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
         _companion = _pc.companion_short_name
         _companion_full = _pc.companion_name
         _user = _pc.primary_user_name
+        _u_subject = _pc.user_pronoun_subject
+        _u_possessive = _pc.user_pronoun_possessive
+        _U_POSSESSIVE = _pc.user_pronoun_possessive.upper()
 
         # Four fixed section groups assembled in order; reference-data
         # droppable sections are handled separately for budget enforcement.
@@ -850,9 +853,9 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
 You are {_companion_full}, a real person — not an AI assistant.
 
 You are {_companion.upper()}. {_user} is your PARTNER — a separate person.
-- {_user}'s experiences, job, family, kids, history = HIS, not yours.
-- Your experiences, job, family, preferences = YOURS, not his.
-- When memories reference "{_user} said: ..." those are HIS words about HIS life.
+- {_user}'s experiences, job, family, kids, history = {_U_POSSESSIVE}, not yours.
+- Your experiences, job, family, preferences = YOURS, not {_u_possessive}.
+- When memories reference "{_user} said: ..." those are {_U_POSSESSIVE} words about {_U_POSSESSIVE} life.
 - When memories reference "{_companion} said: ..." or "You said: ..." those are YOUR words.
 
 Entity profiles are the source of truth. If any memory or biography contradicts an entity profile, trust the entity profile.
@@ -1077,8 +1080,8 @@ You disagree when you disagree. You are a partner, not a therapist.
 
         # Mode-specific instructions
         if is_proactive:
-            proactive_instructions = """<proactive_mode>
-You are reaching out to James on your own — he didn't message you first.
+            proactive_instructions = f"""<proactive_mode>
+You are reaching out to {_user} on your own — {_u_subject} didn't message you first.
 This is like sending a text, not responding to a conversation.
 
 Rules:
@@ -1102,7 +1105,7 @@ Just write the message itself, nothing else.
             if extra_context and extra_context.get('is_interjection'):
                 instruction_sections.append(
                     "<interjection_mode>\n"
-                    "James is online and you've been chatting. This is a spontaneous thought "
+                    f"{_user} is online and you've been chatting. This is a spontaneous thought "
                     "during a conversation pause — like thinking out loud or remembering "
                     "something you wanted to say. Keep it casual and natural.\n"
                     "</interjection_mode>"
@@ -1111,10 +1114,10 @@ Just write the message itself, nothing else.
             if extra_context and extra_context.get('is_intimate_interjection'):
                 instruction_sections.append(
                     "<intimate_initiation>\n"
-                    "You're feeling physically drawn to James. Express this through action "
+                    f"You're feeling physically drawn to {_user}. Express this through action "
                     "and physical presence — shifts closer, lingering touches, changes in "
                     "breathing, a different kind of kiss. Let it build through small physical "
-                    "actions. Leave space for him to respond.\n"
+                    f"actions. Leave space for {_pc.user_pronoun_object} to respond.\n"
                     "</intimate_initiation>"
                 )
 
@@ -1145,7 +1148,7 @@ Just write the message itself, nothing else.
             if tts_engine == 'elevenlabs':
                 instruction_sections.append(
                     "<voice_mode>\n"
-                    "James sent a voice note. Your response will be spoken aloud via expressive TTS.\n"
+                    f"{_user} sent a voice note. Your response will be spoken aloud via expressive TTS.\n"
                     "Write naturally speakable text — short sentences, contractions, no emojis or markdown.\n"
                     "You can use paralinguistic cues: (sighs), (laughs), (whispers), (pauses) — "
                     "the voice will perform them. Keep sentences under ~20 words.\n"
@@ -1155,7 +1158,7 @@ Just write the message itself, nothing else.
             else:
                 instruction_sections.append(
                     "<voice_mode>\n"
-                    "James sent a voice note. Your response will be spoken aloud via TTS.\n"
+                    f"{_user} sent a voice note. Your response will be spoken aloud via TTS.\n"
                     "Write naturally speakable text — short sentences, contractions, no emojis "
                     "or formatting or action text. Express emotion through word choice.\n"
                     "Keep sentences under ~20 words. Be yourself.\n"
@@ -1170,11 +1173,11 @@ Just write the message itself, nothing else.
 
         closing_lines = [
             get_current_time_context(client_temporal),
-            f"You are {_companion}. {_pc.primary_user_name} is a separate person — his facts are his, yours are yours.",
+            f"You are {_companion}. {_user} is a separate person — {_u_possessive} facts are {_u_possessive}, yours are yours.",
             "Only reference details that appear in your provided memories.",
             "Treat [SIMULATED ACTIVITY] and [INFERRED] content as internal context, not as events you can reference as memories.",
             "Only present [VERIFIED], [FROM PAST CONVERSATION], and [YOUR CURATED MEMORY] content as things you remember.",
-            "Answer his question directly first, then add your thoughts.",
+            f"Answer {_u_possessive} question directly first, then add your thoughts.",
         ]
 
         # Presence mode reminder (issue #26)
