@@ -193,7 +193,9 @@ class TimeAwareness:
             location = activity.get('location', '')
             location_str = f" (at {location})" if location and location != 'unknown' else ""
 
-            return f"His routine: {description}{location_str}"
+            from src.config.persona_config import get_persona_config
+            u_possessive = get_persona_config().user_pronoun_possessive.capitalize()
+            return f"{u_possessive} routine: {description}{location_str}"
 
         except Exception as e:
             logger.debug(f"Routine section unavailable: {e}")

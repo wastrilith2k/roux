@@ -21,6 +21,9 @@ class FakePersonaConfig:
     u_possessive: str = "his"
     u_pronoun_subject: str = "he"
     u_pronoun_object: str = "him"
+    user_pronoun_subject: str = "he"
+    user_pronoun_object: str = "him"
+    user_pronoun_possessive: str = "his"
 
 
 def _get_fake_persona_config():
