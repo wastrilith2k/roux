@@ -275,7 +275,7 @@ class CompanionDB:
 
     def get_state(self, email: str) -> Dict:
         """Get user state (closeness, romance, cooldowns)"""
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(
                 f'SELECT * FROM {T.USER_STATE} WHERE email = %s',
@@ -320,7 +320,7 @@ class CompanionDB:
 
     def save_state(self, email: str, state: Dict):
         """Save user state"""
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=email) as conn:
             cursor = conn.cursor()
             # Convert arrow timestamps to datetime objects
             last_negative = state['last_negative_event'].datetime if state.get('last_negative_event') else None
@@ -460,7 +460,7 @@ class CompanionDB:
             print(f"⚠️  Test message - NOT storing to database")
             return None
 
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=email) as conn:
             cursor = conn.cursor()
             cursor.execute(f'''
                 INSERT INTO {T.MESSAGES} (email, sender_name, message_text, timestamp,
@@ -488,7 +488,7 @@ class CompanionDB:
         Returns:
             List of individual messages in chronological order (oldest first)
         """
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             if source:
                 cursor.execute(f'''
@@ -531,14 +531,14 @@ class CompanionDB:
 
     def get_message_count(self, email: str) -> int:
         """Get total message count for user"""
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=email) as conn:
             cursor = conn.cursor()
             cursor.execute(f'SELECT COUNT(*) FROM {T.MESSAGES} WHERE email = %s', (email,))
             return cursor.fetchone()[0]
 
     def get_last_message_id(self, email: str) -> Optional[int]:
         """Get the ID of the most recently created message for a user"""
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=email) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 f'SELECT id FROM {T.MESSAGES} WHERE email = %s ORDER BY id DESC LIMIT 1',
@@ -558,7 +558,7 @@ class CompanionDB:
         Returns:
             List of message dicts with pagination
         """
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(f'''
                 SELECT id, sender_name, message_text, timestamp, sentiment_score,
@@ -598,7 +598,7 @@ class CompanionDB:
         Returns:
             Number of days since last message, or 0 if messages exist today
         """
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             _pc = get_persona_config()
             cursor.execute(f'''
@@ -638,7 +638,7 @@ class CompanionDB:
         Returns:
             Minutes since last message, or None if no previous messages
         """
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             query = f'''
                 SELECT timestamp FROM {T.MESSAGES}
@@ -680,7 +680,7 @@ class CompanionDB:
         Returns:
             List of individual message dicts in chronological order
         """
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(f'''
                 SELECT id, sender_name, message_text, timestamp, sentiment_score,
@@ -721,7 +721,7 @@ class CompanionDB:
         Returns:
             List of individual message dicts in chronological order
         """
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(f'''
                 SELECT id, sender_name, message_text, timestamp, sentiment_score,
@@ -812,9 +812,10 @@ class CompanionDB:
 
     # ==================== FEED/MICROBLOG METHODS ====================
 
-    def create_feed_post(self, content: str, mood: str = None, tags: List[str] = None) -> int:
+    def create_feed_post(self, content: str, mood: str = None, tags: List[str] = None,
+                         user_email: str = None) -> int:
         """Create a new feed post from the companion"""
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=user_email) as conn:
             cursor = conn.cursor()
             tags_str = ','.join(tags) if tags else None
             cursor.execute(f'''
@@ -825,9 +826,10 @@ class CompanionDB:
             result = cursor.fetchone()
             return result[0] if result else None
 
-    def get_feed_posts(self, limit: int = 50, include_private: bool = False) -> List[Dict]:
+    def get_feed_posts(self, limit: int = 50, include_private: bool = False,
+                       user_email: str = None) -> List[Dict]:
         """Get recent feed posts"""
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=user_email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             if include_private:
                 cursor.execute(f'''
@@ -858,26 +860,26 @@ class CompanionDB:
 
             return posts
 
-    def delete_feed_post(self, post_id: int) -> bool:
+    def delete_feed_post(self, post_id: int, user_email: str = None) -> bool:
         """Delete a feed post"""
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=user_email) as conn:
             cursor = conn.cursor()
             cursor.execute(f'DELETE FROM {T.FEED_POSTS} WHERE id = %s', (post_id,))
             return cursor.rowcount > 0
 
     # ==================== GENERIC STATE METHODS ====================
 
-    def get_state_value(self, key: str) -> Optional[str]:
+    def get_state_value(self, key: str, user_email: str = None) -> Optional[str]:
         """Get a state value by key (returns JSON string or None)"""
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=user_email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(f'SELECT value FROM {T.STATE} WHERE key = %s', (key,))
             row = cursor.fetchone()
             return row['value'] if row else None
 
-    def set_state_value(self, key: str, value: str):
+    def set_state_value(self, key: str, value: str, user_email: str = None):
         """Set a state value (value should be JSON string)"""
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=user_email) as conn:
             cursor = conn.cursor()
             cursor.execute(f'SELECT key FROM {T.STATE} WHERE key = %s', (key,))
             exists = cursor.fetchone() is not None
@@ -894,9 +896,9 @@ class CompanionDB:
                     VALUES (%s, %s, %s)
                 ''', (key, value, now_pacific_naive()))
 
-    def delete_state_value(self, key: str) -> bool:
+    def delete_state_value(self, key: str, user_email: str = None) -> bool:
         """Delete a state value by key"""
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=user_email) as conn:
             cursor = conn.cursor()
             cursor.execute(f'DELETE FROM {T.STATE} WHERE key = %s', (key,))
             return cursor.rowcount > 0
@@ -921,7 +923,7 @@ class CompanionDB:
         Returns:
             Event ID
         """
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=user_email) as conn:
             cursor = conn.cursor()
             participants_str = ','.join(participants) if participants else None
             cursor.execute(f'''
@@ -946,7 +948,7 @@ class CompanionDB:
         Returns:
             List of event dicts
         """
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=user_email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(f'''
                 SELECT id, user_email, event_type, description, scheduled_time,
@@ -974,13 +976,15 @@ class CompanionDB:
 
             return events
 
-    def get_past_due_events(self, cutoff_time: Optional[str] = None) -> List[Dict]:
+    def get_past_due_events(self, cutoff_time: Optional[str] = None,
+                            user_email: str = None) -> List[Dict]:
         """
         Get events that are past their scheduled time and still marked as 'planned'
         These should be consolidated into Neo4j as past memories
 
         Args:
             cutoff_time: ISO timestamp cutoff (default: now)
+            user_email: If provided, sets search_path to user's schema
 
         Returns:
             List of past-due event dicts
@@ -988,7 +992,7 @@ class CompanionDB:
         if not cutoff_time:
             cutoff_time = now_pacific_naive()
 
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=user_email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(f'''
                 SELECT id, user_email, event_type, description, scheduled_time,
@@ -1017,17 +1021,18 @@ class CompanionDB:
 
             return events
 
-    def get_event_by_id(self, event_id: int) -> Optional[Dict]:
+    def get_event_by_id(self, event_id: int, user_email: str = None) -> Optional[Dict]:
         """
         Get a single event by ID
 
         Args:
             event_id: Event ID
+            user_email: If provided, sets search_path to user's schema
 
         Returns:
             Event dict or None if not found
         """
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=user_email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(f'''
                 SELECT id, user_email, event_type, description, scheduled_time,
@@ -1052,18 +1057,20 @@ class CompanionDB:
                 }
             return None
 
-    def update_event_status(self, event_id: int, status: str) -> bool:
+    def update_event_status(self, event_id: int, status: str,
+                            user_email: str = None) -> bool:
         """
         Update event status (planned -> completed or cancelled)
 
         Args:
             event_id: Event ID
             status: New status
+            user_email: If provided, sets search_path to user's schema
 
         Returns:
             True if updated successfully
         """
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=user_email) as conn:
             cursor = conn.cursor()
             cursor.execute(f'''
                 UPDATE {T.UPCOMING_EVENTS}
@@ -1072,9 +1079,9 @@ class CompanionDB:
             ''', (status, event_id))
             return cursor.rowcount > 0
 
-    def delete_event(self, event_id: int) -> bool:
+    def delete_event(self, event_id: int, user_email: str = None) -> bool:
         """Delete an event"""
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=user_email) as conn:
             cursor = conn.cursor()
             cursor.execute(f'DELETE FROM {T.UPCOMING_EVENTS} WHERE id = %s', (event_id,))
             return cursor.rowcount > 0
@@ -1120,12 +1127,12 @@ class CompanionDB:
 
         return "\n".join(lines)
 
-    def get_autonomous_task(self, task_id: str) -> Optional[Dict]:
+    def get_autonomous_task(self, task_id: str, user_email: str = None) -> Optional[Dict]:
         """
         Retrieve an autonomous task by task_id.
         Properly handles cursor lifecycle within context manager.
         """
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=user_email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(
                 f"""
@@ -1170,7 +1177,7 @@ class CompanionDB:
         Returns:
             List of messages with similarity scores, most similar first
         """
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
 
             # Convert embedding list to pgvector format
@@ -1213,9 +1220,9 @@ class CompanionDB:
 
             return results
 
-    def get_message_embedding(self, message_id: int) -> Optional[List[float]]:
+    def get_message_embedding(self, message_id: int, user_email: str = None) -> Optional[List[float]]:
         """Get the embedding vector for a specific message"""
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=user_email) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 f'SELECT embedding_vec::text FROM {T.MESSAGES} WHERE id = %s AND embedding_vec IS NOT NULL',
@@ -1239,7 +1246,7 @@ class CompanionDB:
         Returns:
             List of fact dictionaries with temporal info
         """
-        with self._get_connection() as conn:
+        with self._get_connection(user_email=email) as conn:
             cursor = conn.cursor()
             cursor.execute(f'''
                 SELECT id, subject, predicate, object, confidence, importance,
