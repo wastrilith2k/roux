@@ -29,11 +29,11 @@ os.environ.setdefault('POSTGRES_USER', 'test')
 from src.core.derived_scene_context import (
     DerivedSceneContextBuilder,
     get_derived_scene_context_builder,
-    _time_of_day_label,
     _infer_location,
     _infer_user_status,
     _derive_behavioral_constraints,
 )
+from src.core.time_awareness import time_of_day_label as _time_of_day_label
 
 
 # =========================================================================

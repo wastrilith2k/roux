@@ -2302,15 +2302,9 @@ don't force them, but don't ignore them either."""
                     location = "unknown"
 
                 from datetime import datetime as _dt, timedelta
+                from src.core.time_awareness import time_of_day_label
                 hour = _dt.now().hour
-                if 5 <= hour < 12:
-                    time_of_day = "morning"
-                elif 12 <= hour < 17:
-                    time_of_day = "afternoon"
-                elif 17 <= hour < 21:
-                    time_of_day = "evening"
-                else:
-                    time_of_day = "night"
+                time_of_day = time_of_day_label(hour)
 
                 # Generate rich gap narrative
                 gap_narrative = ""

@@ -47,6 +47,23 @@ def get_time_awareness() -> 'TimeAwareness':
     return _time_awareness
 
 
+def time_of_day_label(hour: int) -> str:
+    """Map hour (0-23) to a time-of-day label.
+
+    This is the single source of truth for time-of-day bucketing.
+    All modules that need morning/afternoon/evening/night labels
+    should call this function rather than duplicating the boundaries.
+    """
+    if 5 <= hour < 12:
+        return 'morning'
+    elif 12 <= hour < 17:
+        return 'afternoon'
+    elif 17 <= hour < 21:
+        return 'evening'
+    else:
+        return 'night'
+
+
 def derive_temporal_context(client_timestamp: str, client_timezone: str) -> dict:
     """
     Derive structured temporal context from client-provided clock data.
@@ -73,15 +90,7 @@ def derive_temporal_context(client_timestamp: str, client_timezone: str) -> dict
         logger.warning(f"Invalid client timestamp '{client_timestamp}', falling back to server clock")
         return {}
 
-    hour = local_time.hour
-    if 5 <= hour < 12:
-        time_of_day = 'morning'
-    elif 12 <= hour < 17:
-        time_of_day = 'afternoon'
-    elif 17 <= hour < 21:
-        time_of_day = 'evening'
-    else:
-        time_of_day = 'night'
+    time_of_day = time_of_day_label(local_time.hour)
 
     day_of_week = local_time.strftime('%A')
     is_weekend = local_time.weekday() >= 5

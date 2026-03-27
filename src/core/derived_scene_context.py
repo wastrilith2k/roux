@@ -29,6 +29,7 @@ from datetime import datetime
 from typing import Optional, List
 
 from src.core.clock import now as clock_now
+from src.core.time_awareness import time_of_day_label
 
 logger = logging.getLogger(__name__)
 
@@ -45,18 +46,6 @@ def get_derived_scene_context_builder() -> 'DerivedSceneContextBuilder':
             if _builder is None:
                 _builder = DerivedSceneContextBuilder()
     return _builder
-
-
-def _time_of_day_label(hour: int) -> str:
-    """Map hour to time-of-day label."""
-    if 5 <= hour < 12:
-        return 'morning'
-    elif 12 <= hour < 17:
-        return 'afternoon'
-    elif 17 <= hour < 21:
-        return 'evening'
-    else:
-        return 'night'
 
 
 def _infer_location(time_of_day: str, is_weekend: bool,
@@ -232,7 +221,7 @@ class DerivedSceneContextBuilder:
         try:
             now = clock_now()
             hour = now.hour
-            time_of_day = _time_of_day_label(hour)
+            time_of_day = time_of_day_label(hour)
             is_weekend = now.weekday() >= 5
             day_of_week = now.strftime('%A')
             formatted_time = now.strftime('%A, %-I:%M %p')
