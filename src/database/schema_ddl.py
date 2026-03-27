@@ -127,6 +127,7 @@ def get_user_schema_ddl(schema: str) -> str:
         _ddl_image_generation_requests(schema),
         _ddl_daily_cost_summary(schema),
         _ddl_budget_limits(schema),
+        _ddl_openrouter_usage(schema),
         _ddl_fireworks_usage(schema),
         _ddl_openai_usage(schema),
         _ddl_google_api_usage(schema),
@@ -985,6 +986,10 @@ CREATE TABLE IF NOT EXISTS {s}.{T.DAILY_COST_SUMMARY} (
     id SERIAL PRIMARY KEY,
     date DATE NOT NULL,
     user_id TEXT NOT NULL,
+    openrouter_calls INTEGER DEFAULT 0,
+    openrouter_tokens_in INTEGER DEFAULT 0,
+    openrouter_tokens_out INTEGER DEFAULT 0,
+    openrouter_cost_usd REAL DEFAULT 0,
     fireworks_calls INTEGER DEFAULT 0,
     fireworks_tokens_in INTEGER DEFAULT 0,
     fireworks_tokens_out INTEGER DEFAULT 0,
@@ -1020,6 +1025,7 @@ def _ddl_budget_limits(s: str) -> str:
 -- Budget limits per user
 CREATE TABLE IF NOT EXISTS {s}.{T.BUDGET_LIMITS} (
     user_id TEXT PRIMARY KEY,
+    openrouter_monthly_limit_usd REAL DEFAULT 50.00,
     fireworks_monthly_limit_usd REAL DEFAULT 150.00,
     openai_monthly_limit_usd REAL DEFAULT 50.00,
     hedra_monthly_limit_usd REAL DEFAULT 100.00,
@@ -1032,6 +1038,26 @@ CREATE TABLE IF NOT EXISTS {s}.{T.BUDGET_LIMITS} (
     enable_hard_stop BOOLEAN DEFAULT FALSE,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+"""
+
+
+def _ddl_openrouter_usage(s: str) -> str:
+    return f"""
+-- OpenRouter usage tracking
+CREATE TABLE IF NOT EXISTS {s}.{T.OPENROUTER_USAGE} (
+    id SERIAL PRIMARY KEY,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    user_id TEXT NOT NULL,
+    model TEXT DEFAULT 'deepseek/deepseek-chat',
+    prompt_tokens INTEGER NOT NULL,
+    completion_tokens INTEGER NOT NULL,
+    total_tokens INTEGER NOT NULL,
+    cost_usd REAL NOT NULL,
+    response_time_ms INTEGER,
+    error BOOLEAN DEFAULT FALSE
+);
+
+CREATE INDEX IF NOT EXISTS idx_openrouter_user_timestamp ON {s}.{T.OPENROUTER_USAGE}(user_id, timestamp);
 """
 
 

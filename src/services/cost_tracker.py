@@ -30,6 +30,20 @@ import calendar
 from src.database import tables as T
 
 # Cost constants (per service pricing as of October 2025)
+
+# OpenRouter pricing varies by model — these are defaults for DeepSeek V3
+OPENROUTER_DEEPSEEK_INPUT_COST_PER_1M = 0.32   # $0.32 per 1M input tokens
+OPENROUTER_DEEPSEEK_OUTPUT_COST_PER_1M = 1.40   # $1.40 per 1M output tokens
+
+# Model-specific OpenRouter pricing (input, output) per 1M tokens
+OPENROUTER_MODEL_PRICING = {
+    'deepseek/deepseek-chat': (0.32, 1.40),
+    'deepseek/deepseek-chat-v3-0324': (0.32, 1.40),
+    'moonshotai/kimi-k2': (0.60, 2.40),
+    'anthropic/claude-sonnet-4': (3.00, 15.00),
+    'anthropic/claude-3.5-sonnet': (3.00, 15.00),
+}
+
 FIREWORKS_INPUT_COST_PER_1M = 0.90  # $0.90 per 1M input tokens
 FIREWORKS_OUTPUT_COST_PER_1M = 0.90  # $0.90 per 1M output tokens
 
@@ -180,6 +194,29 @@ class CostTracker:
 
         return cost
 
+    def track_openrouter_call(self, user_id: str, prompt_tokens: int,
+                              completion_tokens: int, model: str = 'deepseek/deepseek-chat',
+                              response_time_ms: int = None, error: bool = False) -> float:
+        """Track an OpenRouter API call and return cost"""
+        cost = self._calculate_openrouter_cost(prompt_tokens, completion_tokens, model)
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(f"""
+            INSERT INTO {T.OPENROUTER_USAGE}
+            (user_id, model, prompt_tokens, completion_tokens, total_tokens, cost_usd, response_time_ms, error)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, model, prompt_tokens, completion_tokens,
+              prompt_tokens + completion_tokens, cost, response_time_ms, int(error)))
+        conn.commit()
+        conn.close()
+
+        if not error:
+            self._update_daily_summary(user_id, 'openrouter', cost, calls=1,
+                                      tokens_in=prompt_tokens, tokens_out=completion_tokens)
+
+        return cost
+
     def track_openai_call(self, user_id: str, prompt_tokens: int = 0,
                          completion_tokens: int = 0, audio_seconds: float = 0,
                          characters: int = 0, service_type: str = 'tool_detection',
@@ -313,6 +350,17 @@ class CostTracker:
         output_cost = (completion_tokens / 1_000_000) * FIREWORKS_OUTPUT_COST_PER_1M
         return input_cost + output_cost
 
+    def _calculate_openrouter_cost(self, prompt_tokens: int, completion_tokens: int,
+                                   model: str = 'deepseek/deepseek-chat') -> float:
+        """Calculate OpenRouter cost based on model-specific pricing"""
+        pricing = OPENROUTER_MODEL_PRICING.get(
+            model,
+            (OPENROUTER_DEEPSEEK_INPUT_COST_PER_1M, OPENROUTER_DEEPSEEK_OUTPUT_COST_PER_1M)
+        )
+        input_cost = (prompt_tokens / 1_000_000) * pricing[0]
+        output_cost = (completion_tokens / 1_000_000) * pricing[1]
+        return input_cost + output_cost
+
     def _calculate_openai_cost(self, prompt_tokens: int, completion_tokens: int,
                               audio_seconds: float, characters: int, service_type: str) -> float:
         """Calculate OpenAI cost based on service type"""
@@ -368,7 +416,17 @@ class CostTracker:
             update_parts = []
             update_values = []
 
-            if service == 'fireworks':
+            if service == 'openrouter':
+                update_parts.append("openrouter_calls = openrouter_calls + ?")
+                update_values.append(kwargs.get('calls', 0))
+                update_parts.append("openrouter_tokens_in = openrouter_tokens_in + ?")
+                update_values.append(kwargs.get('tokens_in', 0))
+                update_parts.append("openrouter_tokens_out = openrouter_tokens_out + ?")
+                update_values.append(kwargs.get('tokens_out', 0))
+                update_parts.append("openrouter_cost_usd = openrouter_cost_usd + ?")
+                update_values.append(cost)
+
+            elif service == 'fireworks':
                 update_parts.append("fireworks_calls = fireworks_calls + ?")
                 update_values.append(kwargs.get('calls', 0))
                 update_parts.append("fireworks_tokens_in = fireworks_tokens_in + ?")
@@ -440,6 +498,7 @@ class CostTracker:
             insert_data = {
                 'date': today,
                 'user_id': user_id,
+                'openrouter_calls': 0, 'openrouter_tokens_in': 0, 'openrouter_tokens_out': 0, 'openrouter_cost_usd': 0,
                 'fireworks_calls': 0, 'fireworks_tokens_in': 0, 'fireworks_tokens_out': 0, 'fireworks_cost_usd': 0,
                 'openai_calls': 0, 'openai_tokens_in': 0, 'openai_tokens_out': 0, 'openai_voice_minutes': 0, 'openai_cost_usd': 0,
                 'hedra_videos': 0, 'hedra_minutes': 0, 'hedra_cost_usd': 0,
@@ -449,7 +508,12 @@ class CostTracker:
                 'total_cost_usd': 0
             }
 
-            if service == 'fireworks':
+            if service == 'openrouter':
+                insert_data['openrouter_calls'] = kwargs.get('calls', 0)
+                insert_data['openrouter_tokens_in'] = kwargs.get('tokens_in', 0)
+                insert_data['openrouter_tokens_out'] = kwargs.get('tokens_out', 0)
+                insert_data['openrouter_cost_usd'] = cost
+            elif service == 'fireworks':
                 insert_data['fireworks_calls'] = kwargs.get('calls', 0)
                 insert_data['fireworks_tokens_in'] = kwargs.get('tokens_in', 0)
                 insert_data['fireworks_tokens_out'] = kwargs.get('tokens_out', 0)
@@ -533,7 +597,7 @@ class CostTracker:
         cursor = conn.cursor()
         cursor.execute(f"""
             SELECT
-                fireworks_cost_usd, openai_cost_usd, hedra_cost_usd,
+                openrouter_cost_usd, fireworks_cost_usd, openai_cost_usd, hedra_cost_usd,
                 runcomfy_cost_usd, twilio_cost_usd, google_cost_usd, total_cost_usd
             FROM {T.DAILY_COST_SUMMARY}
             WHERE user_id = ? AND date = ?
@@ -544,6 +608,7 @@ class CostTracker:
 
         if row:
             return {
+                'openrouter': row['openrouter_cost_usd'],
                 'fireworks': row['fireworks_cost_usd'],
                 'openai': row['openai_cost_usd'],
                 'hedra': row['hedra_cost_usd'],
@@ -554,7 +619,7 @@ class CostTracker:
             }
         else:
             return {
-                'fireworks': 0.0, 'openai': 0.0, 'hedra': 0.0,
+                'openrouter': 0.0, 'fireworks': 0.0, 'openai': 0.0, 'hedra': 0.0,
                 'runcomfy': 0.0, 'twilio': 0.0, 'google': 0.0, 'total': 0.0
             }
 
@@ -564,6 +629,7 @@ class CostTracker:
         cursor = conn.cursor()
         cursor.execute(f"""
             SELECT
+                SUM(openrouter_cost_usd) as openrouter,
                 SUM(fireworks_cost_usd) as fireworks,
                 SUM(openai_cost_usd) as openai,
                 SUM(hedra_cost_usd) as hedra,
@@ -580,6 +646,7 @@ class CostTracker:
 
         if row and row['total']:
             return {
+                'openrouter': row['openrouter'] or 0.0,
                 'fireworks': row['fireworks'] or 0.0,
                 'openai': row['openai'] or 0.0,
                 'hedra': row['hedra'] or 0.0,
@@ -590,7 +657,7 @@ class CostTracker:
             }
         else:
             return {
-                'fireworks': 0.0, 'openai': 0.0, 'hedra': 0.0,
+                'openrouter': 0.0, 'fireworks': 0.0, 'openai': 0.0, 'hedra': 0.0,
                 'runcomfy': 0.0, 'twilio': 0.0, 'google': 0.0, 'total': 0.0
             }
 
@@ -600,7 +667,8 @@ class CostTracker:
         cursor = conn.cursor()
         cursor.execute(f"""
             SELECT
-                fireworks_monthly_limit_usd, openai_monthly_limit_usd,
+                openrouter_monthly_limit_usd, fireworks_monthly_limit_usd,
+                openai_monthly_limit_usd,
                 hedra_monthly_limit_usd, runcomfy_monthly_limit_usd,
                 twilio_monthly_limit_usd, google_monthly_limit_usd,
                 total_monthly_limit_usd
@@ -613,6 +681,7 @@ class CostTracker:
 
         if row:
             return {
+                'openrouter': row['openrouter_monthly_limit_usd'],
                 'fireworks': row['fireworks_monthly_limit_usd'],
                 'openai': row['openai_monthly_limit_usd'],
                 'hedra': row['hedra_monthly_limit_usd'],
@@ -624,7 +693,7 @@ class CostTracker:
         else:
             # Return defaults
             return {
-                'fireworks': 150.0, 'openai': 50.0, 'hedra': 100.0,
+                'openrouter': 50.0, 'fireworks': 150.0, 'openai': 50.0, 'hedra': 100.0,
                 'runcomfy': 25.0, 'twilio': 15.0, 'google': 0.0, 'total': 750.0
             }
 
@@ -657,6 +726,17 @@ class CostTracker:
         # Get detailed usage stats for each service
         conn = self._get_connection()
         cursor = conn.cursor()
+
+        # OpenRouter details
+        cursor.execute(f"""
+            SELECT
+                COUNT(*) as calls,
+                SUM(prompt_tokens) as tokens_in,
+                SUM(completion_tokens) as tokens_out
+            FROM {T.OPENROUTER_USAGE}
+            WHERE user_id = ? AND strftime('%Y-%m', timestamp) = strftime('%Y-%m', 'now')
+        """, (user_id,))
+        or_row = cursor.fetchone()
 
         # Fireworks details
         cursor.execute(f"""
@@ -717,6 +797,23 @@ class CostTracker:
         conn.close()
 
         services = []
+
+        # OpenRouter
+        services.append(ServiceCost(
+            service_name='openrouter',
+            display_name='OpenRouter',
+            icon='🔀',
+            cost_today=costs_today.get('openrouter', 0.0),
+            cost_month=costs_month.get('openrouter', 0.0),
+            budget_month=budgets.get('openrouter', 50.0),
+            usage_details={
+                'api_calls': or_row['calls'] or 0,
+                'input_tokens': f"{(or_row['tokens_in'] or 0) / 1_000_000:.2f}M",
+                'output_tokens': f"{(or_row['tokens_out'] or 0) / 1_000_000:.2f}M",
+                'avg_cost_per_call': f"${(costs_month.get('openrouter', 0.0) / or_row['calls']):.4f}" if or_row['calls'] else '$0.0000'
+            },
+            links=service_links.get('openrouter', {})
+        ))
 
         # Fireworks.ai
         services.append(ServiceCost(
