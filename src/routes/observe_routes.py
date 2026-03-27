@@ -32,6 +32,12 @@ def _get_db():
     return get_db()
 
 
+def _default_companion_id() -> str:
+    """Get the default companion_id from persona config (cached singleton)."""
+    from src.config.persona_config import get_persona_config
+    return get_persona_config().companion_short_name.lower()
+
+
 def _companion_email(companion_id: str) -> str:
     """Map companion_id to the email used in user_state/messages.
 
@@ -198,7 +204,7 @@ def update_state():
 @observe_bp.route('/state')
 def observe_state():
     """Internal state + user_state for a companion."""
-    companion_id = request.args.get('companion_id', 'kai')
+    companion_id = request.args.get('companion_id', _default_companion_id())
 
     try:
         db = _get_db()
@@ -245,7 +251,7 @@ def observe_state():
 @observe_bp.route('/facts')
 def observe_facts():
     """Recent facts for a companion."""
-    companion_id = request.args.get('companion_id', 'kai')
+    companion_id = request.args.get('companion_id', _default_companion_id())
     limit = min(int(request.args.get('limit', 20)), 100)
     email = _companion_email(companion_id)
 
@@ -281,7 +287,7 @@ def observe_facts():
 @observe_bp.route('/opinions')
 def observe_opinions():
     """Opinions for a companion."""
-    companion_id = request.args.get('companion_id', 'kai')
+    companion_id = request.args.get('companion_id', _default_companion_id())
 
     try:
         db = _get_db()
@@ -314,7 +320,7 @@ def observe_opinions():
 @observe_bp.route('/curiosity')
 def observe_curiosity():
     """Active curiosity threads for a companion."""
-    companion_id = request.args.get('companion_id', 'kai')
+    companion_id = request.args.get('companion_id', _default_companion_id())
     email = _companion_email(companion_id)
 
     try:
@@ -341,7 +347,7 @@ def observe_curiosity():
 @observe_bp.route('/goals')
 def observe_goals():
     """Active goals for a companion."""
-    companion_id = request.args.get('companion_id', 'kai')
+    companion_id = request.args.get('companion_id', _default_companion_id())
     email = _companion_email(companion_id)
 
     try:
@@ -376,7 +382,7 @@ def observe_goals():
 @observe_bp.route('/episodes')
 def observe_episodes():
     """Recent episodes for a companion."""
-    companion_id = request.args.get('companion_id', 'kai')
+    companion_id = request.args.get('companion_id', _default_companion_id())
     limit = min(int(request.args.get('limit', 10)), 50)
     email = _companion_email(companion_id)
 
@@ -411,7 +417,7 @@ def observe_episodes():
 @observe_bp.route('/relationship')
 def observe_relationship():
     """Relationship metrics for a companion."""
-    companion_id = request.args.get('companion_id', 'kai')
+    companion_id = request.args.get('companion_id', _default_companion_id())
     email = _companion_email(companion_id)
 
     try:

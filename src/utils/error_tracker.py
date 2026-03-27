@@ -17,7 +17,7 @@ Usage:
     try:
         do_something()
     except Exception as e:
-        record_error(e, module='fact_store', companion_id='kai')
+        record_error(e, module='fact_store', companion_id='companion')
         # continue gracefully
 """
 

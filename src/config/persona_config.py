@@ -123,14 +123,15 @@ class PersonaConfig:
         return entities
 
     def get_resolved_invalid_fact_patterns(self) -> List[List[str]]:
-        """Return invalid_fact_patterns with {companion}/{user} resolved."""
+        """Return invalid_fact_patterns with {companion}/{user}/{c_possessive} resolved."""
         user = self.primary_user_name.lower()
         companion = self.companion_short_name.lower()
+        c_possessive = self.companion_pronoun_possessive
         resolved = []
         for pattern in self.invalid_fact_patterns:
             if len(pattern) >= 2:
-                subj = pattern[0].replace('{companion}', companion).replace('{user}', user)
-                kw = pattern[1].replace('{companion}', companion).replace('{user}', user)
+                subj = pattern[0].replace('{companion}', companion).replace('{user}', user).replace('{c_possessive}', c_possessive)
+                kw = pattern[1].replace('{companion}', companion).replace('{user}', user).replace('{c_possessive}', c_possessive)
                 resolved.append([subj, kw])
         return resolved
 

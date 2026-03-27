@@ -1,5 +1,5 @@
 -- ============================================================================
--- ESME AI - UNIFIED COST TRACKING DATABASE SCHEMA
+-- COMPANION FRAMEWORK - UNIFIED COST TRACKING DATABASE SCHEMA
 -- ============================================================================
 -- Purpose: Track costs across all external services (Fireworks, OpenAI,
 --          RunComfy, Twilio, Hedra, Google APIs)

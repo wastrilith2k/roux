@@ -5,6 +5,7 @@ fact validation rules, pet names, family/work names) are loaded from
 persona.yaml configuration rather than being hardcoded in source code.
 """
 import os
+import re
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -223,3 +224,128 @@ class TestConfigFieldDefaults:
         assert config.work_names == []
         assert isinstance(config.semantic_patterns, dict)
         assert isinstance(config.invalid_fact_patterns, list)
+
+
+class TestObserveRoutesNoHardcodedCompanionId:
+    """observe_routes.py must not hardcode any specific companion_id default."""
+
+    def test_default_companion_id_comes_from_config(self):
+        """_default_companion_id() should return persona config short name."""
+        reset_persona_config()
+        from src.routes.observe_routes import _default_companion_id
+        config = get_persona_config()
+        expected = config.companion_short_name.lower()
+        assert _default_companion_id() == expected
+
+    def test_no_hardcoded_kai_in_observe_routes(self):
+        """observe_routes.py source must not contain hardcoded 'kai' defaults."""
+        import inspect
+        from src.routes import observe_routes
+        source = inspect.getsource(observe_routes)
+        # Should not have companion_id defaults pointing to 'kai'
+        assert "get('companion_id', 'kai')" not in source, (
+            "observe_routes.py still contains hardcoded 'kai' default"
+        )
+
+
+class TestOpenRouterNoHardcodedIdentity:
+    """openrouter_provider.py must not contain instance-specific URLs."""
+
+    def test_no_instance_specific_url_in_default(self):
+        """Default HTTP-Referer should not contain instance-specific GitHub org."""
+        import inspect
+        from src.llm import openrouter_provider
+        source = inspect.getsource(openrouter_provider)
+        assert 'wastrilith2k' not in source, (
+            "openrouter_provider.py still contains 'wastrilith2k' — "
+            "should be a generic default or env-var only"
+        )
+
+
+class TestScriptsNoHardcodedCompanions:
+    """Simulation scripts must not hardcode specific companion lists."""
+
+    def test_simulate_relationship_no_hardcoded_companions(self):
+        """simulate_relationship.py must not default to specific companions."""
+        from pathlib import Path
+        script = Path(__file__).parent.parent / 'scripts' / 'simulate_relationship.py'
+        source = script.read_text()
+        assert "default=['kai'" not in source, (
+            "simulate_relationship.py still has hardcoded ['kai', 'mira'] default"
+        )
+
+    def test_generate_report_no_hardcoded_companions(self):
+        """generate_report.py must not default to specific companions."""
+        from pathlib import Path
+        script = Path(__file__).parent.parent / 'scripts' / 'generate_report.py'
+        source = script.read_text()
+        assert "default=['kai'" not in source, (
+            "generate_report.py still has hardcoded ['kai', 'mira'] default"
+        )
+
+
+class TestCostTrackingSchemaNoInstanceName:
+    """cost_tracking_schema.sql must not contain instance-specific names."""
+
+    def test_no_esme_in_schema(self):
+        """Schema file should say 'Companion Framework', not 'ESME AI'."""
+        from pathlib import Path
+        schema = Path(__file__).parent.parent / 'src' / 'database' / 'cost_tracking_schema.sql'
+        source = schema.read_text()
+        assert 'ESME AI' not in source, (
+            "cost_tracking_schema.sql still contains 'ESME AI' — "
+            "should use generic 'COMPANION FRAMEWORK'"
+        )
+
+
+class TestErrorTrackerNoInstanceName:
+    """error_tracker.py docstring must not use instance-specific names."""
+
+    def test_no_kai_in_error_tracker_docstring(self):
+        """Docstring example should use generic companion_id, not 'kai'."""
+        from pathlib import Path
+        tracker = Path(__file__).parent.parent / 'src' / 'utils' / 'error_tracker.py'
+        source = tracker.read_text()
+        assert "companion_id='kai'" not in source, (
+            "error_tracker.py still uses 'kai' in docstring example"
+        )
+
+
+class TestInvalidFactPatternsNoPronounHardcoding:
+    """invalid_fact_patterns in persona.yaml must not hardcode gendered pronouns."""
+
+    def setup_method(self):
+        reset_persona_config()
+
+    def teardown_method(self):
+        reset_persona_config()
+
+    def test_no_hardcoded_gendered_pronouns_in_patterns(self):
+        """Patterns should use {c_possessive}, not 'her'/'his' literally."""
+        from pathlib import Path
+        persona_yaml = Path(__file__).parent.parent / 'data' / 'persona.yaml'
+        source = persona_yaml.read_text()
+        # Check the invalid_fact_patterns section doesn't have bare gendered pronouns
+        # (patterns should use {c_possessive} placeholder instead)
+        lines = source.split('\n')
+        in_patterns = False
+        for line in lines:
+            if 'invalid_fact_patterns:' in line:
+                in_patterns = True
+                continue
+            if in_patterns and line.strip() and not line.startswith(' ') and not line.startswith('#'):
+                break
+            if in_patterns and re.search(r'"her (child|son|daughter)"', line):
+                pytest.fail(
+                    f"Hardcoded gendered pronoun in invalid_fact_patterns: {line.strip()}"
+                )
+
+    def test_c_possessive_resolved_in_patterns(self):
+        """The {c_possessive} placeholder must be resolved at load time."""
+        config = get_persona_config()
+        resolved = config.get_resolved_invalid_fact_patterns()
+        for pattern in resolved:
+            for part in pattern:
+                assert '{c_possessive}' not in part, (
+                    f"Placeholder {{c_possessive}} not resolved in pattern: {pattern}"
+                )
