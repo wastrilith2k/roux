@@ -8,9 +8,7 @@ Verifies that:
 3. The function produces correct results for all hour boundaries
 """
 
-import ast
 import os
-import textwrap
 
 import pytest
 
@@ -49,12 +47,12 @@ class TestTimeOfDayLabelCanonical:
 
 class TestNoDuplicatedLogic:
     """
-    Verify that derived_scene_context.py and schedule_context.py do NOT
-    contain inline time-of-day bucketing logic (the old pattern that was
-    duplicated in issue #56).
+    Verify that derived_scene_context.py, schedule_context.py, and
+    context_builder.py do NOT contain inline time-of-day bucketing logic
+    (the old pattern that was duplicated in issue #56).
 
-    We parse the source files as ASTs and check that neither contains
-    the characteristic `if 5 <= hour < 12` pattern.
+    We check the source files for the characteristic `if 5 <= hour < 12`
+    pattern to ensure all call sites use the shared time_of_day_label().
     """
 
     @staticmethod
@@ -87,6 +85,16 @@ class TestNoDuplicatedLogic:
         )
         assert not self._source_contains_hour_bucketing(filepath), (
             "schedule_context.py still contains inline time-of-day bucketing. "
+            "It should import time_of_day_label from time_awareness instead."
+        )
+
+    def test_context_builder_no_inline_bucketing(self):
+        filepath = os.path.join(
+            os.path.dirname(__file__), '..', 'src', 'core', 'conversation',
+            'context_builder.py'
+        )
+        assert not self._source_contains_hour_bucketing(filepath), (
+            "context_builder.py still contains inline time-of-day bucketing. "
             "It should import time_of_day_label from time_awareness instead."
         )
 
