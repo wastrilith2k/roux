@@ -107,6 +107,8 @@ celery_app.conf.update(
         'src.tasks.reminder_check_task',  # Due reminders → queued_thoughts
         'src.tasks.gmail_check_task',  # Gmail inbox awareness
         'src.tasks.goal_signal_task',  # Signal-based goal formation
+        'src.tasks.embedding_pruning_task',  # pgvector embedding lifecycle (weekly)
+        'src.tasks.graphiti_pruning_task',  # Neo4j episode/edge lifecycle (monthly)
     ]
 )
 
@@ -241,6 +243,20 @@ celery_app.conf.beat_schedule = {
     'daily-value-refresh': {
         'task': 'tasks.value_inference.run_incremental',
         'schedule': crontab(hour=1, minute=0),  # 1 AM daily, after reflection at 12:30 AM
+
+    },
+    # Embedding pruning - archive stale pgvector embeddings
+    'weekly-embedding-pruning': {
+        'task': 'tasks.embedding_pruning.prune_stale_embeddings',
+        'schedule': crontab(hour=6, minute=0, day_of_week=0),  # Sunday 6:00 AM Pacific (after fact pruning at 5:30)
+        'kwargs': {'dry_run': False},
+
+    },
+    # Graphiti pruning - archive old Neo4j episodes and expired edges
+    'monthly-graphiti-pruning': {
+        'task': 'tasks.graphiti_pruning.prune_old_episodes',
+        'schedule': crontab(hour=5, minute=0, day_of_month=1),  # 1st of month 5:00 AM Pacific
+        'kwargs': {'dry_run': False},
 
     },
 }

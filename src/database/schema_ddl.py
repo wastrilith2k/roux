@@ -180,7 +180,8 @@ CREATE TABLE IF NOT EXISTS {s}.{T.MESSAGES} (
     romance_level FLOAT,
     source TEXT DEFAULT 'chat',
     message_type TEXT DEFAULT 'normal',
-    conversation_id INTEGER
+    conversation_id INTEGER,
+    last_retrieved_at TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_email ON {s}.{T.MESSAGES}(email);
