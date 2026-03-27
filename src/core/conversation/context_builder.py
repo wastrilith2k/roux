@@ -81,6 +81,7 @@ class ConversationContext:
     goals_context: str = ""  # Companion's personal goals (from goal manager)
     fertility_context: str = ""  # Hidden: cycle/fertility (LLM-only, never shown to user)
     observations_context: str = ""  # Compressed conversation observations (observational memory)
+    session_summary: str = ""  # Compressed summary of older messages in long conversations (issue #23)
     relationship_dynamics: str = ""  # Gottman-informed relationship state (closeness, trust, wounds)
     relationship_evaluation: str = ""  # How the companion defines the relationship (from periodic evaluation)
 
@@ -125,6 +126,8 @@ class ConversationContext:
             sections['episode_context'] = self.episode_context
         if self.observations_context:
             sections['observations_context'] = self.observations_context
+        if self.session_summary:
+            sections['session_summary'] = self.session_summary
         if self.core_memory:
             sections['core_memory'] = self.core_memory
         if self.reflections_context:
@@ -295,10 +298,11 @@ class ContextBuilder:
                 self._source_timings[name] = elapsed
 
                 if name == 'conversation_turns' and result is not None:
-                    if isinstance(result, tuple) and len(result) == 2:
-                        turns, continuity = result
+                    if isinstance(result, tuple) and len(result) == 3:
+                        turns, continuity, summary = result
                         context.conversation_turns = turns or []
                         context.continuity_context = continuity or ""
+                        context.session_summary = summary or ""
                         if turns:
                             from src.config.persona_config import get_persona_config
                             _pc = get_persona_config()
@@ -381,10 +385,11 @@ class ContextBuilder:
                     else:
                         context.memories = str(result) if result else ""
                 elif name == 'conversation_turns' and result is not None:
-                    if isinstance(result, tuple) and len(result) == 2:
-                        turns, continuity = result
+                    if isinstance(result, tuple) and len(result) == 3:
+                        turns, continuity, summary = result
                         context.conversation_turns = turns or []
                         context.continuity_context = continuity or ""
+                        context.session_summary = summary or ""
                         if turns:
                             from src.config.persona_config import get_persona_config
                             _pc = get_persona_config()
@@ -478,12 +483,13 @@ class ContextBuilder:
                 # Handle synthesized biographies
                 elif name == 'synthesized_biographies' and result is not None:
                     context.biographies = result or ""
-                # Handle conversation_turns - it returns a tuple (turns, continuity_context)
+                # Handle conversation_turns - it returns a tuple (turns, continuity_context, session_summary)
                 elif name == 'conversation_turns' and result is not None:
-                    if isinstance(result, tuple) and len(result) == 2:
-                        turns, continuity = result
+                    if isinstance(result, tuple) and len(result) == 3:
+                        turns, continuity, summary = result
                         context.conversation_turns = turns or []
                         context.continuity_context = continuity or ""
+                        context.session_summary = summary or ""
                         # Also set legacy string format for backwards compat
                         if turns:
                             from src.config.persona_config import get_persona_config
@@ -552,9 +558,10 @@ class ContextBuilder:
         context.memories = contextual
 
         # Conversation history - structured for multi-turn chat format
-        turns, continuity = self._get_conversation_history_structured(user_email)
+        turns, continuity, summary = self._get_conversation_history_structured(user_email)
         context.conversation_turns = turns
         context.continuity_context = continuity
+        context.session_summary = summary
         # Also set legacy string format for backwards compat
         if turns:
             from src.config.persona_config import get_persona_config
@@ -2389,10 +2396,15 @@ Format: bullet points, concise."""
         """
         Get conversation history as structured messages for multi-turn chat format.
 
+        When there are more messages than COMPRESSION_THRESHOLD, older messages
+        are compressed into a session summary (issue #23) so the companion
+        retains awareness of the full conversation without token waste.
+
         Returns:
-            Tuple of (conversation_turns, continuity_context)
+            Tuple of (conversation_turns, continuity_context, session_summary)
             - conversation_turns: List of {"role": "user"|"assistant", "content": "..."}
             - continuity_context: String describing conversation state
+            - session_summary: Compressed summary of older messages (empty if not needed)
         """
         import os
         from datetime import datetime, timedelta
@@ -2406,14 +2418,19 @@ Format: bullet points, concise."""
         # Skip if disabled
         if os.environ.get('SKIP_CONVERSATION_HISTORY', '').lower() == 'true':
             logger.info("Skipping conversation history (SKIP_CONVERSATION_HISTORY=true)")
-            return [], continuity_context
+            return [], continuity_context, ""
 
         try:
-            recent_msgs = self.db.get_recent_messages(user_email, limit=limit)
+            # Fetch more messages than the display limit to have material for
+            # compression (issue #23). The compressor will split them into a
+            # summary + recent raw messages.
+            from src.memory.conversation_compressor import FETCH_LIMIT
+            fetch_limit = max(limit, FETCH_LIMIT)
+            recent_msgs = self.db.get_recent_messages(user_email, limit=fetch_limit)
 
             if not recent_msgs:
                 logger.warning(f"No recent messages for {user_email}")
-                return [], continuity_context
+                return [], continuity_context, ""
 
             # Filter messages to only include those from the last N hours
             cutoff_time = clock_now() - timedelta(hours=MESSAGE_HISTORY_HOURS)
@@ -2433,6 +2450,15 @@ Format: bullet points, concise."""
 
             if len(filtered_msgs) < len(recent_msgs):
                 logger.info(f"Filtered conversation history: {len(recent_msgs)} -> {len(filtered_msgs)} messages (last {MESSAGE_HISTORY_HOURS}h)")
+
+            # Compress older messages into a session summary if threshold exceeded
+            session_summary = ""
+            from src.memory.conversation_compressor import get_or_create_session_summary
+            session_summary, filtered_msgs = get_or_create_session_summary(
+                user_email, filtered_msgs
+            )
+            if session_summary:
+                logger.info(f"Session summary active: {len(session_summary)} chars")
 
             # Convert to structured format
             # Messages are in chronological order (oldest first)
@@ -2455,12 +2481,13 @@ Format: bullet points, concise."""
                     "content": text
                 })
 
-            logger.info(f"Structured conversation history: {len(conversation_turns)} turns")
-            return conversation_turns, continuity_context
+            logger.info(f"Structured conversation history: {len(conversation_turns)} turns"
+                        f"{' (with session summary)' if session_summary else ''}")
+            return conversation_turns, continuity_context, session_summary
 
         except Exception as e:
             logger.warning(f"Structured conversation history error: {e}")
-            return [], continuity_context
+            return [], continuity_context, ""
 
 # Singleton accessor
 _context_builder: Optional[ContextBuilder] = None
