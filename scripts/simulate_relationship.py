@@ -300,17 +300,11 @@ class SimulationRunner:
         simulation bypasses that, so we must create them explicitly.
         """
         try:
-            import psycopg2
+            from src.database.connection import get_connection
             from src.database.schema_ddl import get_public_schema_ddl
             from src.database.schema_manager import ensure_user_schema
 
-            conn = psycopg2.connect(
-                host=os.environ.get('POSTGRES_HOST', 'localhost'),
-                port=os.environ.get('POSTGRES_PORT', '5432'),
-                database=os.environ.get('POSTGRES_DB', 'companion'),
-                user=os.environ.get('POSTGRES_USER', 'companion'),
-                password=os.environ.get('POSTGRES_PASSWORD', ''),
-            )
+            conn = get_connection()
             try:
                 # Create public schema tables (user_profiles, etc.)
                 with conn.cursor() as cur:

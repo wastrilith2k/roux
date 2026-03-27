@@ -111,7 +111,7 @@ class TestSimulationSchemaInit:
              patch('scripts.simulate_relationship.SimulationEventEmitter'), \
              patch('src.core.clock.SimulationClock') as MockClock, \
              patch('src.core.clock.set_clock'), \
-             patch('psycopg2.connect', return_value=mock_conn), \
+             patch('src.database.connection.get_connection', return_value=mock_conn), \
              patch('src.database.schema_ddl.get_public_schema_ddl', return_value='CREATE TABLE ...') as mock_ddl, \
              patch('src.database.schema_manager.ensure_user_schema') as mock_ensure:
 
@@ -132,6 +132,35 @@ class TestSimulationSchemaInit:
             emails = [c.args[1] for c in mock_ensure.call_args_list]
             assert 'kai@companion.local' in emails
             assert 'mira@companion.local' in emails
+
+    def test_ensure_schema_uses_connection_module(self):
+        """_ensure_schema must use get_connection() from src.database.connection,
+        not duplicate connection logic with raw psycopg2.connect()."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch('scripts.simulate_relationship.SimulationRunner._load_simulation_config'), \
+             patch('scripts.simulate_relationship.SimulationRunner._ensure_user_profiles'), \
+             patch('scripts.simulate_relationship.SimulationRunner._save_all_states'), \
+             patch('scripts.simulate_relationship.SimulationEventEmitter'), \
+             patch('src.core.clock.SimulationClock') as MockClock, \
+             patch('src.core.clock.set_clock'), \
+             patch('src.database.connection.get_connection', return_value=mock_conn) as mock_get_conn, \
+             patch('src.database.schema_ddl.get_public_schema_ddl', return_value='CREATE TABLE ...'), \
+             patch('src.database.schema_manager.ensure_user_schema'):
+
+            mock_clock = MockClock.return_value
+            mock_clock.now.return_value = MagicMock(
+                isoformat=MagicMock(return_value='2026-01-01T09:00:00-08:00'),
+            )
+
+            from scripts.simulate_relationship import SimulationRunner
+            SimulationRunner(companions=['kai'], start_day=0)
+
+            # get_connection() from connection module must be called
+            mock_get_conn.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
