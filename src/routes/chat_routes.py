@@ -855,6 +855,63 @@ def register_socketio_handlers(socketio):
             logger.error(f"Error fetching autonomy status: {e}")
             emit('error', {'message': f'Failed to fetch autonomy status: {e}'})
 
+    @socketio.on('set_presence_mode')
+    def handle_set_presence_mode(data=None):
+        """
+        Set the presence mode (in_person vs texting).
+
+        data: {'mode': 'in_person' | 'texting'}
+        """
+        email = _get_user_email(request.sid)
+        if not email:
+            emit('error', {'message': 'Not authenticated'})
+            return
+
+        try:
+            from src.core.presence_mode import (
+                get_presence_mode_manager, PresenceMode
+            )
+
+            mode_str = (data or {}).get('mode', '')
+            try:
+                mode = PresenceMode(mode_str)
+            except ValueError:
+                emit('error', {'message': f'Invalid presence mode: {mode_str}. Use "in_person" or "texting".'})
+                return
+
+            manager = get_presence_mode_manager()
+            success = manager.set_presence_mode(email, mode)
+
+            if success:
+                emit('presence_mode', {
+                    'mode': mode.value,
+                    'message': f"Presence mode set to {mode.value}"
+                })
+                logger.info(f"Presence mode set to {mode.value} by {email}")
+            else:
+                emit('error', {'message': 'Failed to save presence mode'})
+
+        except Exception as e:
+            logger.error(f"Error setting presence mode: {e}")
+            emit('error', {'message': f'Failed to set presence mode: {e}'})
+
+    @socketio.on('get_presence_mode')
+    def handle_get_presence_mode(data=None):
+        """Get the current presence mode."""
+        email = _get_user_email(request.sid)
+        if not email:
+            emit('error', {'message': 'Not authenticated'})
+            return
+
+        try:
+            from src.core.presence_mode import get_presence_mode_manager
+            manager = get_presence_mode_manager()
+            mode = manager.get_presence_mode(email)
+            emit('presence_mode', {'mode': mode.value})
+        except Exception as e:
+            logger.error(f"Error fetching presence mode: {e}")
+            emit('error', {'message': f'Failed to fetch presence mode: {e}'})
+
     @socketio.on('request_costs')
     def handle_request_costs(data=None):
         """
