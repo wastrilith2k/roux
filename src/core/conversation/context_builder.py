@@ -85,6 +85,7 @@ class ConversationContext:
     relationship_dynamics: str = ""  # Gottman-informed relationship state (closeness, trust, wounds)
     relationship_evaluation: str = ""  # How the companion defines the relationship (from periodic evaluation)
     presence_mode: str = ""  # Communication context: in_person or texting (issue #26)
+    derived_scene_context: str = ""  # Derived context from real signals: time + schedule + presence (issue #29)
 
     # Metadata
     user_email: str = ""
@@ -130,6 +131,7 @@ class ConversationContext:
         'goals_context': '[YOUR GOALS]',
         'scene_state': '[CURRENT SCENE]',
         'presence_mode': '[COMMUNICATION MODE]',
+        'derived_scene_context': '[DERIVED CONTEXT — INFERRED FROM SIGNALS]',
         'internal_state': '[YOUR INTERNAL STATE]',
         'temporal_context': '[RECENT EVENTS — VERIFIED]',
         'synthesized_events': '[EVENT NARRATIVE — DERIVED]',
@@ -151,6 +153,8 @@ class ConversationContext:
         sections = {}
         if self.presence_mode:
             sections['presence_mode'] = self.presence_mode
+        if self.derived_scene_context:
+            sections['derived_scene_context'] = self.derived_scene_context
         if self.scene_state:
             sections['scene_state'] = self.scene_state
         if self.internal_state:
@@ -369,6 +373,9 @@ class ContextBuilder:
             except Exception as e:
                 logger.warning(f"Failed to get lightweight context source: {e}")
 
+        # Derived scene context (issue #29): compose from already-fetched signals
+        context.derived_scene_context = self._get_derived_scene_context(user_email, context)
+
         total_time = time.time() - start_time
         logger.info(
             f"Lightweight context built in {total_time:.2f}s "
@@ -458,6 +465,9 @@ class ContextBuilder:
                     setattr(context, name, result or "")
             except Exception as e:
                 logger.warning(f"Failed to get medium context source: {e}")
+
+        # Derived scene context (issue #29): compose from already-fetched signals
+        context.derived_scene_context = self._get_derived_scene_context(user_email, context)
 
         total_time = time.time() - start_time
         logger.info(
@@ -564,6 +574,9 @@ class ContextBuilder:
                 import traceback
                 logger.warning(f"Failed to get context source result: {e}\n{traceback.format_exc()}")
 
+        # Derived scene context (issue #29): compose from already-fetched signals
+        context.derived_scene_context = self._get_derived_scene_context(user_email, context)
+
         total_time = time.time() - start_time
         slowest = max(self._source_timings.items(), key=lambda x: x[1]) if self._source_timings else ('none', 0)
 
@@ -629,6 +642,9 @@ class ContextBuilder:
             _pc = get_persona_config()
             formatted = [f"{_pc.companion_short_name if t['role'] == 'assistant' else _pc.primary_user_name}: {t['content']}" for t in turns]
             context.conversation_history = "\n".join(formatted)
+
+        # Derived scene context (issue #29): compose from already-fetched signals
+        context.derived_scene_context = self._get_derived_scene_context(user_email, context)
 
         total_time = time.time() - start_time
         logger.info(f"Context built in {total_time:.2f}s (sequential)")
@@ -734,6 +750,39 @@ class ContextBuilder:
 
         except Exception as e:
             logger.warning(f"Presence mode error: {e}")
+            return ""
+
+    # =========================================================================
+    # Source 0.2: Derived Scene Context (issue #29 — real signals integration)
+    # =========================================================================
+
+    def _get_derived_scene_context(self, user_email: str, context: 'ConversationContext') -> str:
+        """
+        Build derived scene context from real signals.
+
+        Composes time, schedule, presence mode, and other real data into
+        a unified context block that replaces decorative scene labels.
+        The context object must already have presence_mode and schedule
+        populated before this is called.
+        """
+        try:
+            from src.core.derived_scene_context import get_derived_scene_context_builder
+
+            builder = get_derived_scene_context_builder()
+            result = builder.build(
+                user_email=user_email,
+                presence_mode_str=context.presence_mode,
+                schedule_context=context.schedule,
+            )
+
+            if result:
+                logger.info("Derived scene context built from real signals")
+                return result
+
+            return ""
+
+        except Exception as e:
+            logger.warning(f"Derived scene context error: {e}")
             return ""
 
     # =========================================================================
