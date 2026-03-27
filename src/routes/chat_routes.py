@@ -1232,11 +1232,54 @@ def register_socketio_handlers(socketio):
 @chat_bp.route('/api/chat', methods=['POST'])
 def http_chat():
     """
-    HTTP chat endpoint (legacy/fallback for non-WebSocket clients).
+    HTTP chat endpoint for simulation full-stack mode.
 
-    Returns 400 with message directing to WebSocket.
+    Requires the SIMULATION_API_SECRET env var to be set and a matching
+    X-Simulation-Secret header on every request. Returns 403 if the secret
+    is missing or does not match, and 501 if the env var is not configured.
+
+    Expects JSON body:
+        - email: User email (required)
+        - message: Message text (required)
+        - companion_id: Companion ID for response generation (optional)
+        - conversation_id: Conversation ID (optional)
+
+    Returns JSON:
+        - response: Companion's full response text
+        - messages: Split messages (if multi-message)
+        - timestamp: Response timestamp
+        - processing_time: Time taken to generate response
     """
-    return {'error': 'Use WebSocket connection for chat'}, 400
+    from flask import jsonify
+
+    # Authenticate via shared secret — prevents unauthenticated access
+    expected_secret = os.environ.get('SIMULATION_API_SECRET')
+    if not expected_secret:
+        return jsonify({'error': 'Simulation API not configured'}), 501
+
+    provided_secret = request.headers.get('X-Simulation-Secret', '')
+    if provided_secret != expected_secret:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({'error': 'JSON body required'}), 400
+
+    email = data.get('email', '').strip()
+    message = data.get('message', '').strip()
+    if not email or not message:
+        return jsonify({'error': 'email and message are required'}), 400
+
+    processor = get_message_processor()
+    result = processor.process_message(data, email, sid='http')
+
+    if not result:
+        return jsonify({'error': 'Failed to process message'}), 500
+
+    if 'error' in result:
+        return jsonify({'error': result['error']}), 500
+
+    return jsonify(result), 200
 
 
 @chat_bp.route('/api/history', methods=['GET'])
