@@ -280,6 +280,11 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                 and classification.complexity == MessageComplexity.SIMPLE
                 and not is_proactive_msg
             )
+            use_medium_path = (
+                FAST_PATH_ENABLED
+                and classification.complexity == MessageComplexity.MEDIUM
+                and not is_proactive_msg
+            )
             force_tools = (
                 FAST_PATH_ENABLED
                 and classification.complexity == MessageComplexity.ACTION
@@ -290,17 +295,35 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                     f"Fast path: {classification.reason} "
                     f"(confidence={classification.confidence:.2f})"
                 )
+            elif use_medium_path:
+                logger.info(
+                    f"Medium path: {classification.reason} "
+                    f"(confidence={classification.confidence:.2f})"
+                )
             elif force_tools:
                 logger.info(
                     f"Action path: {classification.reason} "
                     f"(confidence={classification.confidence:.2f})"
                 )
 
-            # Step 1: Build context — lightweight for simple messages, full for complex
+            # Step 1: Build context — lightweight/medium/full based on complexity tier
+            if use_fast_path:
+                context_path = "fast"
+            elif use_medium_path:
+                context_path = "medium"
+            else:
+                context_path = "deep"
+
             if profiler:
-                with profiler.stage("context_assembly", path="fast" if use_fast_path else "deep"):
+                with profiler.stage("context_assembly", path=context_path):
                     if use_fast_path:
                         context = self.context_builder.build_lightweight(
+                            user_email=user_email,
+                            user_message=user_message,
+                            closeness_score=closeness_score
+                        )
+                    elif use_medium_path:
+                        context = self.context_builder.build_medium(
                             user_email=user_email,
                             user_message=user_message,
                             closeness_score=closeness_score
@@ -318,6 +341,12 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
             else:
                 if use_fast_path:
                     context = self.context_builder.build_lightweight(
+                        user_email=user_email,
+                        user_message=user_message,
+                        closeness_score=closeness_score
+                    )
+                elif use_medium_path:
+                    context = self.context_builder.build_medium(
                         user_email=user_email,
                         user_message=user_message,
                         closeness_score=closeness_score
@@ -517,6 +546,13 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                     response, model, tool_calls_made = self._call_llm_with_tools(
                         current_prompt, user_message, conversation_turns
                     )
+                elif use_medium_path:
+                    # Medium path: offer search_memory tool for on-demand retrieval
+                    response, model, memory_calls = self._call_llm_with_memory_tool(
+                        current_prompt, user_message, user_email, conversation_turns
+                    )
+                    if memory_calls:
+                        tool_calls_made.extend(memory_calls)
                 else:
                     response, model = self._call_llm(current_prompt, user_message, conversation_turns)
 
@@ -1329,6 +1365,167 @@ Just write the message itself, nothing else.
         )
 
         return response_text, chain.get_model_name()
+
+    def _call_llm_with_memory_tool(
+        self,
+        system_prompt: str,
+        user_message: str,
+        user_email: str,
+        conversation_turns: list = None,
+        max_tool_calls: int = 2
+    ) -> tuple[str, str, list]:
+        """
+        Two-pass generation with on-demand memory search.
+
+        Pass 1: LLM receives lightweight/medium context + search_memory tool.
+                If it needs more context, it calls the tool.
+        Pass 2: LLM generates final response with tool results injected.
+
+        Falls back to standard _call_llm if the LLM doesn't call the tool.
+
+        Args:
+            system_prompt: Assembled system prompt
+            user_message: Current message from user
+            user_email: User's email for memory filtering
+            conversation_turns: Conversation history
+            max_tool_calls: Maximum tool invocations per turn (default 2)
+
+        Returns:
+            Tuple of (response_text, model_name, memory_tool_calls)
+        """
+        from src.tools.memory_search_tool import (
+            SEARCH_MEMORY_TOOL,
+            search_memory,
+            format_tool_results_for_prompt,
+        )
+
+        try:
+            from src.llm.openai_provider import get_openai_tool_provider
+            provider = get_openai_tool_provider()
+        except Exception:
+            provider = None
+
+        if not provider:
+            # No tool-capable provider — fall back to standard call
+            response, model = self._call_llm(system_prompt, user_message, conversation_turns)
+            return response, model, []
+
+        # Build messages for the tool-capable provider
+        messages = [{"role": "system", "content": system_prompt}]
+        if conversation_turns:
+            for turn in conversation_turns:
+                messages.append({"role": turn["role"], "content": turn["content"]})
+        messages.append({"role": "user", "content": user_message})
+
+        temperature = self._get_dynamic_temperature(user_message, system_prompt)
+        if hasattr(self, '_current_mode_detection') and self._current_mode_detection:
+            mode_adj = self._current_mode_detection.hints.get('temp_adjustment', 0)
+            if mode_adj:
+                temperature = max(0.3, min(1.0, temperature + mode_adj))
+
+        memory_tool_calls = []
+
+        for iteration in range(max_tool_calls + 1):
+            try:
+                response = provider.generate_sync(
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=2500,
+                    tools=[SEARCH_MEMORY_TOOL]
+                )
+            except Exception as e:
+                logger.warning(f"Memory tool LLM call failed: {e}, falling back to standard")
+                response, model = self._call_llm(system_prompt, user_message, conversation_turns)
+                return response, model, memory_tool_calls
+
+            # If the LLM returned text, it's done (no tool call needed)
+            if isinstance(response, str):
+                if memory_tool_calls:
+                    # Had tool calls — do final pass with main provider for personality
+                    tool_context = "\n".join(
+                        format_tool_results_for_prompt(tc['result_obj'])
+                        for tc in memory_tool_calls
+                    )
+                    enhanced_prompt = system_prompt + tool_context
+                    final_response, model = self._call_llm(
+                        enhanced_prompt, user_message, conversation_turns
+                    )
+                    return final_response, model, memory_tool_calls
+                else:
+                    # No tool calls — use the direct response via main provider
+                    final_response, model = self._call_llm(
+                        system_prompt, user_message, conversation_turns
+                    )
+                    return final_response, model, []
+
+            # Handle tool call
+            if isinstance(response, dict) and response.get("type") == "tool_use":
+                tool_name = response.get("tool_name")
+                tool_input = response.get("tool_input", {})
+                tool_use_id = response.get("tool_use_id")
+
+                if tool_name == "search_memory":
+                    query = tool_input.get("query", user_message)
+                    source = tool_input.get("source", "all")
+                    time_range = tool_input.get("time_range", "all")
+
+                    logger.info(
+                        f"Memory tool call: query='{query[:60]}' "
+                        f"source={source} time_range={time_range}"
+                    )
+
+                    result = search_memory(
+                        query=query,
+                        user_email=user_email,
+                        source=source,
+                        time_range=time_range
+                    )
+
+                    memory_tool_calls.append({
+                        "tool": "search_memory",
+                        "query": query,
+                        "source": source,
+                        "result_count": result.result_count,
+                        "result_obj": result,
+                    })
+
+                    # Append tool result to messages for next iteration
+                    formatted = format_tool_results_for_prompt(result)
+                    messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{
+                            "id": tool_use_id or f"call_{iteration}",
+                            "type": "function",
+                            "function": {"name": "search_memory", "arguments": str(tool_input)}
+                        }]
+                    })
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_use_id or f"call_{iteration}",
+                        "content": formatted
+                    })
+                    continue
+                else:
+                    # Unknown tool — break out and use standard path
+                    logger.warning(f"Unexpected tool call: {tool_name}")
+                    break
+
+        # Exhausted iterations or unexpected state — final pass with main provider
+        if memory_tool_calls:
+            tool_context = "\n".join(
+                format_tool_results_for_prompt(tc['result_obj'])
+                for tc in memory_tool_calls
+            )
+            enhanced_prompt = system_prompt + tool_context
+            final_response, model = self._call_llm(
+                enhanced_prompt, user_message, conversation_turns
+            )
+            return final_response, model, memory_tool_calls
+
+        # No tool calls at all — standard path
+        response, model = self._call_llm(system_prompt, user_message, conversation_turns)
+        return response, model, []
 
     def _call_llm_with_tools(
         self,

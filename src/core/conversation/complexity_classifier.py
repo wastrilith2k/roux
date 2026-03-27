@@ -28,12 +28,13 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 FAST_PATH_ENABLED = os.environ.get(
-    'COMPANION_FAST_PATH_ENABLED', 'false'
+    'COMPANION_FAST_PATH_ENABLED', 'true'
 ).lower() == 'true'
 
 
 class MessageComplexity(Enum):
     SIMPLE = "simple"
+    MEDIUM = "medium"
     COMPLEX = "complex"
     ACTION = "action"
 
@@ -186,20 +187,20 @@ def classify_message(message: str) -> ClassificationResult:
                 confidence=0.8,
             )
 
-    # Multi-sentence messages are likely complex
+    # Multi-sentence messages need more context, but not necessarily the full build
     sentences = re.split(r'[.!?]+', stripped)
     sentences = [s.strip() for s in sentences if s.strip()]
     if len(sentences) >= 3:
         return ClassificationResult(
-            complexity=MessageComplexity.COMPLEX,
+            complexity=MessageComplexity.MEDIUM,
             reason=f"Multi-sentence message ({len(sentences)} sentences)",
             confidence=0.75,
         )
 
-    # Questions with "?" that aren't simple check-ins
+    # Questions with "?" that aren't simple check-ins — medium depth suffices
     if '?' in stripped and len(stripped) > 30:
         return ClassificationResult(
-            complexity=MessageComplexity.COMPLEX,
+            complexity=MessageComplexity.MEDIUM,
             reason="Non-trivial question",
             confidence=0.7,
         )
@@ -213,9 +214,9 @@ def classify_message(message: str) -> ClassificationResult:
             confidence=0.65,
         )
 
-    # Long message with no specific triggers — conservative default to complex
+    # Longer message with no specific triggers — medium depth
     return ClassificationResult(
-        complexity=MessageComplexity.COMPLEX,
-        reason="Longer message, defaulting to deep path",
-        confidence=0.5,
+        complexity=MessageComplexity.MEDIUM,
+        reason="Longer message, medium depth path",
+        confidence=0.6,
     )
