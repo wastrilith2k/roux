@@ -118,29 +118,25 @@ class OllamaProvider(LLMProvider):
         }
 
         try:
-            import aiohttp
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=180)
-                ) as response:
-                    async for line in response.content:
-                        if line:
-                            line_str = line.decode('utf-8').strip()
-                            if line_str.startswith('data: '):
-                                data_str = line_str[6:]
-                                if data_str == '[DONE]':
-                                    break
-                                try:
-                                    import json
-                                    data = json.loads(data_str)
-                                    if 'choices' in data and len(data['choices']) > 0:
-                                        delta = data['choices'][0].get('delta', {})
-                                        if 'content' in delta:
-                                            yield delta['content']
-                                except json.JSONDecodeError:
-                                    continue
+            import httpx
+            import json
+
+            async with httpx.AsyncClient(timeout=httpx.Timeout(180.0)) as client:
+                async with client.stream("POST", url, json=payload) as response:
+                    async for line in response.aiter_lines():
+                        line = line.strip()
+                        if line.startswith('data: '):
+                            data_str = line[6:]
+                            if data_str == '[DONE]':
+                                break
+                            try:
+                                data = json.loads(data_str)
+                                if 'choices' in data and len(data['choices']) > 0:
+                                    delta = data['choices'][0].get('delta', {})
+                                    if 'content' in delta:
+                                        yield delta['content']
+                            except json.JSONDecodeError:
+                                continue
 
         except Exception as e:
             logger.error(f"Ollama streaming error: {e}", exc_info=True)
