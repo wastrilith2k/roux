@@ -89,43 +89,43 @@ class TestPresenceModeManager:
 
     def test_get_returns_default_when_no_presence_key(self):
         manager, _ = self._make_manager_with_mock_db(
-            execute_return={'scene_state': {'location': 'bedroom'}}
+            execute_return={'scene_data': {'location': 'bedroom'}}
         )
         mode = manager.get_presence_mode("test@example.com")
         assert mode == DEFAULT_PRESENCE_MODE
 
     def test_get_returns_texting_when_set(self):
         manager, _ = self._make_manager_with_mock_db(
-            execute_return={'scene_state': {'presence_mode': 'texting'}}
+            execute_return={'scene_data': {'presence_mode': 'texting'}}
         )
         mode = manager.get_presence_mode("test@example.com")
         assert mode == PresenceMode.TEXTING
 
     def test_get_returns_in_person_when_set(self):
         manager, _ = self._make_manager_with_mock_db(
-            execute_return={'scene_state': {'presence_mode': 'in_person'}}
+            execute_return={'scene_data': {'presence_mode': 'in_person'}}
         )
         mode = manager.get_presence_mode("test@example.com")
         assert mode == PresenceMode.IN_PERSON
 
     def test_get_returns_default_for_invalid_mode_in_db(self):
         manager, _ = self._make_manager_with_mock_db(
-            execute_return={'scene_state': {'presence_mode': 'invalid_mode'}}
+            execute_return={'scene_data': {'presence_mode': 'invalid_mode'}}
         )
         mode = manager.get_presence_mode("test@example.com")
         assert mode == DEFAULT_PRESENCE_MODE
 
-    def test_get_handles_json_string_scene_state(self):
-        """scene_state may come back as a JSON string from the DB."""
+    def test_get_handles_json_string_scene_data(self):
+        """scene_data may come back as a JSON string from the DB."""
         manager, _ = self._make_manager_with_mock_db(
-            execute_return={'scene_state': json.dumps({'presence_mode': 'texting'})}
+            execute_return={'scene_data': json.dumps({'presence_mode': 'texting'})}
         )
         mode = manager.get_presence_mode("test@example.com")
         assert mode == PresenceMode.TEXTING
 
     def test_set_persists_mode(self):
         manager, mock_db = self._make_manager_with_mock_db(
-            execute_return={'email': 'test@example.com'}
+            execute_return={'user_email': 'test@example.com'}
         )
 
         result = manager.set_presence_mode("test@example.com", PresenceMode.TEXTING)
@@ -175,7 +175,7 @@ class TestPresenceModeNoPrivateDbApi:
         """set_presence_mode must call db.execute(), not db._get_connection()."""
         manager = PresenceModeManager()
         mock_result = MagicMock()
-        mock_result.fetchone.return_value = {'email': 'test@example.com'}
+        mock_result.fetchone.return_value = {'user_email': 'test@example.com'}
         mock_db = MagicMock()
         mock_db.execute.return_value = mock_result
         manager._db = mock_db
@@ -184,6 +184,83 @@ class TestPresenceModeNoPrivateDbApi:
 
         mock_db.execute.assert_called_once()
         mock_db._get_connection.assert_not_called()
+
+
+# =========================================================================
+# Regression: Issue #61 — correct table and column
+# =========================================================================
+
+class TestPresenceModeCorrectTableAndColumn:
+    """Ensure PresenceModeManager queries scene_state table with scene_data column.
+
+    Issue #61: the original implementation queried a non-existent scene_state
+    column on user_state table. The correct target is the scene_data JSONB
+    column on the scene_state table (T.SCENE_STATE).
+    """
+
+    def test_get_queries_scene_state_table(self):
+        """get_presence_mode must SELECT from scene_state table, not user_state."""
+        from src.database import tables as T
+
+        manager = PresenceModeManager()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = None
+        mock_db = MagicMock()
+        mock_db.execute.return_value = mock_result
+        manager._db = mock_db
+
+        manager.get_presence_mode("test@example.com")
+
+        query = mock_db.execute.call_args[0][0]
+        assert T.SCENE_STATE in query, f"Expected query on {T.SCENE_STATE}, got: {query}"
+        assert T.USER_STATE not in query, f"Must not query {T.USER_STATE}, got: {query}"
+        assert 'scene_data' in query, f"Expected scene_data column, got: {query}"
+
+    def test_set_updates_scene_state_table(self):
+        """set_presence_mode must UPDATE scene_state table, not user_state."""
+        from src.database import tables as T
+
+        manager = PresenceModeManager()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = {'user_email': 'test@example.com'}
+        mock_db = MagicMock()
+        mock_db.execute.return_value = mock_result
+        manager._db = mock_db
+
+        manager.set_presence_mode("test@example.com", PresenceMode.TEXTING)
+
+        query = mock_db.execute.call_args[0][0]
+        assert T.SCENE_STATE in query, f"Expected query on {T.SCENE_STATE}, got: {query}"
+        assert T.USER_STATE not in query, f"Must not query {T.USER_STATE}, got: {query}"
+        assert 'scene_data' in query, f"Expected scene_data column, got: {query}"
+
+    def test_get_uses_user_email_column(self):
+        """scene_state table uses user_email, not email."""
+        manager = PresenceModeManager()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = None
+        mock_db = MagicMock()
+        mock_db.execute.return_value = mock_result
+        manager._db = mock_db
+
+        manager.get_presence_mode("test@example.com")
+
+        query = mock_db.execute.call_args[0][0]
+        assert 'user_email' in query, f"Expected user_email column, got: {query}"
+
+    def test_set_uses_user_email_column(self):
+        """scene_state table uses user_email, not email."""
+        manager = PresenceModeManager()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = {'user_email': 'test@example.com'}
+        mock_db = MagicMock()
+        mock_db.execute.return_value = mock_result
+        manager._db = mock_db
+
+        manager.set_presence_mode("test@example.com", PresenceMode.TEXTING)
+
+        query = mock_db.execute.call_args[0][0]
+        assert 'user_email' in query, f"Expected user_email column, got: {query}"
 
 
 # =========================================================================
@@ -197,7 +274,7 @@ class TestPresenceModePromptFormatting:
         manager = PresenceModeManager()
         mock_result = MagicMock()
         mock_result.fetchone.return_value = {
-            'scene_state': {'presence_mode': mode_value}
+            'scene_data': {'presence_mode': mode_value}
         }
         mock_db = MagicMock()
         mock_db.execute.return_value = mock_result
