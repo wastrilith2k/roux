@@ -94,7 +94,14 @@ class ConversationContext:
             self.conversation_turns = []
 
     def to_prompt_sections(self) -> Dict[str, str]:
-        """Return non-empty sections as dict for prompt assembly."""
+        """Return non-empty sections as dict for prompt assembly.
+
+        Each section is truncated to its per-source token budget
+        (see token_budget.py) so that no single source can dominate
+        the prompt. Truncation is sentence-boundary-aware.
+        """
+        from .token_budget import apply_source_budgets
+
         sections = {}
         if self.scene_state:
             sections['scene_state'] = self.scene_state
@@ -144,7 +151,9 @@ class ConversationContext:
             sections['biographies'] = self.biographies
         if self.conversation_history:
             sections['conversation_history'] = self.conversation_history
-        return sections
+
+        # Apply per-source token budgets (sentence-boundary truncation)
+        return apply_source_budgets(sections)
 
 
 # ---------------------------------------------------------------------------
@@ -498,6 +507,10 @@ class ContextBuilder:
         sections = context.to_prompt_sections()
         source_sizes = {name: len(content) for name, content in sections.items() if content}
 
+        # Per-source token budget diagnostics (issue #21)
+        from .token_budget import get_budget_diagnostics
+        budget_diagnostics = get_budget_diagnostics(sections)
+
         diagnostics = {
             'source_timings': self._source_timings.copy(),
             'source_sizes_chars': source_sizes,
@@ -509,6 +522,7 @@ class ContextBuilder:
             'largest_source': max(source_sizes.items(), key=lambda x: x[1]) if source_sizes else None,
             'conversation_turns': len(context.conversation_turns) if context.conversation_turns else 0,
             'storage_metrics': _get_storage_metrics(),
+            'token_budgets': budget_diagnostics,
         }
 
         return context, diagnostics
