@@ -852,12 +852,15 @@ You disagree when you disagree. You are a partner, not a therapist.
 
         from src.core.entity_profile_loader import get_current_time_context
 
+        # Use client-provided temporal context when available (issue #27)
+        client_temporal = extra_context.get('client_temporal') if extra_context else None
+
         # Reference data has a header (opening tag + time) and footer (time
         # awareness, location, closing tag) that are never dropped.  Droppable
         # context sources sit between them.
         ref_header = []
         ref_header.append("<reference_data>")
-        ref_header.append(get_current_time_context())
+        ref_header.append(get_current_time_context(client_temporal))
         ref_footer = []
 
         # Droppable reference-data sections — (name, priority, content)
@@ -989,7 +992,7 @@ You disagree when you disagree. You are a partner, not a therapist.
             if context.schedule:
                 ref_footer.append(context.schedule)
             else:
-                ref_footer.append(get_current_time_context())
+                ref_footer.append(get_current_time_context(client_temporal))
         else:
             from src.utils.timezone_utils import now_pacific_naive
             current_time = now_pacific_naive()
@@ -1143,7 +1146,7 @@ Just write the message itself, nothing else.
         # =================================================================
 
         closing_lines = [
-            get_current_time_context(),
+            get_current_time_context(client_temporal),
             f"You are {_companion}. {_pc.primary_user_name} is a separate person — his facts are his, yours are yours.",
             "Only reference details that appear in your provided memories.",
             "Treat [SIMULATED ACTIVITY] and [INFERRED] content as internal context, not as events you can reference as memories.",
