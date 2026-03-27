@@ -167,6 +167,63 @@ def get_recent_notable_messages(
         return []
 
 
+def _deduplicate_facts(facts: List[Dict[str, Any]], similarity_threshold: float = 0.80) -> List[Dict[str, Any]]:
+    """Remove near-duplicate facts, keeping the most recent version.
+
+    Uses word-level Jaccard similarity to detect duplicates without
+    requiring an LLM call or embedding lookup. Facts are pre-sorted by
+    importance DESC, created_at DESC, so earlier entries are preferred
+    when two facts are similar.
+
+    Args:
+        facts: List of fact dicts (already sorted by importance/recency).
+        similarity_threshold: Jaccard similarity above which two facts
+            are considered duplicates (0.0-1.0).
+
+    Returns:
+        Deduplicated list preserving original order.
+    """
+    if not facts:
+        return facts
+
+    def _word_set(text: str) -> set:
+        return set(text.lower().split())
+
+    kept: List[Dict[str, Any]] = []
+    kept_word_sets: List[set] = []
+
+    for fact in facts:
+        fact_words = _word_set(fact.get('object', ''))
+        if not fact_words:
+            kept.append(fact)
+            kept_word_sets.append(fact_words)
+            continue
+
+        is_duplicate = False
+        for existing_words in kept_word_sets:
+            if not existing_words:
+                continue
+            intersection = len(fact_words & existing_words)
+            union = len(fact_words | existing_words)
+            jaccard = intersection / union if union > 0 else 0.0
+
+            # Also check containment: if one fact's words are largely
+            # a subset of another, they're about the same thing even if
+            # Jaccard is diluted by extra words.
+            smaller = min(len(fact_words), len(existing_words))
+            containment = intersection / smaller if smaller > 0 else 0.0
+
+            if jaccard >= similarity_threshold or containment >= similarity_threshold:
+                is_duplicate = True
+                break
+
+        if not is_duplicate:
+            kept.append(fact)
+            kept_word_sets.append(fact_words)
+
+    return kept
+
+
 def format_temporal_context(
     user_email: str,
     include_facts: bool = True,
@@ -176,6 +233,7 @@ def format_temporal_context(
     Format recent significant events for inclusion in prompt.
 
     Returns formatted section or None if nothing significant found.
+    Deduplicates near-identical facts before formatting (issue #25).
     """
     sections = []
 
@@ -185,8 +243,14 @@ def format_temporal_context(
             user_email,
             days_back=14,
             min_importance=6,
-            max_events=15  # Increased from 8 to include more topic diversity
+            max_events=20  # Fetch extra to allow dedup to filter down
         )
+
+        # Deduplicate near-identical entries (issue #25)
+        facts = _deduplicate_facts(facts)
+
+        # Cap at 10 entries after dedup (issue #25)
+        facts = facts[:10]
 
         if facts:
             fact_lines = ["**Recent Important Facts** (last 2 weeks):"]
