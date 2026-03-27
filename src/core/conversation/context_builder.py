@@ -303,11 +303,12 @@ class ContextBuilder:
         - personality (companion traits)
         - internal_state (mood/energy)
         - scene_state (if in a scene)
-        - core_memory (narrative memory)
 
-        Skips: memories (pgvector search), graphiti (graph traversal), episodes,
-        observations, reflections, opinions, curiosity, biographies, relationship
-        dynamics, values, activities, events, fertility, user_context.
+        Skips: core_memory (narrative memory — redundant with entity profiles for
+        casual chat, issue #25), memories (pgvector search), graphiti (graph
+        traversal), episodes, observations, reflections, opinions, curiosity,
+        biographies, relationship dynamics, values, activities, events, fertility,
+        user_context.
 
         This typically completes in ~100-300ms vs ~500-2000ms for full build.
         """
@@ -332,12 +333,13 @@ class ContextBuilder:
                 return name, None, elapsed
 
         # Only fetch essential sources
+        # Note: core_memory is omitted from lightweight path (issue #25).
+        # Entity profiles + recent activities provide enough context for greetings.
         futures = []
         futures.append(self._executor.submit(timed_fetch, 'entity_profiles', self._get_entity_profiles, user_message, user_email))
         futures.append(self._executor.submit(timed_fetch, 'personality', self._get_personality, user_email))
         futures.append(self._executor.submit(timed_fetch, 'internal_state', self._get_internal_state, user_email))
         futures.append(self._executor.submit(timed_fetch, 'scene_state', self._get_scene_state, user_email))
-        futures.append(self._executor.submit(timed_fetch, 'core_memory', self._get_core_memory, user_email))
         futures.append(self._executor.submit(timed_fetch, 'conversation_turns', self._get_conversation_history_structured, user_email))
         futures.append(self._executor.submit(timed_fetch, 'schedule', self._get_time_awareness_context, user_email))
 
@@ -416,10 +418,12 @@ class ContextBuilder:
         futures.append(self._executor.submit(timed_fetch, 'schedule', self._get_time_awareness_context, user_email))
 
         # Medium enrichment sources
+        # Note: observations_context is omitted from medium path (issue #25).
+        # It averages ~3,400 tokens and overlaps with core_memory + recent events.
+        # Only injected on the full/complex path where deep context is needed.
         futures.append(self._executor.submit(timed_fetch, 'memories', self._get_memories, user_email, user_message))
         futures.append(self._executor.submit(timed_fetch, 'relationship_dynamics', self._get_relationship_dynamics_context, user_email))
         futures.append(self._executor.submit(timed_fetch, 'opinions_context', self._get_opinions_context, user_email, user_message))
-        futures.append(self._executor.submit(timed_fetch, 'observations_context', self._get_observations_context, user_email, user_message))
         futures.append(self._executor.submit(timed_fetch, 'graphiti_context', self._get_graphiti_context, user_email, user_message))
 
         for future in futures:
