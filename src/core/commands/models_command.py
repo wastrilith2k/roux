@@ -14,12 +14,13 @@ def get_model_info() -> Dict[str, Any]:
     - models: List of {task, model, provider, notes}
     - summary: Quick summary text
     """
+    from src.config.models import FIREWORKS_DEFAULT_MODEL
+
     models = []
 
     # Main conversation
     llm_provider = os.environ.get("LLM_PROVIDER", "fireworks")
     if llm_provider == "fireworks":
-        from src.config.models import FIREWORKS_DEFAULT_MODEL
         main_model = FIREWORKS_DEFAULT_MODEL
         models.append({
             'task': 'Main Conversation',

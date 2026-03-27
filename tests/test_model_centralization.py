@@ -9,6 +9,7 @@ Covers:
 6. Environment variable overrides work for FIREWORKS_MODEL
 7. Environment variable overrides work for FIREWORKS_FALLBACK_MODEL
 8. FIREWORKS_DEFAULT_MODEL_SHORT strips the prefix correctly
+9. /models command works when LLM_PROVIDER is not "fireworks" (no NameError)
 """
 
 import os
@@ -156,3 +157,27 @@ class TestCostTrackerPricing:
         assert "output" in pricing
         assert pricing["input"] > 0
         assert pricing["output"] > 0
+
+
+# ---------------------------------------------------------------------------
+# /models command regression test
+# ---------------------------------------------------------------------------
+
+class TestModelsCommandNonFireworks:
+    """Regression: /models must not raise NameError when LLM_PROVIDER != fireworks."""
+
+    def test_get_model_info_with_anthropic_provider(self):
+        """get_model_info() must work when LLM_PROVIDER is 'anthropic'.
+
+        Previous bug: FIREWORKS_DEFAULT_MODEL was imported inside the
+        'if llm_provider == "fireworks"' branch but used unconditionally
+        in the heavy_tasks loop, causing NameError for non-fireworks providers.
+        """
+        with patch.dict(os.environ, {"LLM_PROVIDER": "anthropic"}):
+            from src.core.commands.models_command import get_model_info
+            info = get_model_info()
+            assert isinstance(info, dict)
+            assert "models" in info
+            # Heavy tasks should still be listed with Fireworks model names
+            tasks = [m["task"] for m in info["models"]]
+            assert "Fact Extraction" in tasks
