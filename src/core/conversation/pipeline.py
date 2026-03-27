@@ -702,6 +702,7 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
         'core_memory': 1,
         'memory_validation': 1,
         'presence_mode': 1,
+        'derived_scene_context': 2,
         'memories': 2,
         'personality': 2,
         'relationship_dynamics': 3,
@@ -874,6 +875,10 @@ You disagree when you disagree. You are a partner, not a therapist.
         # Presence mode (in_person vs texting — issue #26)
         if context.presence_mode:
             _add('presence_mode', f"<presence_mode>\n{context.presence_mode}\n</presence_mode>")
+
+        # Derived scene context (issue #29 — real signals integration)
+        if context.derived_scene_context:
+            _add('derived_scene_context', f"<derived_context>\n{context.derived_scene_context}\n</derived_context>")
 
         # Entity profiles (YAML ground truth)
         if context.entity_profiles:
