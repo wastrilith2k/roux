@@ -468,3 +468,131 @@ class TestCostBreakdownByPurpose:
 
         assert len(breakdown) == 1
         assert breakdown[0]['call_count'] == 1
+
+
+# ---------------------------------------------------------------------------
+# get_cost_summary filters by call_purpose and companion_id
+# ---------------------------------------------------------------------------
+
+class TestGetCostSummaryFilters:
+    """get_cost_summary must actually filter when call_purpose/companion_id are given."""
+
+    def test_filters_by_call_purpose(self, tracker):
+        tracker.track_openrouter_call(
+            user_id="alice@example.com",
+            prompt_tokens=1000, completion_tokens=500,
+            call_purpose='conversation',
+        )
+        tracker.track_openrouter_call(
+            user_id="alice@example.com",
+            prompt_tokens=2000, completion_tokens=1000,
+            call_purpose='simulation',
+        )
+
+        # Unfiltered should include both
+        summary_all = tracker.get_cost_summary("alice@example.com")
+        assert summary_all.total_today > 0
+
+        # Filter to simulation only
+        summary_sim = tracker.get_cost_summary(
+            "alice@example.com", call_purpose='simulation',
+        )
+        summary_conv = tracker.get_cost_summary(
+            "alice@example.com", call_purpose='conversation',
+        )
+
+        # Filtered totals must be less than unfiltered
+        assert summary_sim.total_today < summary_all.total_today
+        assert summary_conv.total_today < summary_all.total_today
+
+        # Sum of filtered parts should equal the whole
+        assert abs(
+            summary_sim.total_today + summary_conv.total_today
+            - summary_all.total_today
+        ) < 1e-9
+
+    def test_filters_by_companion_id(self, tracker):
+        tracker.track_openrouter_call(
+            user_id="alice@example.com",
+            prompt_tokens=1000, completion_tokens=500,
+            companion_id='roux',
+        )
+        tracker.track_openrouter_call(
+            user_id="alice@example.com",
+            prompt_tokens=1000, completion_tokens=500,
+            companion_id='other',
+        )
+
+        summary_roux = tracker.get_cost_summary(
+            "alice@example.com", companion_id='roux',
+        )
+        summary_other = tracker.get_cost_summary(
+            "alice@example.com", companion_id='other',
+        )
+        summary_all = tracker.get_cost_summary("alice@example.com")
+
+        # Each filtered summary should be roughly half
+        assert summary_roux.total_today > 0
+        assert summary_other.total_today > 0
+        assert abs(
+            summary_roux.total_today + summary_other.total_today
+            - summary_all.total_today
+        ) < 1e-9
+
+    def test_filters_by_purpose_and_companion(self, tracker):
+        tracker.track_openrouter_call(
+            user_id="alice@example.com",
+            prompt_tokens=1000, completion_tokens=500,
+            call_purpose='conversation', companion_id='roux',
+        )
+        tracker.track_openrouter_call(
+            user_id="alice@example.com",
+            prompt_tokens=1000, completion_tokens=500,
+            call_purpose='simulation', companion_id='roux',
+        )
+        tracker.track_openrouter_call(
+            user_id="alice@example.com",
+            prompt_tokens=1000, completion_tokens=500,
+            call_purpose='conversation', companion_id='other',
+        )
+
+        summary = tracker.get_cost_summary(
+            "alice@example.com",
+            call_purpose='conversation',
+            companion_id='roux',
+        )
+
+        # Should only match one of the three calls
+        summary_all = tracker.get_cost_summary("alice@example.com")
+        assert summary.total_today > 0
+        assert summary.total_today < summary_all.total_today
+
+    def test_filtered_month_costs_match_today(self, tracker):
+        """Filtered month costs should include today's filtered data."""
+        tracker.track_fireworks_call(
+            user_id="alice@example.com",
+            prompt_tokens=500, completion_tokens=200,
+            call_purpose='tool_detection',
+        )
+
+        summary = tracker.get_cost_summary(
+            "alice@example.com", call_purpose='tool_detection',
+        )
+
+        # Today's cost and month's cost should be equal (only one day of data)
+        assert summary.total_today > 0
+        assert abs(summary.total_today - summary.total_month) < 1e-9
+
+    def test_nonexistent_filter_returns_zero(self, tracker):
+        tracker.track_openrouter_call(
+            user_id="alice@example.com",
+            prompt_tokens=1000, completion_tokens=500,
+            call_purpose='conversation',
+        )
+
+        summary = tracker.get_cost_summary(
+            "alice@example.com", call_purpose='nonexistent',
+        )
+
+        assert summary.total_today == 0.0
+        assert summary.total_month == 0.0

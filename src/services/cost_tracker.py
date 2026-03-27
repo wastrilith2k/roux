@@ -626,10 +626,14 @@ class CostTracker:
         today = date.today()
 
         # Get today's costs
-        costs_today = self._get_costs_for_date(user_id, today)
+        costs_today = self._get_costs_for_date(user_id, today,
+                                               call_purpose=call_purpose,
+                                               companion_id=companion_id)
 
         # Get month's costs
-        costs_month = self._get_costs_for_month(user_id, today.year, today.month)
+        costs_month = self._get_costs_for_month(user_id, today.year, today.month,
+                                                call_purpose=call_purpose,
+                                                companion_id=companion_id)
 
         # Get budgets
         budgets = self._get_budgets(user_id)
@@ -655,8 +659,20 @@ class CostTracker:
             alerts=alerts
         )
 
-    def _get_costs_for_date(self, user_id: str, target_date: date) -> Dict[str, float]:
-        """Get costs for a specific date"""
+    def _get_costs_for_date(self, user_id: str, target_date: date,
+                            call_purpose: str = None,
+                            companion_id: str = None) -> Dict[str, float]:
+        """Get costs for a specific date.
+
+        When call_purpose or companion_id filters are provided, queries the raw
+        LLM usage tables instead of the daily_cost_summary aggregate (which
+        doesn't carry those columns). Non-LLM services are reported as 0.0 in
+        filtered mode since they lack context columns.
+        """
+        if call_purpose is not None or companion_id is not None:
+            return self._get_filtered_costs_for_date(user_id, target_date,
+                                                     call_purpose, companion_id)
+
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(f"""
@@ -687,8 +703,18 @@ class CostTracker:
                 'runcomfy': 0.0, 'twilio': 0.0, 'google': 0.0, 'total': 0.0
             }
 
-    def _get_costs_for_month(self, user_id: str, year: int, month: int) -> Dict[str, float]:
-        """Get costs for a specific month"""
+    def _get_costs_for_month(self, user_id: str, year: int, month: int,
+                             call_purpose: str = None,
+                             companion_id: str = None) -> Dict[str, float]:
+        """Get costs for a specific month.
+
+        When call_purpose or companion_id filters are provided, queries the raw
+        LLM usage tables instead of the daily_cost_summary aggregate.
+        """
+        if call_purpose is not None or companion_id is not None:
+            return self._get_filtered_costs_for_month(user_id, year, month,
+                                                      call_purpose, companion_id)
+
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(f"""
@@ -724,6 +750,92 @@ class CostTracker:
                 'openrouter': 0.0, 'fireworks': 0.0, 'openai': 0.0, 'hedra': 0.0,
                 'runcomfy': 0.0, 'twilio': 0.0, 'google': 0.0, 'total': 0.0
             }
+
+    def _build_llm_filter_clause(self, user_id: str,
+                                  call_purpose: str = None,
+                                  companion_id: str = None) -> Tuple[str, list]:
+        """Build WHERE clause and params for filtering LLM usage tables."""
+        where_clauses = ["user_id = ?"]
+        params: list = [user_id]
+        if call_purpose is not None:
+            where_clauses.append("call_purpose = ?")
+            params.append(call_purpose)
+        if companion_id is not None:
+            where_clauses.append("companion_id = ?")
+            params.append(companion_id)
+        return " AND ".join(where_clauses), params
+
+    def _get_filtered_costs_for_date(self, user_id: str, target_date: date,
+                                      call_purpose: str = None,
+                                      companion_id: str = None) -> Dict[str, float]:
+        """Get costs for a date, filtered by call_purpose/companion_id.
+
+        Queries individual LLM usage tables since the daily_cost_summary
+        aggregate doesn't carry context columns. Non-LLM services are
+        reported as 0.0 because they don't have these columns.
+        """
+        base_where, base_params = self._build_llm_filter_clause(
+            user_id, call_purpose, companion_id)
+        date_str = target_date.isoformat()
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        llm_tables = {
+            'openrouter': T.OPENROUTER_USAGE,
+            'fireworks': T.FIREWORKS_USAGE,
+            'openai': T.OPENAI_USAGE,
+        }
+        costs: Dict[str, float] = {
+            'openrouter': 0.0, 'fireworks': 0.0, 'openai': 0.0,
+            'hedra': 0.0, 'runcomfy': 0.0, 'twilio': 0.0, 'google': 0.0,
+        }
+        for service, table in llm_tables.items():
+            cursor.execute(f"""
+                SELECT COALESCE(SUM(cost_usd), 0.0) as total
+                FROM {table}
+                WHERE {base_where} AND DATE(timestamp) = ?
+            """, base_params + [date_str])
+            costs[service] = cursor.fetchone()['total']
+
+        conn.close()
+        costs['total'] = sum(costs.values())
+        return costs
+
+    def _get_filtered_costs_for_month(self, user_id: str, year: int, month: int,
+                                       call_purpose: str = None,
+                                       companion_id: str = None) -> Dict[str, float]:
+        """Get costs for a month, filtered by call_purpose/companion_id.
+
+        Same approach as _get_filtered_costs_for_date but with month filter.
+        """
+        base_where, base_params = self._build_llm_filter_clause(
+            user_id, call_purpose, companion_id)
+        month_str = f"{year:04d}-{month:02d}"
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        llm_tables = {
+            'openrouter': T.OPENROUTER_USAGE,
+            'fireworks': T.FIREWORKS_USAGE,
+            'openai': T.OPENAI_USAGE,
+        }
+        costs: Dict[str, float] = {
+            'openrouter': 0.0, 'fireworks': 0.0, 'openai': 0.0,
+            'hedra': 0.0, 'runcomfy': 0.0, 'twilio': 0.0, 'google': 0.0,
+        }
+        for service, table in llm_tables.items():
+            cursor.execute(f"""
+                SELECT COALESCE(SUM(cost_usd), 0.0) as total
+                FROM {table}
+                WHERE {base_where} AND strftime('%Y-%m', timestamp) = ?
+            """, base_params + [month_str])
+            costs[service] = cursor.fetchone()['total']
+
+        conn.close()
+        costs['total'] = sum(costs.values())
+        return costs
 
     def _get_budgets(self, user_id: str) -> Dict[str, float]:
         """Get budget limits for user"""
