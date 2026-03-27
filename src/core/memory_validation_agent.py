@@ -98,13 +98,25 @@ class MemoryValidationAgent:
             f"(confidence: {classification.confidence:.0%})"
         )
 
-        # 2. Retrieve verified records
+        # 2. Retrieve verified records (existing retriever + search_memory tool)
         records = self.retriever.search(
             search_terms=classification.search_terms,
             user_email=user_email,
             query_type=classification.query_type,
             limit=10
         )
+
+        # 2b. Supplement with search_memory tool results for broader coverage
+        tool_records = self._search_via_tool(
+            classification.search_terms, user_email, classification.query_type
+        )
+        if tool_records:
+            # Deduplicate by content similarity before merging
+            existing_content = {r.content.lower()[:80] for r in records}
+            for tr in tool_records:
+                if tr.content.lower()[:80] not in existing_content:
+                    records.append(tr)
+                    existing_content.add(tr.content.lower()[:80])
 
         # 3. Format records for prompt
         formatted_records = self._format_records(records)
@@ -125,6 +137,53 @@ class MemoryValidationAgent:
             confidence=classification.confidence
         )
 
+    def _search_via_tool(
+        self,
+        search_terms: List[str],
+        user_email: str,
+        query_type: str
+    ) -> List[VerifiedMemory]:
+        """Use the search_memory tool for supplementary retrieval.
+
+        Maps query types to appropriate tool sources:
+        - specific_event → conversations
+        - emotional_vague → all
+        - factual → facts + graph
+        """
+        try:
+            from src.tools.memory_search_tool import search_memory
+
+            source_map = {
+                'specific_event': 'conversations',
+                'emotional_vague': 'all',
+                'factual': 'facts',
+            }
+            source = source_map.get(query_type, 'all')
+            query = " ".join(search_terms)
+
+            result = search_memory(
+                query=query,
+                user_email=user_email,
+                source=source,
+                limit=5
+            )
+
+            if result.error or not result.results:
+                return []
+
+            return [
+                VerifiedMemory(
+                    content=r,
+                    source='search_tool',
+                    relevance=0.6
+                )
+                for r in result.results
+            ]
+
+        except Exception as e:
+            logger.debug(f"Search tool supplementary retrieval failed: {e}")
+            return []
+
     def _format_records(self, records: List[VerifiedMemory]) -> List[str]:
         """Format verified memory records for prompt injection."""
         formatted = []
@@ -137,6 +196,8 @@ class MemoryValidationAgent:
                 source_tag = "[knowledge]"
             elif record.source == 'entity_profile':
                 source_tag = "[fact]"
+            elif record.source == 'search_tool':
+                source_tag = "[search]"
             else:
                 source_tag = ""
 

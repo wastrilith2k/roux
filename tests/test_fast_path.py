@@ -91,7 +91,7 @@ class TestComplexityClassifier:
             "So I went to the store today. Then I ran into my old coworker. "
             "She told me about this new job opportunity."
         )
-        assert result.complexity.value == "complex"
+        assert result.complexity.value == "medium"
 
     def test_long_question(self):
         result = self._classify(

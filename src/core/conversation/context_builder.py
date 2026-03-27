@@ -317,6 +317,92 @@ class ContextBuilder:
 
         return context
 
+    def build_medium(self, user_email: str, user_message: str, closeness_score: int = 50) -> ConversationContext:
+        """
+        Build medium-depth context for general conversation (medium path).
+
+        Fetches the lightweight sources plus enrichment sources needed for
+        conversations that aren't trivial but don't require the full 24-source
+        deep build. Adds ~5 sources on top of lightweight:
+        - memories (pgvector semantic search)
+        - relationship_dynamics (Gottman-informed state)
+        - opinions_context (companion's views)
+        - observations_context (compressed conversation history)
+        - graphiti_context (knowledge graph facts)
+
+        This typically completes in ~300-800ms vs ~500-2000ms for full build.
+        """
+        start_time = time.time()
+        self._source_timings = {}
+
+        context = ConversationContext(
+            user_email=user_email,
+            user_message=user_message,
+            closeness_score=closeness_score
+        )
+
+        def timed_fetch(name, func, *args):
+            source_start = time.time()
+            try:
+                result = func(*args)
+                elapsed = time.time() - source_start
+                return name, result, elapsed
+            except Exception as e:
+                elapsed = time.time() - source_start
+                logger.warning(f"Medium context source '{name}' failed after {elapsed:.2f}s: {e}")
+                return name, None, elapsed
+
+        # Lightweight core sources
+        futures = []
+        futures.append(self._executor.submit(timed_fetch, 'entity_profiles', self._get_entity_profiles, user_message, user_email))
+        futures.append(self._executor.submit(timed_fetch, 'personality', self._get_personality, user_email))
+        futures.append(self._executor.submit(timed_fetch, 'internal_state', self._get_internal_state, user_email))
+        futures.append(self._executor.submit(timed_fetch, 'scene_state', self._get_scene_state, user_email))
+        futures.append(self._executor.submit(timed_fetch, 'core_memory', self._get_core_memory, user_email))
+        futures.append(self._executor.submit(timed_fetch, 'conversation_turns', self._get_conversation_history_structured, user_email))
+        futures.append(self._executor.submit(timed_fetch, 'schedule', self._get_time_awareness_context, user_email))
+
+        # Medium enrichment sources
+        futures.append(self._executor.submit(timed_fetch, 'memories', self._get_memories, user_email, user_message))
+        futures.append(self._executor.submit(timed_fetch, 'relationship_dynamics', self._get_relationship_dynamics_context, user_email))
+        futures.append(self._executor.submit(timed_fetch, 'opinions_context', self._get_opinions_context, user_email, user_message))
+        futures.append(self._executor.submit(timed_fetch, 'observations_context', self._get_observations_context, user_email, user_message))
+        futures.append(self._executor.submit(timed_fetch, 'graphiti_context', self._get_graphiti_context, user_email, user_message))
+
+        for future in futures:
+            try:
+                name, result, elapsed = future.result(timeout=15)
+                self._source_timings[name] = elapsed
+
+                if name == 'memories' and result is not None:
+                    if isinstance(result, tuple) and len(result) == 2:
+                        contextual, _ = result
+                        context.memories = contextual or ""
+                    else:
+                        context.memories = str(result) if result else ""
+                elif name == 'conversation_turns' and result is not None:
+                    if isinstance(result, tuple) and len(result) == 2:
+                        turns, continuity = result
+                        context.conversation_turns = turns or []
+                        context.continuity_context = continuity or ""
+                        if turns:
+                            from src.config.persona_config import get_persona_config
+                            _pc = get_persona_config()
+                            formatted = [f"{_pc.companion_short_name if t['role'] == 'assistant' else _pc.primary_user_name}: {t['content']}" for t in turns]
+                            context.conversation_history = "\n".join(formatted)
+                elif result is not None:
+                    setattr(context, name, result or "")
+            except Exception as e:
+                logger.warning(f"Failed to get medium context source: {e}")
+
+        total_time = time.time() - start_time
+        logger.info(
+            f"Medium context built in {total_time:.2f}s "
+            f"({len(futures)} sources, medium path)"
+        )
+
+        return context
+
     def _build_parallel(self, user_email: str, user_message: str, closeness_score: int) -> ConversationContext:
         """
         Build context with parallel fetching of all sources.
