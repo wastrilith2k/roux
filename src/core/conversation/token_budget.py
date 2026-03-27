@@ -51,6 +51,7 @@ SOURCE_TOKEN_BUDGETS = {
     'relationship_evaluation': 500,
     'episode_context': 600,
     'observations_context': 600,
+    'session_summary': 600,
     'reflections_context': 500,
     'opinions_context': 500,
     'curiosity_context': 400,
@@ -87,6 +88,7 @@ TIER_2 = frozenset({
     'memories', 'graphiti_context', 'biographies', 'episode_context',
     'memory_validation', 'relationship_dynamics', 'relationship_insights',
     'relationship_evaluation', 'scene_state', 'internal_state',
+    'session_summary',
 })
 
 TIER_3 = frozenset({

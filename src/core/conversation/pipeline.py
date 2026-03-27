@@ -714,6 +714,7 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
         'episode_context': 5,
         'synthesized_events': 6,
         'observations_context': 6,
+        'session_summary': 2,
         'reflections_context': 7,
         'opinions_context': 7,
         'curiosity_context': 8,
@@ -957,6 +958,10 @@ You disagree when you disagree. You are a partner, not a therapist.
                 _add('observations_context', context.observations_context)
             else:
                 logger.info("Skipping observations for factual query")
+
+        # Session summary (compressed older messages from long conversations, issue #23)
+        if context.session_summary:
+            _add('session_summary', f"<session_summary>\n{context.session_summary}\n</session_summary>")
 
         # Reflections (daily/weekly insights)
         if context.reflections_context:
