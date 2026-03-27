@@ -185,16 +185,19 @@ class TestAssemblePromptBudgetIntegration:
         # final_reminder) are ~5000 chars = ~1250 tokens.  We need a
         # provider_limit where high-priority sources fit but large
         # low-priority ones push the total over budget.
+        # Note: issue #21 added a reasoning reserve (default 4000 tokens)
+        # that reduces the effective limit, so we use a larger provider_limit.
         context = ConversationContext()
         context.entity_profiles = "ENTITY_MARKER " + "x" * 200
         context.personality = "PERSONALITY_MARKER " + "x" * 200
         context.activities_context = "ACTIVITIES_MARKER " + "x" * 10000  # large, priority 9
         context.curiosity_context = "CURIOSITY_MARKER " + "x" * 10000   # large, priority 8
 
-        # Provider limit 5000 tokens -> budget = 3000 tokens.
-        # Fixed ~1250 + entity/personality ~100 = ~1350 (fits in 3000).
-        # activities + curiosity add ~5000 tokens -> total ~6350 > 3000.
-        with patch.object(pipeline, '_get_provider_context_limit', return_value=5000), \
+        # Provider limit 12000 tokens, minus 4000 reasoning reserve = 8000 effective.
+        # Budget at 0.6 fraction = 4800 tokens.
+        # Fixed ~1250 + entity/personality ~100 = ~1350 (fits in 4800).
+        # activities + curiosity add ~5000 tokens -> total ~6350 > 4800.
+        with patch.object(pipeline, '_get_provider_context_limit', return_value=12000), \
              patch('src.config.persona_config.get_persona_config', _get_fake_persona_config):
             prompt = pipeline._assemble_prompt(context, "hello")
 

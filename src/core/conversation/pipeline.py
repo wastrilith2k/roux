@@ -1109,13 +1109,33 @@ Just write the message itself, nothing else.
         final_sections = ["<final_reminder>\n" + "\n".join(closing_lines) + "\n</final_reminder>"]
 
         # =================================================================
-        # CONTEXT BUDGET ENFORCEMENT (issue #19)
+        # CONTEXT BUDGET ENFORCEMENT (issues #19 + #21)
         # =================================================================
-        # The prompt is assembled in order: identity, reference_data (header +
-        # droppable sources + footer), instructions, final_reminder.
-        # Fixed sections are never dropped; droppable reference-data sources
-        # are shed lowest-priority-first when the prompt exceeds the budget.
+        # Phase 1 (issue #21): enforce total cap on droppable sources
+        # using tier-based reallocation before whole-section dropping.
+        # Phase 2 (issue #19): drop entire sections if still over budget.
+        from .token_budget import (
+            estimate_tokens as _est_tokens, enforce_total_cap, TOTAL_CAP,
+            REASONING_RESERVE,
+        )
+
+        # Build a dict of droppable source content for tier-based trimming
+        droppable_dict = {name: content for name, priority, content in droppable}
+        trimmed_dict = enforce_total_cap(droppable_dict, TOTAL_CAP)
+
+        # Rebuild droppable tuples with trimmed content (preserve priority)
+        droppable = [
+            (name, priority, trimmed_dict.get(name, content))
+            for name, priority, content in droppable
+        ]
+
+        # Enforce reasoning reserve: reduce effective provider limit so that
+        # at least REASONING_RESERVE tokens remain for generation.
         provider_limit = self._get_provider_context_limit()
+        effective_limit = provider_limit
+        if provider_limit and REASONING_RESERVE:
+            effective_limit = provider_limit - REASONING_RESERVE
+
         fixed = (
             identity_sections
             + ref_header
@@ -1126,7 +1146,7 @@ Just write the message itself, nothing else.
         surviving_ref = self._enforce_context_budget(
             fixed_sections=fixed,
             droppable_sections=droppable,
-            provider_limit=provider_limit,
+            provider_limit=effective_limit,
         )
         # _enforce_context_budget returns fixed + surviving droppable content.
         # We need to re-interleave: identity, ref_header, surviving_droppable,
