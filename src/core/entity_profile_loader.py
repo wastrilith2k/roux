@@ -22,6 +22,7 @@ Singleton: `get_entity_profile_loader()` at module bottom.
 """
 
 import os
+import re
 import yaml
 import logging
 from typing import Dict, Optional, List
@@ -292,8 +293,5 @@ def get_current_time_context(client_temporal: dict = None) -> str:
 
     # Fallback: server clock in Pacific time
     now = datetime.now(ZoneInfo('America/Los_Angeles'))
-    return now.strftime("Current time: %A, %B %d, %Y at %-I:%M %p PST")
-
-
-# Import re at module level for validate_against_profile
-import re
+    hour = now.strftime("%I").lstrip("0") or "12"
+    return now.strftime(f"Current time: %A, %B %d, %Y at {hour}:%M %p PST")
