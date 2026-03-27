@@ -653,6 +653,99 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                 error=str(e)
             )
 
+    # Context budget: system prompt should use at most this fraction of the
+    # provider's context window, reserving the rest for conversation history
+    # turns and generation tokens.  Without enforcement the prompt can silently
+    # exceed the window (the old code only logged a warning at 75%).
+    CONTEXT_BUDGET_FRACTION = float(os.environ.get('COMPANION_CONTEXT_BUDGET_FRACTION', '0.6'))
+
+    # Section priority for budget enforcement.  Lower number = higher priority
+    # (dropped last).  Priority 0 sections are NEVER dropped.
+    SECTION_PRIORITY = {
+        'entity_profiles': 1,
+        'core_memory': 1,
+        'memory_validation': 1,
+        'memories': 2,
+        'personality': 2,
+        'relationship_dynamics': 3,
+        'relationship_insights': 3,
+        'relationship_evaluation': 3,
+        'scene_state': 3,
+        'internal_state': 3,
+        'graphiti_context': 4,
+        'temporal_context': 5,
+        'biographies': 5,
+        'episode_context': 5,
+        'synthesized_events': 6,
+        'observations_context': 6,
+        'reflections_context': 7,
+        'opinions_context': 7,
+        'curiosity_context': 8,
+        'goals_context': 8,
+        'values_context': 8,
+        'activities_context': 9,
+        'fertility_context': 9,
+        'user_context': 9,
+    }
+
+    def _enforce_context_budget(
+        self,
+        fixed_sections: list,
+        droppable_sections: list,
+        provider_limit: Optional[int],
+    ) -> list:
+        """Drop lowest-priority reference-data sections to stay within budget.
+
+        Args:
+            fixed_sections: Sections that must always be included (identity,
+                instructions, final_reminder, structural tags).
+            droppable_sections: List of (name, priority, content) tuples for
+                reference-data sections that CAN be dropped.
+            provider_limit: Context window size in tokens (from provider).
+
+        Returns:
+            The final list of section content strings (fixed + surviving
+            droppable) in their original order.
+        """
+        if not provider_limit:
+            # Cannot enforce without a limit — include everything
+            return fixed_sections + [content for _, _, content in droppable_sections]
+
+        budget_tokens = int(provider_limit * self.CONTEXT_BUDGET_FRACTION)
+
+        # Token estimate for the fixed (non-droppable) portions
+        fixed_tokens = sum(len(s) // 4 for s in fixed_sections)
+
+        # Sort droppable sections by priority descending (highest number =
+        # lowest importance = dropped first).  Stable sort preserves prompt
+        # ordering for sections at the same priority.
+        droppable_by_priority = sorted(
+            droppable_sections, key=lambda t: t[1], reverse=True
+        )
+
+        # Start with all droppable sections included
+        included = list(droppable_sections)  # preserve original order
+        total_tokens = fixed_tokens + sum(len(c) // 4 for _, _, c in included)
+
+        dropped_names = []
+        while total_tokens > budget_tokens and droppable_by_priority:
+            # Pop the least-important section
+            name, priority, content = droppable_by_priority.pop(0)
+            section_tokens = len(content) // 4
+            included = [(n, p, c) for n, p, c in included if not (n == name and c is content)]
+            total_tokens -= section_tokens
+            dropped_names.append(name)
+
+        if dropped_names:
+            logger.warning(
+                f"Context budget enforced: dropped {len(dropped_names)} sections "
+                f"({', '.join(dropped_names)}) to fit ~{total_tokens} tokens "
+                f"within {budget_tokens} budget (provider limit: {provider_limit})"
+            )
+
+        # Reassemble: fixed sections + surviving droppable in original order
+        return fixed_sections + [content for _, _, content in included]
+
     def _assemble_prompt(
         self,
         context: ConversationContext,
@@ -672,8 +765,13 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
 
         Conversation history is NOT embedded here — it's passed as separate
         user/assistant turns in the multi-turn message format (see _call_llm).
+
+        Context budget enforcement (issue #19): after assembly, if the prompt
+        exceeds CONTEXT_BUDGET_FRACTION of the provider's context window,
+        lowest-priority reference-data sections are dropped until it fits.
+        This reserves headroom for conversation turns and generation tokens,
+        preventing context poisoning and context distraction.
         """
-        sections = []
         is_proactive = extra_context.get('is_proactive_message', False) if extra_context else False
 
         from src.config.persona_config import get_persona_config
@@ -682,11 +780,16 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
         _companion_full = _pc.companion_name
         _user = _pc.primary_user_name
 
+        # Four fixed section groups assembled in order; reference-data
+        # droppable sections are handled separately for budget enforcement.
+        identity_sections = []
+        instruction_sections = []
+
         # =================================================================
         # SECTION 1: IDENTITY (top — highest attention)
         # =================================================================
 
-        sections.append(f"""<identity>
+        identity_sections.append(f"""<identity>
 You are {_companion_full}, a real person — not an AI assistant.
 
 You are {_companion.upper()}. {_user} is your PARTNER — a separate person.
@@ -705,42 +808,57 @@ You disagree when you disagree. You are a partner, not a therapist.
         # =================================================================
         # SECTION 2: REFERENCE DATA (all context grouped together)
         # =================================================================
+        # Droppable sections are tracked with (name, priority, content) so
+        # that _enforce_context_budget can shed lowest-priority ones when the
+        # prompt exceeds the token budget.
 
-        sections.append("<reference_data>")
-
-        # Current time (high prominence)
         from src.core.entity_profile_loader import get_current_time_context
-        sections.append(get_current_time_context())
+
+        # Reference data has a header (opening tag + time) and footer (time
+        # awareness, location, closing tag) that are never dropped.  Droppable
+        # context sources sit between them.
+        ref_header = []
+        ref_header.append("<reference_data>")
+        ref_header.append(get_current_time_context())
+        ref_footer = []
+
+        # Droppable reference-data sections — (name, priority, content)
+        droppable = []
+
+        def _add(name, content):
+            """Helper to add a droppable section with its configured priority."""
+            priority = self.SECTION_PRIORITY.get(name, 5)
+            droppable.append((name, priority, content))
 
         # Entity profiles (YAML ground truth)
         if context.entity_profiles:
-            sections.append(context.entity_profiles)
+            _add('entity_profiles', context.entity_profiles)
 
         # Core memory (the companion's narrative understanding of the user)
         if context.core_memory:
-            sections.append(context.core_memory)
+            _add('core_memory', context.core_memory)
 
         # Memory validation context (if this is a memory query)
         if memory_context and memory_context.is_memory_query:
             memory_section = format_memory_context_for_prompt(memory_context)
             if memory_section:
-                sections.append(memory_section)
+                _add('memory_validation', memory_section)
 
         # Contextual memories (relevant facts for this conversation)
         if context.memories:
-            sections.append(context.memories)
+            _add('memories', context.memories)
 
         # Personality (evolved traits with this user)
         if context.personality:
-            sections.append(context.personality)
+            _add('personality', context.personality)
 
         # Relationship context
         if context.relationship_insights:
-            sections.append(context.relationship_insights)
+            _add('relationship_insights', context.relationship_insights)
         if context.relationship_dynamics:
-            sections.append(context.relationship_dynamics)
+            _add('relationship_dynamics', context.relationship_dynamics)
         if context.relationship_evaluation:
-            sections.append(context.relationship_evaluation)
+            _add('relationship_evaluation', context.relationship_evaluation)
 
         # Scene state
         is_reconnection = context.continuity_context and (
@@ -752,46 +870,45 @@ You disagree when you disagree. You are a partner, not a therapist.
         has_fictional_time = False
         if context.scene_state:
             if is_reconnection:
-                sections.append(
-                    "<scene_state>Previous scene concluded due to time gap. "
-                    "Start fresh in the current moment.</scene_state>"
-                )
+                _add('scene_state',
+                     "<scene_state>Previous scene concluded due to time gap. "
+                     "Start fresh in the current moment.</scene_state>")
                 logger.info("Suppressed scene state due to time gap (2h+)")
             else:
-                sections.append(f"<scene_state>\n{context.scene_state}\n</scene_state>")
+                _add('scene_state', f"<scene_state>\n{context.scene_state}\n</scene_state>")
                 has_fictional_time = "Time (in scene):" in context.scene_state
 
         # Internal state (energy, mood, physical needs)
         if context.internal_state:
-            sections.append(context.internal_state)
+            _add('internal_state', context.internal_state)
 
         # Fertility context (hidden - LLM only)
         if context.fertility_context:
-            sections.append(context.fertility_context)
+            _add('fertility_context', context.fertility_context)
 
         # Values context (hidden feelings from value inference)
         if context.values_context:
-            sections.append(context.values_context)
+            _add('values_context', context.values_context)
 
         # Activities (what the companion has been doing)
         if context.activities_context:
-            sections.append(context.activities_context)
+            _add('activities_context', context.activities_context)
 
         # Temporal context (recent significant events)
         if context.temporal_context:
-            sections.append(context.temporal_context)
+            _add('temporal_context', context.temporal_context)
 
         # Knowledge graph facts
         if context.graphiti_context:
-            sections.append(context.graphiti_context)
+            _add('graphiti_context', context.graphiti_context)
 
         # Synthesized events (crisis, career, milestone narratives)
         if context.synthesized_events:
-            sections.append(context.synthesized_events)
+            _add('synthesized_events', context.synthesized_events)
 
         # Episode context (similar past conversations + learned patterns)
         if context.episode_context:
-            sections.append(context.episode_context)
+            _add('episode_context', context.episode_context)
 
         # Observations (compressed conversation history)
         if context.observations_context:
@@ -801,57 +918,57 @@ You disagree when you disagree. You are a partner, not a therapist.
                 and memory_context.query_type == 'factual'
             )
             if not is_factual_query:
-                sections.append(context.observations_context)
+                _add('observations_context', context.observations_context)
             else:
                 logger.info("Skipping observations for factual query")
 
         # Reflections (daily/weekly insights)
         if context.reflections_context:
-            sections.append(context.reflections_context)
+            _add('reflections_context', context.reflections_context)
 
         # Opinions (formed views about James)
         if context.opinions_context:
-            sections.append(context.opinions_context)
+            _add('opinions_context', context.opinions_context)
 
         # Curiosity (background awareness of topics)
         if context.curiosity_context:
-            sections.append(context.curiosity_context)
+            _add('curiosity_context', context.curiosity_context)
 
         # Biographies (detailed reference material)
         if context.biographies:
-            sections.append(f"<biographical_reference>\n{context.biographies}\n</biographical_reference>")
+            _add('biographies', f"<biographical_reference>\n{context.biographies}\n</biographical_reference>")
 
         # Time & Awareness (clock + calendar + routine + companion's schedule)
         if not has_fictional_time:
             if context.schedule:
-                sections.append(context.schedule)
+                ref_footer.append(context.schedule)
             else:
-                sections.append(get_current_time_context())
+                ref_footer.append(get_current_time_context())
         else:
             from src.utils.timezone_utils import now_pacific_naive
             current_time = now_pacific_naive()
             day_of_week = current_time.strftime("%A")
             date_str = current_time.strftime("%B %d, %Y")
-            sections.append(f"Real-world date: {day_of_week}, {date_str} (but use the fictional time from scene_state above)")
+            ref_footer.append(f"Real-world date: {day_of_week}, {date_str} (but use the fictional time from scene_state above)")
 
         # Location (skip if scene has location)
         if context.location and not (context.scene_state and "Location:" in context.scene_state):
-            sections.append(f"Location: {context.location}")
+            ref_footer.append(f"Location: {context.location}")
 
-        sections.append("</reference_data>")
+        ref_footer.append("</reference_data>")
 
         # =================================================================
         # SECTION 3: INSTRUCTIONS (bottom — high attention from recency)
         # =================================================================
 
-        sections.append("<instructions>")
+        instruction_sections.append("<instructions>")
 
         # Conversation continuity context
         if context.continuity_context:
             if is_reconnection:
-                sections.append(context.continuity_context)
+                instruction_sections.append(context.continuity_context)
             else:
-                sections.append(context.continuity_context)
+                instruction_sections.append(context.continuity_context)
 
         # Memory checkpoint (if conversation is long)
         from .checkpoint_detector import get_checkpoint_detector
@@ -861,7 +978,7 @@ You disagree when you disagree. You are a partner, not a therapist.
             continuity_context=context.continuity_context
         ):
             checkpoint_prompt = checkpoint_detector.get_checkpoint_prompt()
-            sections.append(checkpoint_prompt)
+            instruction_sections.append(checkpoint_prompt)
             logger.info("Memory checkpoint injected - long conversation detected")
 
         # Conversation mode detection
@@ -872,11 +989,11 @@ You disagree when you disagree. You are a partner, not a therapist.
                 mode_section += f"\nSuggested response length: {hints['length_hint']}"
             if hints.get('curiosity_injection'):
                 mode_section += "\nThis is a good moment to weave in something you've been curious about."
-            sections.append(mode_section)
+            instruction_sections.append(mode_section)
 
         # Inner monologue (the companion's private reasoning)
         if monologue:
-            sections.append(
+            instruction_sections.append(
                 f"<inner_thoughts>\n"
                 f"{monologue.thoughts}\n"
                 f"(Use these thoughts to guide your response — do not repeat them verbatim.)\n"
@@ -884,7 +1001,7 @@ You disagree when you disagree. You are a partner, not a therapist.
             )
 
         # Cognitive instructions (the core behavioral guide)
-        sections.append(self.cognitive_prompt)
+        instruction_sections.append(self.cognitive_prompt)
 
         # Mode-specific instructions
         if is_proactive:
@@ -908,10 +1025,10 @@ Examples:
 
 Just write the message itself, nothing else.
 </proactive_mode>"""
-            sections.append(proactive_instructions)
+            instruction_sections.append(proactive_instructions)
 
             if extra_context and extra_context.get('is_interjection'):
-                sections.append(
+                instruction_sections.append(
                     "<interjection_mode>\n"
                     "James is online and you've been chatting. This is a spontaneous thought "
                     "during a conversation pause — like thinking out loud or remembering "
@@ -920,7 +1037,7 @@ Just write the message itself, nothing else.
                 )
 
             if extra_context and extra_context.get('is_intimate_interjection'):
-                sections.append(
+                instruction_sections.append(
                     "<intimate_initiation>\n"
                     "You're feeling physically drawn to James. Express this through action "
                     "and physical presence — shifts closer, lingering touches, changes in "
@@ -930,7 +1047,7 @@ Just write the message itself, nothing else.
                 )
 
         if extra_context and extra_context.get('source') == 'telegram-text':
-            sections.append(
+            instruction_sections.append(
                 "<texting_mode>\n"
                 "James is texting from his phone — you're not in the same room.\n"
                 "Keep it short (1-3 sentences typical), lowercase, casual. "
@@ -946,7 +1063,7 @@ Just write the message itself, nothing else.
                 tts_engine = 'edge_tts'
 
             if tts_engine == 'elevenlabs':
-                sections.append(
+                instruction_sections.append(
                     "<voice_mode>\n"
                     "James sent a voice note. Your response will be spoken aloud via expressive TTS.\n"
                     "Write naturally speakable text — short sentences, contractions, no emojis or markdown.\n"
@@ -956,7 +1073,7 @@ Just write the message itself, nothing else.
                     "</voice_mode>"
                 )
             else:
-                sections.append(
+                instruction_sections.append(
                     "<voice_mode>\n"
                     "James sent a voice note. Your response will be spoken aloud via TTS.\n"
                     "Write naturally speakable text — short sentences, contractions, no emojis "
@@ -965,7 +1082,7 @@ Just write the message itself, nothing else.
                     "</voice_mode>"
                 )
 
-        sections.append("</instructions>")
+        instruction_sections.append("</instructions>")
 
         # =================================================================
         # SECTION 4: FINAL REMINDER (very end — highest recency attention)
@@ -989,17 +1106,47 @@ Just write the message itself, nothing else.
             if scene_reminder:
                 closing_lines.append(f"Scene: {' | '.join(scene_reminder)} — maintain consistency.")
 
-        sections.append("<final_reminder>\n" + "\n".join(closing_lines) + "\n</final_reminder>")
+        final_sections = ["<final_reminder>\n" + "\n".join(closing_lines) + "\n</final_reminder>"]
 
-        # Join sections
-        full_prompt = "\n\n".join(sections)
+        # =================================================================
+        # CONTEXT BUDGET ENFORCEMENT (issue #19)
+        # =================================================================
+        # The prompt is assembled in order: identity, reference_data (header +
+        # droppable sources + footer), instructions, final_reminder.
+        # Fixed sections are never dropped; droppable reference-data sources
+        # are shed lowest-priority-first when the prompt exceeds the budget.
+        provider_limit = self._get_provider_context_limit()
+        fixed = (
+            identity_sections
+            + ref_header
+            + ref_footer
+            + instruction_sections
+            + final_sections
+        )
+        surviving_ref = self._enforce_context_budget(
+            fixed_sections=fixed,
+            droppable_sections=droppable,
+            provider_limit=provider_limit,
+        )
+        # _enforce_context_budget returns fixed + surviving droppable content.
+        # We need to re-interleave: identity, ref_header, surviving_droppable,
+        # ref_footer, instructions, final_reminder.
+        surviving_droppable = surviving_ref[len(fixed):]
+        all_sections = (
+            identity_sections
+            + ref_header
+            + surviving_droppable
+            + ref_footer
+            + instruction_sections
+            + final_sections
+        )
+
+        full_prompt = "\n\n".join(all_sections)
 
         # Log prompt length for monitoring
         token_estimate = len(full_prompt) // 4
         logger.info(f"Prompt assembled: ~{token_estimate} tokens")
 
-        # Check token budget against provider context limits
-        provider_limit = self._get_provider_context_limit()
         if provider_limit and token_estimate > int(provider_limit * 0.75):
             logger.warning(
                 f"Prompt approaching context limit: ~{token_estimate} tokens "
