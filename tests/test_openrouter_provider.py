@@ -443,6 +443,10 @@ class TestPipelineOpenRouterCostIntegration:
                 prompt_tokens=10700,
                 completion_tokens=55,
                 model='deepseek/deepseek-chat',
+                call_purpose='conversation',
+                conversation_id=None,
+                message_id=None,
+                companion_id=None,
             )
 
     def test_track_openrouter_clears_usage(self):

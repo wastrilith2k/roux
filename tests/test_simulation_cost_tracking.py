@@ -95,6 +95,8 @@ class TestGenerateMessageCostTracking:
             prompt_tokens=500,
             completion_tokens=80,
             model='deepseek/deepseek-chat',
+            call_purpose='simulation',
+            companion_id='alice',
         )
 
         # Verify accumulators were updated
@@ -142,6 +144,8 @@ class TestGetDaySummaryCostTracking:
             prompt_tokens=300,
             completion_tokens=50,
             model='deepseek/deepseek-chat',
+            call_purpose='simulation',
+            companion_id='alice',
         )
 
         assert runner._total_tokens['input'] == 300

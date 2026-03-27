@@ -394,6 +394,10 @@ class TestPipelineCostIntegration:
                 prompt_tokens=1000,
                 completion_tokens=500,
                 model='fireworks/test-model',
+                call_purpose='conversation',
+                conversation_id=None,
+                message_id=None,
+                companion_id=None,
             )
 
     def test_track_openai_cost(self):
@@ -413,6 +417,10 @@ class TestPipelineCostIntegration:
                 completion_tokens=800,
                 service_type='chat',
                 model='gpt-4o-mini',
+                call_purpose='conversation',
+                conversation_id=None,
+                message_id=None,
+                companion_id=None,
             )
 
     def test_track_skips_zero_usage(self):

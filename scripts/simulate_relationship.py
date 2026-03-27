@@ -323,6 +323,8 @@ class SimulationRunner:
                 prompt_tokens=input_tokens,
                 completion_tokens=output_tokens,
                 model=model,
+                call_purpose='simulation',
+                companion_id=companion_id,
             )
         except Exception as e:
             logger.debug(f"Cost tracking failed: {e}")

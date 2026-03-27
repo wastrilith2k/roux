@@ -173,7 +173,10 @@ class CostTracker:
 
     def track_fireworks_call(self, user_id: str, prompt_tokens: int,
                             completion_tokens: int, model: str = 'llama-v3p1-70b-instruct',
-                            response_time_ms: int = None, error: bool = False) -> float:
+                            response_time_ms: int = None, error: bool = False,
+                            call_purpose: str = 'conversation',
+                            conversation_id: str = None, message_id: str = None,
+                            companion_id: str = None) -> float:
         """Track a Fireworks.ai API call and return cost"""
         cost = self._calculate_fireworks_cost(prompt_tokens, completion_tokens)
 
@@ -181,10 +184,12 @@ class CostTracker:
         cursor = conn.cursor()
         cursor.execute(f"""
             INSERT INTO {T.FIREWORKS_USAGE}
-            (user_id, model, prompt_tokens, completion_tokens, total_tokens, cost_usd, response_time_ms, error)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (user_id, model, prompt_tokens, completion_tokens, total_tokens, cost_usd,
+             response_time_ms, error, call_purpose, conversation_id, message_id, companion_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (user_id, model, prompt_tokens, completion_tokens,
-              prompt_tokens + completion_tokens, cost, response_time_ms, int(error)))
+              prompt_tokens + completion_tokens, cost, response_time_ms, int(error),
+              call_purpose, conversation_id, message_id, companion_id))
         conn.commit()
         conn.close()
 
@@ -196,7 +201,10 @@ class CostTracker:
 
     def track_openrouter_call(self, user_id: str, prompt_tokens: int,
                               completion_tokens: int, model: str = 'deepseek/deepseek-chat',
-                              response_time_ms: int = None, error: bool = False) -> float:
+                              response_time_ms: int = None, error: bool = False,
+                              call_purpose: str = 'conversation',
+                              conversation_id: str = None, message_id: str = None,
+                              companion_id: str = None) -> float:
         """Track an OpenRouter API call and return cost"""
         cost = self._calculate_openrouter_cost(prompt_tokens, completion_tokens, model)
 
@@ -204,10 +212,12 @@ class CostTracker:
         cursor = conn.cursor()
         cursor.execute(f"""
             INSERT INTO {T.OPENROUTER_USAGE}
-            (user_id, model, prompt_tokens, completion_tokens, total_tokens, cost_usd, response_time_ms, error)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (user_id, model, prompt_tokens, completion_tokens, total_tokens, cost_usd,
+             response_time_ms, error, call_purpose, conversation_id, message_id, companion_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (user_id, model, prompt_tokens, completion_tokens,
-              prompt_tokens + completion_tokens, cost, response_time_ms, int(error)))
+              prompt_tokens + completion_tokens, cost, response_time_ms, int(error),
+              call_purpose, conversation_id, message_id, companion_id))
         conn.commit()
         conn.close()
 
@@ -220,7 +230,10 @@ class CostTracker:
     def track_openai_call(self, user_id: str, prompt_tokens: int = 0,
                          completion_tokens: int = 0, audio_seconds: float = 0,
                          characters: int = 0, service_type: str = 'tool_detection',
-                         model: str = 'gpt-4o-mini', error: bool = False) -> float:
+                         model: str = 'gpt-4o-mini', error: bool = False,
+                         call_purpose: str = 'conversation',
+                         conversation_id: str = None, message_id: str = None,
+                         companion_id: str = None) -> float:
         """Track an OpenAI API call and return cost"""
         cost = self._calculate_openai_cost(prompt_tokens, completion_tokens,
                                            audio_seconds, characters, service_type)
@@ -230,10 +243,12 @@ class CostTracker:
         cursor.execute(f"""
             INSERT INTO {T.OPENAI_USAGE}
             (user_id, model, service_type, prompt_tokens, completion_tokens,
-             audio_seconds, characters, cost_usd, error)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             audio_seconds, characters, cost_usd, error,
+             call_purpose, conversation_id, message_id, companion_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (user_id, model, service_type, prompt_tokens, completion_tokens,
-              audio_seconds, characters, cost, int(error)))
+              audio_seconds, characters, cost, int(error),
+              call_purpose, conversation_id, message_id, companion_id))
         conn.commit()
         conn.close()
 
@@ -557,15 +572,68 @@ class CostTracker:
     # QUERY METHODS (for dashboard)
     # ========================================================================
 
-    def get_cost_summary(self, user_id: str) -> CostSummary:
-        """Get complete cost summary for user"""
+    def get_cost_breakdown_by_purpose(self, user_id: str,
+                                      companion_id: str = None) -> List[Dict[str, Any]]:
+        """Get cost breakdown grouped by call_purpose for LLM usage tables.
+
+        Args:
+            user_id: User identifier.
+            companion_id: Optional filter by companion_id.
+
+        Returns:
+            List of dicts with keys: call_purpose, total_cost, call_count.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        results = {}
+
+        for table in (T.OPENROUTER_USAGE, T.FIREWORKS_USAGE, T.OPENAI_USAGE):
+            where_clauses = ["user_id = ?", "strftime('%Y-%m', timestamp) = strftime('%Y-%m', 'now')"]
+            params: list = [user_id]
+
+            if companion_id is not None:
+                where_clauses.append("companion_id = ?")
+                params.append(companion_id)
+
+            where_sql = " AND ".join(where_clauses)
+            cursor.execute(f"""
+                SELECT call_purpose, SUM(cost_usd) as total_cost, COUNT(*) as call_count
+                FROM {table}
+                WHERE {where_sql}
+                GROUP BY call_purpose
+            """, params)
+
+            for row in cursor.fetchall():
+                purpose = row['call_purpose'] or 'conversation'
+                if purpose not in results:
+                    results[purpose] = {'call_purpose': purpose, 'total_cost': 0.0, 'call_count': 0}
+                results[purpose]['total_cost'] += row['total_cost'] or 0.0
+                results[purpose]['call_count'] += row['call_count'] or 0
+
+        conn.close()
+        return list(results.values())
+
+    def get_cost_summary(self, user_id: str, call_purpose: str = None,
+                         companion_id: str = None) -> CostSummary:
+        """Get complete cost summary for user.
+
+        Args:
+            user_id: User identifier.
+            call_purpose: Optional filter by call purpose (e.g. 'conversation', 'simulation').
+            companion_id: Optional filter by companion_id.
+        """
         today = date.today()
 
         # Get today's costs
-        costs_today = self._get_costs_for_date(user_id, today)
+        costs_today = self._get_costs_for_date(user_id, today,
+                                               call_purpose=call_purpose,
+                                               companion_id=companion_id)
 
         # Get month's costs
-        costs_month = self._get_costs_for_month(user_id, today.year, today.month)
+        costs_month = self._get_costs_for_month(user_id, today.year, today.month,
+                                                call_purpose=call_purpose,
+                                                companion_id=companion_id)
 
         # Get budgets
         budgets = self._get_budgets(user_id)
@@ -591,8 +659,20 @@ class CostTracker:
             alerts=alerts
         )
 
-    def _get_costs_for_date(self, user_id: str, target_date: date) -> Dict[str, float]:
-        """Get costs for a specific date"""
+    def _get_costs_for_date(self, user_id: str, target_date: date,
+                            call_purpose: str = None,
+                            companion_id: str = None) -> Dict[str, float]:
+        """Get costs for a specific date.
+
+        When call_purpose or companion_id filters are provided, queries the raw
+        LLM usage tables instead of the daily_cost_summary aggregate (which
+        doesn't carry those columns). Non-LLM services are reported as 0.0 in
+        filtered mode since they lack context columns.
+        """
+        if call_purpose is not None or companion_id is not None:
+            return self._get_filtered_costs_for_date(user_id, target_date,
+                                                     call_purpose, companion_id)
+
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(f"""
@@ -623,8 +703,18 @@ class CostTracker:
                 'runcomfy': 0.0, 'twilio': 0.0, 'google': 0.0, 'total': 0.0
             }
 
-    def _get_costs_for_month(self, user_id: str, year: int, month: int) -> Dict[str, float]:
-        """Get costs for a specific month"""
+    def _get_costs_for_month(self, user_id: str, year: int, month: int,
+                             call_purpose: str = None,
+                             companion_id: str = None) -> Dict[str, float]:
+        """Get costs for a specific month.
+
+        When call_purpose or companion_id filters are provided, queries the raw
+        LLM usage tables instead of the daily_cost_summary aggregate.
+        """
+        if call_purpose is not None or companion_id is not None:
+            return self._get_filtered_costs_for_month(user_id, year, month,
+                                                      call_purpose, companion_id)
+
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(f"""
@@ -660,6 +750,92 @@ class CostTracker:
                 'openrouter': 0.0, 'fireworks': 0.0, 'openai': 0.0, 'hedra': 0.0,
                 'runcomfy': 0.0, 'twilio': 0.0, 'google': 0.0, 'total': 0.0
             }
+
+    def _build_llm_filter_clause(self, user_id: str,
+                                  call_purpose: str = None,
+                                  companion_id: str = None) -> Tuple[str, list]:
+        """Build WHERE clause and params for filtering LLM usage tables."""
+        where_clauses = ["user_id = ?"]
+        params: list = [user_id]
+        if call_purpose is not None:
+            where_clauses.append("call_purpose = ?")
+            params.append(call_purpose)
+        if companion_id is not None:
+            where_clauses.append("companion_id = ?")
+            params.append(companion_id)
+        return " AND ".join(where_clauses), params
+
+    def _get_filtered_costs_for_date(self, user_id: str, target_date: date,
+                                      call_purpose: str = None,
+                                      companion_id: str = None) -> Dict[str, float]:
+        """Get costs for a date, filtered by call_purpose/companion_id.
+
+        Queries individual LLM usage tables since the daily_cost_summary
+        aggregate doesn't carry context columns. Non-LLM services are
+        reported as 0.0 because they don't have these columns.
+        """
+        base_where, base_params = self._build_llm_filter_clause(
+            user_id, call_purpose, companion_id)
+        date_str = target_date.isoformat()
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        llm_tables = {
+            'openrouter': T.OPENROUTER_USAGE,
+            'fireworks': T.FIREWORKS_USAGE,
+            'openai': T.OPENAI_USAGE,
+        }
+        costs: Dict[str, float] = {
+            'openrouter': 0.0, 'fireworks': 0.0, 'openai': 0.0,
+            'hedra': 0.0, 'runcomfy': 0.0, 'twilio': 0.0, 'google': 0.0,
+        }
+        for service, table in llm_tables.items():
+            cursor.execute(f"""
+                SELECT COALESCE(SUM(cost_usd), 0.0) as total
+                FROM {table}
+                WHERE {base_where} AND DATE(timestamp) = ?
+            """, base_params + [date_str])
+            costs[service] = cursor.fetchone()['total']
+
+        conn.close()
+        costs['total'] = sum(costs.values())
+        return costs
+
+    def _get_filtered_costs_for_month(self, user_id: str, year: int, month: int,
+                                       call_purpose: str = None,
+                                       companion_id: str = None) -> Dict[str, float]:
+        """Get costs for a month, filtered by call_purpose/companion_id.
+
+        Same approach as _get_filtered_costs_for_date but with month filter.
+        """
+        base_where, base_params = self._build_llm_filter_clause(
+            user_id, call_purpose, companion_id)
+        month_str = f"{year:04d}-{month:02d}"
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        llm_tables = {
+            'openrouter': T.OPENROUTER_USAGE,
+            'fireworks': T.FIREWORKS_USAGE,
+            'openai': T.OPENAI_USAGE,
+        }
+        costs: Dict[str, float] = {
+            'openrouter': 0.0, 'fireworks': 0.0, 'openai': 0.0,
+            'hedra': 0.0, 'runcomfy': 0.0, 'twilio': 0.0, 'google': 0.0,
+        }
+        for service, table in llm_tables.items():
+            cursor.execute(f"""
+                SELECT COALESCE(SUM(cost_usd), 0.0) as total
+                FROM {table}
+                WHERE {base_where} AND strftime('%Y-%m', timestamp) = ?
+            """, base_params + [month_str])
+            costs[service] = cursor.fetchone()['total']
+
+        conn.close()
+        costs['total'] = sum(costs.values())
+        return costs
 
     def _get_budgets(self, user_id: str) -> Dict[str, float]:
         """Get budget limits for user"""
