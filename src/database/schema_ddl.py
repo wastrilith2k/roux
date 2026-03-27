@@ -181,7 +181,21 @@ CREATE TABLE IF NOT EXISTS {s}.{T.MESSAGES} (
     source TEXT DEFAULT 'chat',
     message_type TEXT DEFAULT 'normal',
     conversation_id INTEGER,
-    last_retrieved_at TIMESTAMP
+    last_retrieved_at TIMESTAMP,
+    mood INTEGER,
+    energy INTEGER,
+    focus_level INTEGER,
+    social_battery INTEGER,
+    avatar_selected TEXT,
+    closeness_before INTEGER,
+    closeness_delta_reason TEXT,
+    emotion_state TEXT,
+    emotion_timestamp TIMESTAMP,
+    mood_intensity DOUBLE PRECISION,
+    mood_sources TEXT,
+    avatar_filename TEXT,
+    embedding JSONB,
+    embedding_vec VECTOR(1536)
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_email ON {s}.{T.MESSAGES}(email);

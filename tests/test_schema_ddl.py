@@ -112,6 +112,31 @@ class TestUserSchemaDDL:
         )
         assert "REFERENCES public.user_profiles" not in ddl
 
+    def test_messages_table_has_all_columns(self):
+        """Regression test for issue #33 — messages DDL was missing 14 columns."""
+        ddl = get_user_schema_ddl(self.SCHEMA)
+        # Extract the CREATE TABLE block for messages
+        required_columns = [
+            "mood INTEGER",
+            "energy INTEGER",
+            "focus_level INTEGER",
+            "social_battery INTEGER",
+            "avatar_selected TEXT",
+            "closeness_before INTEGER",
+            "closeness_delta_reason TEXT",
+            "emotion_state TEXT",
+            "emotion_timestamp TIMESTAMP",
+            "mood_intensity DOUBLE PRECISION",
+            "mood_sources TEXT",
+            "avatar_filename TEXT",
+            "embedding JSONB",
+            "embedding_vec VECTOR",
+        ]
+        for col_def in required_columns:
+            assert col_def in ddl, (
+                f"Messages table missing column: {col_def}"
+            )
+
     def test_facts_table_has_embedding_column(self):
         ddl = get_user_schema_ddl(self.SCHEMA)
         # The facts table should have a vector embedding column
