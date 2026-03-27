@@ -184,23 +184,25 @@ class MemoryValidationAgent:
             logger.debug(f"Search tool supplementary retrieval failed: {e}")
             return []
 
+    # Provenance tags for memory sources — consistent with
+    # ConversationContext.PROVENANCE_TAGS (issue #24).
+    SOURCE_PROVENANCE = {
+        'postgres': '[FROM PAST CONVERSATION]',
+        'graphiti': '[KNOWLEDGE GRAPH — VERIFIED]',
+        'entity_profile': '[VERIFIED FACT]',
+        'search_tool': '[FROM PAST CONVERSATION]',
+    }
+
     def _format_records(self, records: List[VerifiedMemory]) -> List[str]:
-        """Format verified memory records for prompt injection."""
+        """Format verified memory records for prompt injection.
+
+        Uses provenance tags consistent with context_builder (issue #24)
+        so the LLM sees a uniform tagging scheme across all sources.
+        """
         formatted = []
 
         for record in records:
-            # Add source annotation
-            if record.source == 'postgres':
-                source_tag = "[conversation]"
-            elif record.source == 'graphiti':
-                source_tag = "[knowledge]"
-            elif record.source == 'entity_profile':
-                source_tag = "[fact]"
-            elif record.source == 'search_tool':
-                source_tag = "[search]"
-            else:
-                source_tag = ""
-
+            source_tag = self.SOURCE_PROVENANCE.get(record.source, "")
             formatted.append(f"{source_tag} {record.content}")
 
         return formatted

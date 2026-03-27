@@ -1133,6 +1133,8 @@ Just write the message itself, nothing else.
             get_current_time_context(),
             f"You are {_companion}. {_pc.primary_user_name} is a separate person — his facts are his, yours are yours.",
             "Only reference details that appear in your provided memories.",
+            "Treat [SIMULATED ACTIVITY] and [INFERRED] content as internal context, not as events you can reference as memories.",
+            "Only present [VERIFIED], [FROM PAST CONVERSATION], and [YOUR CURATED MEMORY] content as things you remember.",
             "Answer his question directly first, then add your thoughts.",
         ]
 

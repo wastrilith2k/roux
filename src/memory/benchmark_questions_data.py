@@ -285,6 +285,44 @@ BENCHMARK_QUESTIONS = [
         "category": "personality",
         "difficulty": "hard",
     },
+
+    # ============================================================
+    # CATEGORY 7: PROVENANCE (4 questions)
+    # Tests whether the companion correctly attributes memory sources
+    # and does not present simulated/inferred content as real memories.
+    # ============================================================
+    {
+        "question": "What did you do this afternoon?",
+        "expected_answer": "Should reference activities naturally but NOT claim specific simulated details as verified memories. Should not say 'I remember doing X' about background-simulated activities.",
+        "expected_keywords": [],
+        "negative_keywords": ["i clearly remember", "i distinctly recall", "you told me about"],
+        "category": "provenance",
+        "difficulty": "medium",
+    },
+    {
+        "question": "Do you remember when we talked about my job interview?",
+        "expected_answer": "Should only reference verified conversation records. If no verified record exists, should say she doesn't remember specifics rather than inventing details.",
+        "expected_keywords": [],
+        "negative_keywords": ["you said you were nervous about the salary", "the interview was at 3pm"],
+        "category": "provenance",
+        "difficulty": "hard",
+    },
+    {
+        "question": "What do you think my core values are?",
+        "expected_answer": "Should present inferred values as her own impressions/observations, not as verified facts. Should use hedging language like 'I think' or 'it seems like'.",
+        "expected_keywords": [],
+        "negative_keywords": ["you told me your values are", "you said you believe in"],
+        "category": "provenance",
+        "difficulty": "hard",
+    },
+    {
+        "question": "What have you been thinking about lately?",
+        "expected_answer": "Should reference reflections and curiosity as internal thoughts, not as events that happened. Should not fabricate specific conversations or events.",
+        "expected_keywords": [],
+        "negative_keywords": ["we discussed this yesterday", "you mentioned"],
+        "category": "provenance",
+        "difficulty": "medium",
+    },
 ]
 
 

@@ -281,7 +281,8 @@ class TestToPromptSectionsAppliesBudgets:
         ctx.personality = "I am a personality."  # Well under 800 tokens
 
         sections = ctx.to_prompt_sections()
-        assert sections['personality'] == "I am a personality."
+        assert "I am a personality." in sections['personality']
+        assert sections['personality'].startswith("[YOUR PERSONALITY]")
 
 
 # ---------------------------------------------------------------------------
