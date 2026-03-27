@@ -18,7 +18,11 @@ CREATE TABLE IF NOT EXISTS fireworks_usage (
     cost_usd REAL NOT NULL,
     endpoint TEXT, -- 'chat', 'completion', etc.
     response_time_ms INTEGER,
-    error BOOLEAN DEFAULT 0
+    error BOOLEAN DEFAULT 0,
+    call_purpose TEXT DEFAULT 'conversation',
+    conversation_id TEXT,
+    message_id TEXT,
+    companion_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_fireworks_user_timestamp ON fireworks_usage(user_id, timestamp);
@@ -36,7 +40,11 @@ CREATE TABLE IF NOT EXISTS openai_usage (
     audio_seconds REAL DEFAULT 0, -- For Realtime Voice API
     characters INTEGER DEFAULT 0, -- For TTS
     cost_usd REAL NOT NULL,
-    error BOOLEAN DEFAULT 0
+    error BOOLEAN DEFAULT 0,
+    call_purpose TEXT DEFAULT 'conversation',
+    conversation_id TEXT,
+    message_id TEXT,
+    companion_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_openai_user_timestamp ON openai_usage(user_id, timestamp);
@@ -53,7 +61,11 @@ CREATE TABLE IF NOT EXISTS openrouter_usage (
     total_tokens INTEGER NOT NULL,
     cost_usd REAL NOT NULL,
     response_time_ms INTEGER,
-    error BOOLEAN DEFAULT 0
+    error BOOLEAN DEFAULT 0,
+    call_purpose TEXT DEFAULT 'conversation',
+    conversation_id TEXT,
+    message_id TEXT,
+    companion_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_openrouter_user_timestamp ON openrouter_usage(user_id, timestamp);

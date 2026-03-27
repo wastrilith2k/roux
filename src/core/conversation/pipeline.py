@@ -1424,7 +1424,9 @@ Just write the message itself, nothing else.
 
         return response_text, chain.get_model_name()
 
-    def _track_llm_cost(self, user_email: str, model: str):
+    def _track_llm_cost(self, user_email: str, model: str,
+                        call_purpose: str = 'conversation',
+                        conversation_id: str = None, message_id: str = None):
         """Record the cost of the last LLM call to the unified cost tracker.
 
         Reads usage data stored by _call_llm / _call_llm_with_memory_tool /
@@ -1441,9 +1443,18 @@ Just write the message itself, nothing else.
         if input_tokens == 0 and output_tokens == 0:
             return
 
+        companion_id = os.environ.get('COMPANION_ID')
+
         try:
             from src.services.cost_tracker import get_cost_tracker
             tracker = get_cost_tracker()
+
+            context_kwargs = dict(
+                call_purpose=call_purpose,
+                conversation_id=conversation_id,
+                message_id=message_id,
+                companion_id=companion_id,
+            )
 
             if provider_type == 'openrouter':
                 tracker.track_openrouter_call(
@@ -1451,6 +1462,7 @@ Just write the message itself, nothing else.
                     prompt_tokens=input_tokens,
                     completion_tokens=output_tokens,
                     model=model,
+                    **context_kwargs,
                 )
             elif provider_type == 'fireworks':
                 tracker.track_fireworks_call(
@@ -1458,6 +1470,7 @@ Just write the message itself, nothing else.
                     prompt_tokens=input_tokens,
                     completion_tokens=output_tokens,
                     model=model,
+                    **context_kwargs,
                 )
             elif provider_type == 'openai':
                 tracker.track_openai_call(
@@ -1466,6 +1479,7 @@ Just write the message itself, nothing else.
                     completion_tokens=output_tokens,
                     service_type='chat',
                     model=model,
+                    **context_kwargs,
                 )
             # Anthropic / Ollama / unknown — no tracking table yet
         except Exception as e:
@@ -1556,6 +1570,8 @@ Just write the message itself, nothing else.
                         completion_tokens=tool_usage.get('output_tokens', 0),
                         service_type='tool_detection',
                         model=provider.get_model_name(),
+                        call_purpose='tool_detection',
+                        companion_id=os.environ.get('COMPANION_ID'),
                     )
                 except Exception as e:
                     logger.debug(f"Cost tracking failed (non-fatal): {e}")
@@ -1840,6 +1856,8 @@ Just write the message itself, nothing else.
                             completion_tokens=usage.get("output_tokens", 0),
                             service_type='tool_detection',
                             model=provider.get_model_name(),
+                            call_purpose='tool_detection',
+                            companion_id=os.environ.get('COMPANION_ID'),
                         )
                     except Exception as e:
                         logger.debug(f"Cost tracking failed (non-fatal): {e}")
