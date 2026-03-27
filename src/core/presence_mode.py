@@ -15,6 +15,7 @@ Singleton: get_presence_mode_manager() at module bottom.
 
 import json
 import logging
+import threading
 from enum import Enum
 from typing import Optional
 
@@ -155,11 +156,14 @@ class PresenceModeManager:
 # ---------------------------------------------------------------------------
 
 _manager: Optional[PresenceModeManager] = None
+_manager_lock = threading.Lock()
 
 
 def get_presence_mode_manager() -> PresenceModeManager:
     """Get or create the singleton PresenceModeManager."""
     global _manager
     if _manager is None:
-        _manager = PresenceModeManager()
+        with _manager_lock:
+            if _manager is None:
+                _manager = PresenceModeManager()
     return _manager
