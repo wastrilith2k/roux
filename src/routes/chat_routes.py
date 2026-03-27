@@ -1232,7 +1232,11 @@ def register_socketio_handlers(socketio):
 @chat_bp.route('/api/chat', methods=['POST'])
 def http_chat():
     """
-    HTTP chat endpoint for non-WebSocket clients (e.g., simulation full-stack mode).
+    HTTP chat endpoint for simulation full-stack mode.
+
+    Requires the SIMULATION_API_SECRET env var to be set and a matching
+    X-Simulation-Secret header on every request. Returns 403 if the secret
+    is missing or does not match, and 501 if the env var is not configured.
 
     Expects JSON body:
         - email: User email (required)
@@ -1248,6 +1252,15 @@ def http_chat():
     """
     from flask import jsonify
 
+    # Authenticate via shared secret — prevents unauthenticated access
+    expected_secret = os.environ.get('SIMULATION_API_SECRET')
+    if not expected_secret:
+        return jsonify({'error': 'Simulation API not configured'}), 501
+
+    provided_secret = request.headers.get('X-Simulation-Secret', '')
+    if provided_secret != expected_secret:
+        return jsonify({'error': 'Unauthorized'}), 403
+
     data = request.get_json(silent=True)
     if not data:
         return jsonify({'error': 'JSON body required'}), 400
@@ -1256,10 +1269,6 @@ def http_chat():
     message = data.get('message', '').strip()
     if not email or not message:
         return jsonify({'error': 'email and message are required'}), 400
-
-    # Inject companion_id if provided
-    if data.get('companion_id'):
-        data['companion_id'] = data['companion_id']
 
     processor = get_message_processor()
     result = processor.process_message(data, email, sid='http')

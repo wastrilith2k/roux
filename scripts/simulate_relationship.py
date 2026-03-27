@@ -353,6 +353,12 @@ class SimulationRunner:
 
     def _check_services(self):
         """Verify that required Docker services are reachable for full-stack mode."""
+        secret = os.environ.get('SIMULATION_API_SECRET')
+        if not secret:
+            raise RuntimeError(
+                "Full-stack mode requires SIMULATION_API_SECRET env var to be set. "
+                "This must match the value configured on the API server."
+            )
         import requests
         try:
             resp = requests.get(f'{self.api_url}/api/health', timeout=5)
@@ -386,10 +392,15 @@ class SimulationRunner:
         if conv_id is not None:
             payload['conversation_id'] = conv_id
 
+        headers = {
+            'X-Simulation-Secret': os.environ.get('SIMULATION_API_SECRET', ''),
+        }
+
         try:
             resp = requests.post(
                 f'{self.api_url}/api/chat',
                 json=payload,
+                headers=headers,
                 timeout=120,
             )
             resp.raise_for_status()

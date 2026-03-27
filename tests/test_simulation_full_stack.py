@@ -6,10 +6,10 @@ Verifies that:
 2. _generate_message routes through HTTP API when full_stack=True and incoming is provided
 3. _generate_message uses direct LLM when full_stack=True but incoming is None (opener)
 4. Default behavior (full_stack=False) is unchanged — direct provider calls
-5. _check_services raises RuntimeError when API is unreachable
+5. _check_services raises RuntimeError when API is unreachable or secret is missing
 6. Celery wait delay fires after conversations in full-stack mode
 7. print_week_summary includes call_purpose breakdown in full-stack mode
-8. HTTP /api/chat endpoint processes messages and returns JSON response
+8. HTTP /api/chat endpoint requires X-Simulation-Secret header for authentication
 """
 import json
 import os
@@ -117,7 +117,7 @@ class TestFullStackGenerateMessage:
     """_generate_message routes through HTTP API in full-stack mode."""
 
     def test_full_stack_routes_through_api_when_incoming(self):
-        """With full_stack=True and incoming message, should call the API."""
+        """With full_stack=True and incoming message, should call the API with auth header."""
         runner = _make_runner(full_stack=True, api_url='http://testhost:5001')
 
         mock_response = MagicMock()
@@ -125,7 +125,8 @@ class TestFullStackGenerateMessage:
         mock_response.json.return_value = {'response': 'API reply from alice'}
         mock_response.raise_for_status = MagicMock()
 
-        with patch('requests.post', return_value=mock_response) as mock_post:
+        with patch('requests.post', return_value=mock_response) as mock_post, \
+             patch.dict(os.environ, {'SIMULATION_API_SECRET': 'test-secret-123'}):
             runner._current_conversation_id = 42
             result = runner._generate_message('alice', 'bob', incoming='Hi there')
 
@@ -138,6 +139,9 @@ class TestFullStackGenerateMessage:
         assert payload['message'] == 'Hi there'
         assert payload['companion_id'] == 'alice'
         assert payload['conversation_id'] == 42
+        # Verify auth header is sent
+        headers = call_kwargs[1]['headers']
+        assert headers['X-Simulation-Secret'] == 'test-secret-123'
 
     def test_full_stack_uses_direct_llm_for_opener(self):
         """With full_stack=True but no incoming (opener), should use direct LLM."""
@@ -207,16 +211,17 @@ class TestFullStackGenerateMessage:
 # ---------------------------------------------------------------------------
 
 class TestCheckServices:
-    """_check_services must verify API is reachable."""
+    """_check_services must verify API is reachable and secret is configured."""
 
     def test_check_services_passes_when_api_reachable(self):
-        """Should not raise when API returns 200."""
+        """Should not raise when API returns 200 and secret is set."""
         runner = _make_runner(full_stack=True)
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch('requests.get', return_value=mock_resp):
+        with patch('requests.get', return_value=mock_resp), \
+             patch.dict(os.environ, {'SIMULATION_API_SECRET': 'test-secret'}):
             # Re-run the actual check (was mocked in _make_runner)
             from scripts.simulate_relationship import SimulationRunner
             SimulationRunner._check_services(runner)
@@ -226,9 +231,21 @@ class TestCheckServices:
         runner = _make_runner(full_stack=True)
 
         import requests
-        with patch('requests.get', side_effect=requests.ConnectionError("refused")):
+        with patch('requests.get', side_effect=requests.ConnectionError("refused")), \
+             patch.dict(os.environ, {'SIMULATION_API_SECRET': 'test-secret'}):
             from scripts.simulate_relationship import SimulationRunner
             with pytest.raises(RuntimeError, match="Full-stack mode requires Docker services"):
+                SimulationRunner._check_services(runner)
+
+    def test_check_services_raises_when_secret_missing(self):
+        """Should raise RuntimeError when SIMULATION_API_SECRET is not set."""
+        runner = _make_runner(full_stack=True)
+
+        with patch.dict(os.environ, {}, clear=False):
+            # Ensure the env var is not set
+            os.environ.pop('SIMULATION_API_SECRET', None)
+            from scripts.simulate_relationship import SimulationRunner
+            with pytest.raises(RuntimeError, match="SIMULATION_API_SECRET"):
                 SimulationRunner._check_services(runner)
 
 
@@ -353,7 +370,7 @@ class TestCostBreakdownByPurpose:
 
 
 # ---------------------------------------------------------------------------
-# Tests — HTTP /api/chat endpoint
+# Tests — HTTP /api/chat endpoint authentication
 # ---------------------------------------------------------------------------
 
 # chat_routes requires flask_socketio which may not be installed in the test
@@ -367,11 +384,19 @@ except ImportError:
 
 @pytest.mark.skipif(not _HAS_SOCKETIO, reason="flask_socketio not installed")
 class TestHttpChatEndpoint:
-    """HTTP /api/chat endpoint processes messages and returns JSON."""
+    """HTTP /api/chat endpoint requires authentication and processes messages."""
 
-    def test_http_chat_returns_response(self):
-        """POST /api/chat with valid payload returns companion response."""
-        with patch('src.routes.chat_routes.get_message_processor') as mock_get_proc:
+    def _make_app(self):
+        from src.routes.chat_routes import chat_bp
+        from flask import Flask
+        app = Flask(__name__)
+        app.register_blueprint(chat_bp)
+        return app
+
+    def test_http_chat_returns_response_with_valid_secret(self):
+        """POST /api/chat with valid secret returns companion response."""
+        with patch('src.routes.chat_routes.get_message_processor') as mock_get_proc, \
+             patch.dict(os.environ, {'SIMULATION_API_SECRET': 'valid-secret'}):
             mock_processor = MagicMock()
             mock_processor.process_message.return_value = {
                 'response': 'Hello from companion!',
@@ -381,60 +406,109 @@ class TestHttpChatEndpoint:
             }
             mock_get_proc.return_value = mock_processor
 
-            from src.routes.chat_routes import chat_bp
-            from flask import Flask
-            app = Flask(__name__)
-            app.register_blueprint(chat_bp)
-
+            app = self._make_app()
             with app.test_client() as client:
-                resp = client.post('/api/chat', json={
-                    'email': 'bob@companion.local',
-                    'message': 'Hi there',
-                    'companion_id': 'alice',
-                })
+                resp = client.post('/api/chat',
+                    json={
+                        'email': 'bob@companion.local',
+                        'message': 'Hi there',
+                        'companion_id': 'alice',
+                    },
+                    headers={'X-Simulation-Secret': 'valid-secret'},
+                )
 
             assert resp.status_code == 200
             data = resp.get_json()
             assert data['response'] == 'Hello from companion!'
 
-    def test_http_chat_rejects_missing_fields(self):
-        """POST /api/chat without email or message returns 400."""
-        from src.routes.chat_routes import chat_bp
-        from flask import Flask
-        app = Flask(__name__)
-        app.register_blueprint(chat_bp)
-
-        with app.test_client() as client:
-            # Missing message
-            resp = client.post('/api/chat', json={'email': 'bob@test.com'})
-            assert resp.status_code == 400
-
-            # Missing email
-            resp = client.post('/api/chat', json={'message': 'hello'})
-            assert resp.status_code == 400
-
-            # Empty body
-            resp = client.post('/api/chat', data='not json',
-                               content_type='application/json')
-            assert resp.status_code == 400
-
-    def test_http_chat_returns_500_on_processor_error(self):
-        """POST /api/chat returns 500 when processor returns an error."""
-        with patch('src.routes.chat_routes.get_message_processor') as mock_get_proc:
-            mock_processor = MagicMock()
-            mock_processor.process_message.return_value = {'error': 'Pipeline exploded'}
-            mock_get_proc.return_value = mock_processor
-
-            from src.routes.chat_routes import chat_bp
-            from flask import Flask
-            app = Flask(__name__)
-            app.register_blueprint(chat_bp)
-
+    def test_http_chat_rejects_missing_secret(self):
+        """POST /api/chat without X-Simulation-Secret header returns 403."""
+        with patch.dict(os.environ, {'SIMULATION_API_SECRET': 'valid-secret'}):
+            app = self._make_app()
             with app.test_client() as client:
                 resp = client.post('/api/chat', json={
                     'email': 'bob@test.com',
                     'message': 'hello',
                 })
+
+            assert resp.status_code == 403
+            assert 'Unauthorized' in resp.get_json()['error']
+
+    def test_http_chat_rejects_wrong_secret(self):
+        """POST /api/chat with wrong secret returns 403."""
+        with patch.dict(os.environ, {'SIMULATION_API_SECRET': 'valid-secret'}):
+            app = self._make_app()
+            with app.test_client() as client:
+                resp = client.post('/api/chat',
+                    json={
+                        'email': 'bob@test.com',
+                        'message': 'hello',
+                    },
+                    headers={'X-Simulation-Secret': 'wrong-secret'},
+                )
+
+            assert resp.status_code == 403
+
+    def test_http_chat_returns_501_when_secret_not_configured(self):
+        """POST /api/chat returns 501 when SIMULATION_API_SECRET env var is not set."""
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('SIMULATION_API_SECRET', None)
+            app = self._make_app()
+            with app.test_client() as client:
+                resp = client.post('/api/chat',
+                    json={
+                        'email': 'bob@test.com',
+                        'message': 'hello',
+                    },
+                    headers={'X-Simulation-Secret': 'anything'},
+                )
+
+            assert resp.status_code == 501
+            assert 'not configured' in resp.get_json()['error']
+
+    def test_http_chat_rejects_missing_fields(self):
+        """POST /api/chat without email or message returns 400."""
+        with patch.dict(os.environ, {'SIMULATION_API_SECRET': 'valid-secret'}):
+            app = self._make_app()
+            with app.test_client() as client:
+                # Missing message
+                resp = client.post('/api/chat',
+                    json={'email': 'bob@test.com'},
+                    headers={'X-Simulation-Secret': 'valid-secret'},
+                )
+                assert resp.status_code == 400
+
+                # Missing email
+                resp = client.post('/api/chat',
+                    json={'message': 'hello'},
+                    headers={'X-Simulation-Secret': 'valid-secret'},
+                )
+                assert resp.status_code == 400
+
+                # Empty body
+                resp = client.post('/api/chat', data='not json',
+                    content_type='application/json',
+                    headers={'X-Simulation-Secret': 'valid-secret'},
+                )
+                assert resp.status_code == 400
+
+    def test_http_chat_returns_500_on_processor_error(self):
+        """POST /api/chat returns 500 when processor returns an error."""
+        with patch('src.routes.chat_routes.get_message_processor') as mock_get_proc, \
+             patch.dict(os.environ, {'SIMULATION_API_SECRET': 'valid-secret'}):
+            mock_processor = MagicMock()
+            mock_processor.process_message.return_value = {'error': 'Pipeline exploded'}
+            mock_get_proc.return_value = mock_processor
+
+            app = self._make_app()
+            with app.test_client() as client:
+                resp = client.post('/api/chat',
+                    json={
+                        'email': 'bob@test.com',
+                        'message': 'hello',
+                    },
+                    headers={'X-Simulation-Secret': 'valid-secret'},
+                )
 
             assert resp.status_code == 500
             assert 'Pipeline exploded' in resp.get_json()['error']
