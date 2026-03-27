@@ -82,7 +82,7 @@ services:
       # LLM Configuration
       FIREWORKS_API_KEY: '${FIREWORKS_API_KEY}'
       # FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3'  # 404 as of 2026-02-09
-      # FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2-instruct-0905'
+      # FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2p5-instruct'
       # FIREWORKS_MODEL: 'accounts/fireworks/models/qwen3-235b-a22b-instruct-2507'  # 404 as of 2026-02-15
       # FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3p2'  # timing out as of 2026-02-18
       FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3p1'
@@ -194,7 +194,7 @@ services:
       ANTHROPIC_API_KEY: '${ANTHROPIC_API_KEY}'
       FIREWORKS_API_KEY: '${FIREWORKS_API_KEY}'
       # FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3'  # 404 as of 2026-02-09
-      # FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2-instruct-0905'
+      # FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2p5-instruct'
       # FIREWORKS_MODEL: 'accounts/fireworks/models/qwen3-235b-a22b-instruct-2507'  # 404 as of 2026-02-15
       # FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3p2'  # timing out as of 2026-02-18
       FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3p1'

@@ -40,6 +40,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
 from zoneinfo import ZoneInfo
 
+from src.config.models import FIREWORKS_DEFAULT_MODEL as FIREWORKS_MODEL
 from src.database import tables as T
 
 logger = logging.getLogger(__name__)
@@ -463,7 +464,7 @@ Write the paragraph now (just the paragraph, nothing else):"""
 
         try:
             response = client.chat.completions.create(
-                model="accounts/fireworks/models/kimi-k2-instruct-0905",
+                model=FIREWORKS_MODEL,
                 max_tokens=300,
                 temperature=0.3,
                 messages=[{"role": "user", "content": prompt}]

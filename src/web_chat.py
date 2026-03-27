@@ -184,7 +184,8 @@ def initialize_autonomy_llm():
     try:
         from langchain_fireworks import ChatFireworks
 
-        model = os.getenv("AUTONOMY_MODEL", "accounts/fireworks/models/kimi-k2-instruct-0905")
+        from src.config.models import FIREWORKS_BACKGROUND_MODEL
+        model = FIREWORKS_BACKGROUND_MODEL
         api_key = os.getenv("FIREWORKS_API_KEY")
 
         if not api_key:

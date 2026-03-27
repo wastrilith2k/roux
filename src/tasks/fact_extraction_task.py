@@ -31,8 +31,8 @@ from src.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-# Use Fireworks 235B for quality extraction
-FIREWORKS_MODEL = "accounts/fireworks/models/kimi-k2-instruct-0905"
+# Use Fireworks model for quality extraction
+from src.config.models import FIREWORKS_DEFAULT_MODEL as FIREWORKS_MODEL
 
 def get_entity_grounding() -> str:
     """Get dynamic entity grounding from profile manager."""

@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Dict, Any
 from zoneinfo import ZoneInfo
 
+from src.config.models import FIREWORKS_DEFAULT_MODEL_SHORT
 from src.database import tables as T
 
 
@@ -92,7 +93,7 @@ def get_system_status() -> Dict[str, Any]:
     # LLM provider
     status['llm'] = {
         'provider': os.environ.get('LLM_PROVIDER', 'fireworks'),
-        'model': os.environ.get('FIREWORKS_MODEL', 'kimi-k2-instruct-0905').split('/')[-1]
+        'model': FIREWORKS_DEFAULT_MODEL_SHORT
     }
 
     return status

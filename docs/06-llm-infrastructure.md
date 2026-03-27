@@ -18,7 +18,7 @@ Automatic failover with exponential backoff (3 retries per provider):
 
 ```
 Default chain:
-1. Fireworks (kimi-k2-instruct-0905 or deepseek-v3p2)
+1. Fireworks (kimi-k2p5-instruct or deepseek-v3p2)
 2. Fireworks fallback model
 3. DeepSeek direct
 4. OpenAI gpt-4o-mini
@@ -31,7 +31,7 @@ Default chain:
 
 | Provider | Module | Models | Context | Notes |
 |----------|--------|--------|---------|-------|
-| Fireworks | `fireworks_provider.py` | kimi-k2-instruct-0905 (235B) | 262K | Primary production. Async via aiohttp, sync fallback. |
+| Fireworks | `fireworks_provider.py` | kimi-k2p5-instruct (235B) | 262K | Primary production. Async via aiohttp, sync fallback. |
 | Anthropic | `anthropic_provider.py` | claude-opus-4, claude-sonnet-4.5, claude-haiku-4.5 | 200K | Tool calling support. Last-resort fallback. |
 | OpenAI | `openai_provider.py` | gpt-4o, gpt-4o-mini | 128K | Embeddings, tool routing, streaming. |
 | DeepSeek | (via provider factory) | deepseek-v3 | 128K | Direct API fallback. |

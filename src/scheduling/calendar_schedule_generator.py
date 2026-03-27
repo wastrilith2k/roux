@@ -46,7 +46,7 @@ DAILY_PLANS_DIR = os.path.join(
 )
 
 # LLM model for generating schedule
-FIREWORKS_MODEL = "accounts/fireworks/models/kimi-k2-instruct-0905"
+from src.config.models import FIREWORKS_DEFAULT_MODEL as FIREWORKS_MODEL
 
 
 # ---------------------------------------------------------------------------

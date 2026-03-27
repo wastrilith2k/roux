@@ -40,7 +40,7 @@ from src.database import tables as T
 logger = logging.getLogger(__name__)
 
 # Large model for quality analysis (same as value_inference)
-FIREWORKS_MODEL = "accounts/fireworks/models/kimi-k2-instruct-0905"
+from src.config.models import FIREWORKS_DEFAULT_MODEL as FIREWORKS_MODEL
 
 
 # =============================================================================

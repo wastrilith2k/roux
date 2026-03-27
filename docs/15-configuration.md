@@ -101,7 +101,7 @@
 |----------|---------|-------------|
 | `COMPANION_REACH_OUT_INTERVAL` | `15` | Base proactive messaging interval (minutes) |
 | `COMPANION_QUALITY_THRESHOLD` | `4` | Minimum quality score before regeneration |
-| `FIREWORKS_MODEL` | `kimi-k2-instruct-0905` | Primary LLM model |
+| `FIREWORKS_MODEL` | `kimi-k2p5-instruct` | Primary LLM model |
 | `FIREWORKS_FALLBACK_MODEL` | `deepseek-v3p2` | Fallback model |
 | `IMAGE_PROVIDER` | `nanobanana` | Default image provider |
 | `IMAGE_GENERATION_DAILY_LIMIT` | `5` | Max images per day |

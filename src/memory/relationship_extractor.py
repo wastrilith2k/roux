@@ -30,6 +30,8 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 
+from src.config.models import FIREWORKS_DEFAULT_MODEL as FIREWORKS_MODEL
+
 logger = logging.getLogger(__name__)
 
 
@@ -203,7 +205,7 @@ Extract relationships now (JSON only):"""
             client = self._get_client()
 
             response = client.chat.completions.create(
-                model="accounts/fireworks/models/kimi-k2-instruct-0905",
+                model=FIREWORKS_MODEL,
                 max_tokens=500,
                 temperature=0.1,  # Low temp for accurate extraction
                 messages=[{

@@ -42,6 +42,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, asdict
 from zoneinfo import ZoneInfo
 
+from src.config.models import FIREWORKS_DEFAULT_MODEL as FIREWORKS_MODEL
 from src.database import tables as T
 
 logger = logging.getLogger(__name__)
@@ -190,7 +191,7 @@ Respond with ONLY the JSON array:"""
         try:
             client = self._get_fireworks_client()
             response = client.chat.completions.create(
-                model="accounts/fireworks/models/kimi-k2-instruct-0905",
+                model=FIREWORKS_MODEL,
                 max_tokens=1500,
                 temperature=0.4,
                 messages=[{"role": "user", "content": prompt}]

@@ -30,6 +30,8 @@ import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
+from src.config.models import FIREWORKS_DEFAULT_MODEL as FIREWORKS_MODEL
+
 logger = logging.getLogger(__name__)
 
 
@@ -207,7 +209,7 @@ Return as JSON array only:
 
             import re
             response = client.chat.completions.create(
-                model="accounts/fireworks/models/kimi-k2-instruct-0905",
+                model=FIREWORKS_MODEL,
                 max_tokens=800,
                 temperature=0.85,
                 messages=[{"role": "user", "content": prompt}]
@@ -297,7 +299,7 @@ Return JSON array with ALL projects (updated + any new ones):
 ]"""
 
             response = client.chat.completions.create(
-                model="accounts/fireworks/models/kimi-k2-instruct-0905",
+                model=FIREWORKS_MODEL,
                 max_tokens=800,
                 temperature=0.7,
                 messages=[{"role": "user", "content": prompt}]

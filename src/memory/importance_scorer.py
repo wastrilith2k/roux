@@ -19,8 +19,8 @@ from typing import Optional, List, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Use Fireworks 235B model for quality scoring
-FIREWORKS_MODEL = "accounts/fireworks/models/kimi-k2-instruct-0905"
+# Use Fireworks model for quality scoring
+from src.config.models import FIREWORKS_DEFAULT_MODEL as FIREWORKS_MODEL
 
 IMPORTANCE_PROMPT = """Rate how important this fact is for understanding a person's identity and life story.
 

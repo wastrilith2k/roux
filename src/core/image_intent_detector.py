@@ -46,8 +46,8 @@ IMAGE_GENERATION_ENABLED = os.environ.get('IMAGE_GENERATION_ENABLED', 'true').lo
 IMAGE_GENERATION_DAILY_LIMIT = int(os.environ.get('IMAGE_GENERATION_DAILY_LIMIT', '5'))
 SKETCH_DAILY_LIMIT = int(os.environ.get('SKETCH_DAILY_LIMIT', '1'))
 
-# Use Fireworks 235B model for quality detection
-FIREWORKS_MODEL = "accounts/fireworks/models/kimi-k2-instruct-0905"
+# Use Fireworks model for quality detection
+from src.config.models import FIREWORKS_DEFAULT_MODEL as FIREWORKS_MODEL
 
 
 class ImageIntentType(Enum):
