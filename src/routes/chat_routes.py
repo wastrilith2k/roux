@@ -1232,11 +1232,45 @@ def register_socketio_handlers(socketio):
 @chat_bp.route('/api/chat', methods=['POST'])
 def http_chat():
     """
-    HTTP chat endpoint (legacy/fallback for non-WebSocket clients).
+    HTTP chat endpoint for non-WebSocket clients (e.g., simulation full-stack mode).
 
-    Returns 400 with message directing to WebSocket.
+    Expects JSON body:
+        - email: User email (required)
+        - message: Message text (required)
+        - companion_id: Companion ID for response generation (optional)
+        - conversation_id: Conversation ID (optional)
+
+    Returns JSON:
+        - response: Companion's full response text
+        - messages: Split messages (if multi-message)
+        - timestamp: Response timestamp
+        - processing_time: Time taken to generate response
     """
-    return {'error': 'Use WebSocket connection for chat'}, 400
+    from flask import jsonify
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({'error': 'JSON body required'}), 400
+
+    email = data.get('email', '').strip()
+    message = data.get('message', '').strip()
+    if not email or not message:
+        return jsonify({'error': 'email and message are required'}), 400
+
+    # Inject companion_id if provided
+    if data.get('companion_id'):
+        data['companion_id'] = data['companion_id']
+
+    processor = get_message_processor()
+    result = processor.process_message(data, email, sid='http')
+
+    if not result:
+        return jsonify({'error': 'Failed to process message'}), 500
+
+    if 'error' in result:
+        return jsonify({'error': result['error']}), 500
+
+    return jsonify(result), 200
 
 
 @chat_bp.route('/api/history', methods=['GET'])

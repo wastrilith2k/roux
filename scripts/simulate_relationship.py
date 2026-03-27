@@ -115,13 +115,18 @@ class SimulationRunner:
     schedules, and temporal context work correctly.
     """
 
-    def __init__(self, companions: list, start_day: int = 0, with_analysis: bool = False, config_path: str = None):
+    def __init__(self, companions: list, start_day: int = 0, with_analysis: bool = False,
+                 config_path: str = None, full_stack: bool = False,
+                 api_url: str = 'http://localhost:5001', celery_wait: int = 5):
         """
         Args:
             companions: list of companion_ids, e.g. ["kai", "mira"]
             start_day: resume from this day (0 = beginning)
             with_analysis: run MessageAnalyzer after each message (doubles LLM calls)
             config_path: path to simulation config YAML
+            full_stack: route messages through the HTTP API for realistic cost tracking
+            api_url: base URL for the HTTP API (default: http://localhost:5001)
+            celery_wait: seconds to wait after each conversation for Celery tasks (default: 5)
         """
         from src.core.clock import SimulationClock, set_clock
         self.project_root = find_project_root()
@@ -134,6 +139,9 @@ class SimulationRunner:
         self.start_day = start_day
         self.with_analysis = with_analysis
         self._config_path = config_path
+        self.full_stack = full_stack
+        self.api_url = api_url.rstrip('/')
+        self.celery_wait = celery_wait
         self.checkpoint_dir = self.project_root / 'checkpoints'
         self.checkpoint_dir.mkdir(exist_ok=True)
         self.emitter = SimulationEventEmitter()
@@ -157,6 +165,10 @@ class SimulationRunner:
 
         # Ensure user profiles exist for simulation emails (required by FK constraint)
         self._ensure_user_profiles()
+
+        # Full-stack mode: verify Docker services are reachable
+        if self.full_stack:
+            self._check_services()
 
         # Cost tracking accumulators
         self._day_tokens = {'input': 0, 'output': 0}
@@ -338,6 +350,54 @@ class SimulationRunner:
             logger.info("Simulation user profiles ensured")
         except Exception as e:
             logger.error(f"Failed to create user profiles: {e}")
+
+    def _check_services(self):
+        """Verify that required Docker services are reachable for full-stack mode."""
+        import requests
+        try:
+            resp = requests.get(f'{self.api_url}/api/health', timeout=5)
+            if resp.status_code == 200:
+                logger.info(f"Full-stack mode: API reachable at {self.api_url}")
+            else:
+                logger.warning(f"Full-stack mode: API returned status {resp.status_code}")
+        except requests.ConnectionError:
+            raise RuntimeError(
+                f"Full-stack mode requires Docker services running. "
+                f"Could not connect to {self.api_url}. "
+                f"Start services with: docker compose up -d"
+            )
+
+    def _generate_message_via_api(self, speaker: str, listener: str, incoming: str) -> str:
+        """Generate a message by routing through the HTTP API (full-stack mode).
+
+        The speaker is the companion generating the response; the listener's
+        message (incoming) is sent as the 'user' message to the API.
+        """
+        import requests
+
+        email = f"{listener}@companion.local"
+        conv_id = getattr(self, '_current_conversation_id', None)
+
+        payload = {
+            'email': email,
+            'message': incoming,
+            'companion_id': speaker,
+        }
+        if conv_id is not None:
+            payload['conversation_id'] = conv_id
+
+        try:
+            resp = requests.post(
+                f'{self.api_url}/api/chat',
+                json=payload,
+                timeout=120,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            return result.get('response', '').strip()
+        except Exception as e:
+            logger.error(f"Full-stack API call failed for {speaker}: {e}")
+            return f"[generation failed: {e}]"
 
     def _track_simulation_cost(self, provider, model: str, companion_id: str):
         """Record token usage and cost from the last provider call."""
@@ -576,9 +636,16 @@ class SimulationRunner:
 
         self.emitter.emit('sim:conversation_end', {})
 
-        # Post-conversation processing — extract facts, relationships, curiosity
-        # This runs the same logic as Celery tasks but inline
-        self._process_conversation(initiator, responder, conv_id, self._current_conv_email)
+        if self.full_stack:
+            # In full-stack mode, Celery tasks are fired by the pipeline automatically.
+            # Wait for background tasks to complete before moving on.
+            import time
+            logger.info(f"    Waiting {self.celery_wait}s for Celery background tasks...")
+            time.sleep(self.celery_wait)
+        else:
+            # Post-conversation processing — extract facts, relationships, curiosity
+            # This runs the same logic as Celery tasks but inline
+            self._process_conversation(initiator, responder, conv_id, self._current_conv_email)
 
     def _process_conversation(self, initiator: str, responder: str, conv_id: int, user_email: str = None):
         """Run post-conversation processing inline (normally done by Celery tasks).
@@ -719,7 +786,16 @@ class SimulationRunner:
             return ""
 
     def _generate_message(self, speaker: str, listener: str, incoming: str = None, exchange: dict = None) -> str:
-        """Generate a message using the companion's full pipeline."""
+        """Generate a message using the companion's full pipeline.
+
+        In full-stack mode with an incoming message, routes through the HTTP API
+        so that all background Celery tasks (fact extraction, curiosity, episodes,
+        etc.) fire naturally and their LLM costs are tracked.
+        """
+        # Full-stack mode: route through HTTP API when there's an incoming message
+        if self.full_stack and incoming:
+            return self._generate_message_via_api(speaker, listener, incoming)
+
         try:
             from src.config.persona_config import get_persona_config
             config = get_persona_config(companion_id=speaker)
@@ -1142,6 +1218,23 @@ You communicate via {comm_device}. {comm_style}
         print(f"  Total tokens: {total_tokens} ({self._total_tokens['input']} in / {self._total_tokens['output']} out)")
         print(f"  Estimated cost: ${self._total_cost:.4f}")
 
+        # Full-stack mode: show cost breakdown by call_purpose from the cost tracker
+        if self.full_stack:
+            try:
+                from src.services.cost_tracker import get_cost_tracker
+                tracker = get_cost_tracker()
+                for cid in self.companions:
+                    breakdown = tracker.get_cost_breakdown_by_purpose(
+                        user_id=f"{cid}@companion.local",
+                        companion_id=cid,
+                    )
+                    if breakdown:
+                        print(f"\n  Cost by purpose ({cid}):")
+                        for entry in sorted(breakdown, key=lambda e: e['total_cost'], reverse=True):
+                            print(f"    {entry['call_purpose']}: ${entry['total_cost']:.4f} ({entry['call_count']} calls)")
+            except Exception as e:
+                logger.debug(f"Could not fetch cost breakdown by purpose: {e}")
+
         print(f"\n{'='*60}")
         print(f"Review complete. Run --week {week_number + 1} to continue.")
         print(f"Run --rollback week{week_number} to redo this week.")
@@ -1220,6 +1313,12 @@ def main():
                         help='Path to simulation config YAML (default: instances/simulation_config.yaml)')
     parser.add_argument('--with-analysis', action='store_true',
                         help='Run MessageAnalyzer after each message (doubles LLM calls)')
+    parser.add_argument('--full-stack', action='store_true',
+                        help='Route messages through the HTTP API for realistic cost/usage data')
+    parser.add_argument('--api-url', type=str, default='http://localhost:5001',
+                        help='Base URL for the HTTP API (default: http://localhost:5001)')
+    parser.add_argument('--celery-wait', type=int, default=5,
+                        help='Seconds to wait after each conversation for Celery tasks (default: 5)')
     args = parser.parse_args()
 
     project_root = find_project_root()
@@ -1233,7 +1332,12 @@ def main():
         rollback_checkpoint(args.rollback, project_root)
     elif args.week:
         start_day = (args.week - 1) * 7
-        runner = SimulationRunner(companions=args.companions, start_day=start_day, with_analysis=args.with_analysis, config_path=args.config)
+        runner = SimulationRunner(
+            companions=args.companions, start_day=start_day,
+            with_analysis=args.with_analysis, config_path=args.config,
+            full_stack=args.full_stack, api_url=args.api_url,
+            celery_wait=args.celery_wait,
+        )
         runner.run_week(args.week)
     elif args.summary:
         runner = SimulationRunner(companions=args.companions, config_path=args.config)
