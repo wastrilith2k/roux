@@ -26,6 +26,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
@@ -163,17 +164,36 @@ def _search_all(query: str, user_email: str, time_range: str, limit: int) -> Lis
     return results[:limit]
 
 
+def _time_range_to_since(time_range: str) -> datetime | None:
+    """Convert a time_range enum value to a UTC datetime cutoff."""
+    if time_range == "all":
+        return None
+    now = datetime.now(timezone.utc)
+    deltas = {
+        "recent": timedelta(days=3),
+        "last_week": timedelta(weeks=1),
+        "last_month": timedelta(days=30),
+        "last_year": timedelta(days=365),
+    }
+    delta = deltas.get(time_range)
+    if delta is None:
+        return None
+    return now - delta
+
+
 def _search_conversations(query: str, user_email: str, time_range: str, limit: int) -> List[str]:
     """Search past conversations via pgvector semantic search."""
     try:
         from src.memory.semantic_search import search_memory as pgvector_search
 
         min_similarity = 0.3
+        since = _time_range_to_since(time_range)
         results = pgvector_search(
             query=query,
             email=user_email,
             limit=limit,
-            min_similarity=min_similarity
+            min_similarity=min_similarity,
+            since=since
         )
 
         formatted = []

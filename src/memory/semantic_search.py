@@ -132,7 +132,8 @@ def _update_last_retrieved_at(message_ids: List[int]) -> None:
 
 
 def search_memory(query: str, email: str = None, limit: int = 10,
-                  min_similarity: float = 0.5, use_reranking: bool = None) -> List[Dict]:
+                  min_similarity: float = 0.5, use_reranking: bool = None,
+                  since: Optional[datetime] = None) -> List[Dict]:
     """
     Search conversation history for messages semantically similar to a query.
 
@@ -150,6 +151,7 @@ def search_memory(query: str, email: str = None, limit: int = 10,
         limit: Max number of results to return
         min_similarity: Minimum cosine similarity threshold (0-1)
         use_reranking: Override ENABLE_RERANKING setting
+        since: Optional - only return messages with timestamp >= this value
 
     Returns:
         List of messages with similarity scores, ordered by relevance
@@ -172,7 +174,8 @@ def search_memory(query: str, email: str = None, limit: int = 10,
             query_embedding=query_embedding,
             email=email,
             limit=fetch_limit,
-            min_similarity=min_similarity
+            min_similarity=min_similarity,
+            since=since
         )
 
         if not results:

@@ -1164,7 +1164,8 @@ class CompanionDB:
     # ==================== VECTOR SEARCH METHODS ====================
 
     def search_similar_messages(self, query_embedding: List[float], email: str = None,
-                                limit: int = 10, min_similarity: float = 0.5) -> List[Dict]:
+                                limit: int = 10, min_similarity: float = 0.5,
+                                since: 'datetime | None' = None) -> List[Dict]:
         """
         Find messages semantically similar to a query embedding using pgvector.
 
@@ -1173,6 +1174,7 @@ class CompanionDB:
             email: Optional - filter to specific user's messages
             limit: Max number of results
             min_similarity: Minimum cosine similarity threshold (0-1)
+            since: Optional - only return messages with timestamp >= this value
 
         Returns:
             List of messages with similarity scores, most similar first
@@ -1183,29 +1185,33 @@ class CompanionDB:
             # Convert embedding list to pgvector format
             embedding_str = '[' + ','.join(str(x) for x in query_embedding) + ']'
 
+            # Build dynamic WHERE clauses and params
+            conditions = ["embedding_vec IS NOT NULL"]
+            params = [embedding_str]
+
             if email:
-                cursor.execute(f'''
-                    SELECT
-                        id, sender_name, message_text, timestamp, email,
-                        1 - (embedding_vec <=> %s::vector) as similarity
-                    FROM {T.MESSAGES}
-                    WHERE embedding_vec IS NOT NULL
-                      AND email = %s
-                      AND 1 - (embedding_vec <=> %s::vector) >= %s
-                    ORDER BY embedding_vec <=> %s::vector
-                    LIMIT %s
-                ''', (embedding_str, email, embedding_str, min_similarity, embedding_str, limit))
-            else:
-                cursor.execute(f'''
-                    SELECT
-                        id, sender_name, message_text, timestamp, email,
-                        1 - (embedding_vec <=> %s::vector) as similarity
-                    FROM {T.MESSAGES}
-                    WHERE embedding_vec IS NOT NULL
-                      AND 1 - (embedding_vec <=> %s::vector) >= %s
-                    ORDER BY embedding_vec <=> %s::vector
-                    LIMIT %s
-                ''', (embedding_str, embedding_str, min_similarity, embedding_str, limit))
+                conditions.append("email = %s")
+                params.append(email)
+
+            conditions.append("1 - (embedding_vec <=> %s::vector) >= %s")
+            params.extend([embedding_str, min_similarity])
+
+            if since is not None:
+                conditions.append("timestamp >= %s")
+                params.append(since)
+
+            where_clause = " AND ".join(conditions)
+            params.extend([embedding_str, limit])
+
+            cursor.execute(f'''
+                SELECT
+                    id, sender_name, message_text, timestamp, email,
+                    1 - (embedding_vec <=> %s::vector) as similarity
+                FROM {T.MESSAGES}
+                WHERE {where_clause}
+                ORDER BY embedding_vec <=> %s::vector
+                LIMIT %s
+            ''', tuple(params))
 
             results = []
             for row in cursor.fetchall():
