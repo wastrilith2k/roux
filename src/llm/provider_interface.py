@@ -53,6 +53,15 @@ class LLMProvider(ABC):
         """
         pass
 
+    def get_last_usage(self) -> Dict:
+        """
+        Return usage stats from the last generate call.
+
+        Returns:
+            Dict with 'input_tokens' and 'output_tokens' (both int, default 0)
+        """
+        return getattr(self, '_last_usage', {})
+
     def supports_streaming(self) -> bool:
         """
         Whether this provider supports streaming responses.

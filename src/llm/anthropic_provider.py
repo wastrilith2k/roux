@@ -43,6 +43,7 @@ class AnthropicProvider(LLMProvider):
         self.client = anthropic.AsyncAnthropic(api_key=api_key)
         self.sync_client = anthropic.Anthropic(api_key=api_key)
         self.context_limit = self.CONTEXT_LIMITS.get(model, 200000)
+        self._last_usage = {}
 
     async def generate(
         self,
@@ -81,6 +82,10 @@ class AnthropicProvider(LLMProvider):
 
             response = await self.client.messages.create(**request_params)
 
+            self._last_usage = {
+                'input_tokens': response.usage.input_tokens if response.usage else 0,
+                'output_tokens': response.usage.output_tokens if response.usage else 0,
+            }
             return response.content[0].text
 
         except Exception as e:
@@ -139,6 +144,11 @@ class AnthropicProvider(LLMProvider):
                 request_params["tools"] = tools
 
             response = self.sync_client.messages.create(**request_params)
+
+            self._last_usage = {
+                'input_tokens': response.usage.input_tokens if response.usage else 0,
+                'output_tokens': response.usage.output_tokens if response.usage else 0,
+            }
 
             # Check if response contains tool use
             for block in response.content:

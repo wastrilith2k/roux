@@ -265,6 +265,7 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
             PipelineResult with response and metadata
         """
         start_time = time.time()
+        self._current_user_email = user_email
         is_proactive_msg = extra_context.get('is_proactive_message', False) if extra_context else False
 
         # Initialize profiler if enabled
@@ -528,6 +529,19 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
             tool_calls_made = []  # Track any tool calls
             quality_score = None
 
+            # Budget enforcement: warn if over budget (non-blocking)
+            try:
+                from src.services.cost_tracker import get_cost_tracker as _get_ct
+                _budget = _get_ct().check_budget(user_email)
+                if not _budget['allowed']:
+                    logger.warning(
+                        f"Budget exceeded for {user_email}: "
+                        f"${_budget['spent']:.2f} / ${_budget['budget']:.2f} "
+                        f"({_budget['percentage']:.0f}%)"
+                    )
+            except Exception as e:
+                logger.debug(f"Budget check failed (non-fatal): {e}")
+
             # Start LLM profiling stage (covers call + tool execution + validation loop)
             _llm_stage = profiler.stage("llm_call") if profiler else None
             if _llm_stage:
@@ -555,6 +569,9 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                         tool_calls_made.extend(memory_calls)
                 else:
                     response, model = self._call_llm(current_prompt, user_message, conversation_turns)
+
+                # Track cost for this LLM call
+                self._track_llm_cost(user_email, model)
 
                 # Step 4: Post-generation validation
                 # Fast path skips validation — simple messages rarely have contradiction risk
@@ -1396,7 +1413,53 @@ Just write the message itself, nothing else.
             chain=chain
         )
 
+        # Store usage data for cost tracking (consumed by process())
+        self._last_chain_usage = chain.get_last_usage()
+        self._last_chain_provider_type = chain.get_last_provider_type()
+
         return response_text, chain.get_model_name()
+
+    def _track_llm_cost(self, user_email: str, model: str):
+        """Record the cost of the last LLM call to the unified cost tracker.
+
+        Reads usage data stored by _call_llm / _call_llm_with_memory_tool /
+        _call_llm_with_tools and writes a row to the appropriate usage table.
+        """
+        usage = getattr(self, '_last_chain_usage', None)
+        if not usage:
+            return
+
+        provider_type = getattr(self, '_last_chain_provider_type', 'unknown')
+        input_tokens = usage.get('input_tokens', 0)
+        output_tokens = usage.get('output_tokens', 0)
+
+        if input_tokens == 0 and output_tokens == 0:
+            return
+
+        try:
+            from src.services.cost_tracker import get_cost_tracker
+            tracker = get_cost_tracker()
+
+            if provider_type == 'fireworks':
+                tracker.track_fireworks_call(
+                    user_id=user_email,
+                    prompt_tokens=input_tokens,
+                    completion_tokens=output_tokens,
+                    model=model,
+                )
+            elif provider_type == 'openai':
+                tracker.track_openai_call(
+                    user_id=user_email,
+                    prompt_tokens=input_tokens,
+                    completion_tokens=output_tokens,
+                    service_type='chat',
+                    model=model,
+                )
+            # Anthropic / Ollama / unknown — no tracking table yet
+        except Exception as e:
+            logger.debug(f"Cost tracking failed (non-fatal): {e}")
+        finally:
+            self._last_chain_usage = None
 
     def _call_llm_with_memory_tool(
         self,
@@ -1469,6 +1532,21 @@ Just write the message itself, nothing else.
                 logger.warning(f"Memory tool LLM call failed: {e}, falling back to standard")
                 response, model = self._call_llm(system_prompt, user_message, conversation_turns)
                 return response, model, memory_tool_calls
+
+            # Track OpenAI tool-call cost
+            tool_usage = provider.get_last_usage()
+            if tool_usage.get('input_tokens', 0) or tool_usage.get('output_tokens', 0):
+                try:
+                    from src.services.cost_tracker import get_cost_tracker
+                    get_cost_tracker().track_openai_call(
+                        user_id=user_email,
+                        prompt_tokens=tool_usage.get('input_tokens', 0),
+                        completion_tokens=tool_usage.get('output_tokens', 0),
+                        service_type='tool_detection',
+                        model=provider.get_model_name(),
+                    )
+                except Exception as e:
+                    logger.debug(f"Cost tracking failed (non-fatal): {e}")
 
             # If the LLM returned text, it's done (no tool call needed)
             if isinstance(response, str):
@@ -1741,6 +1819,18 @@ Just write the message itself, nothing else.
                         output_tokens=usage.get("output_tokens", 0),
                         purpose="tool_call"
                     )
+                    # Also record in unified cost tracker
+                    try:
+                        from src.services.cost_tracker import get_cost_tracker as get_unified_tracker
+                        get_unified_tracker().track_openai_call(
+                            user_id=getattr(self, '_current_user_email', 'unknown'),
+                            prompt_tokens=usage.get("input_tokens", 0),
+                            completion_tokens=usage.get("output_tokens", 0),
+                            service_type='tool_detection',
+                            model=provider.get_model_name(),
+                        )
+                    except Exception as e:
+                        logger.debug(f"Cost tracking failed (non-fatal): {e}")
 
                 logger.info(f"Tool call requested: {tool_name}")
 
