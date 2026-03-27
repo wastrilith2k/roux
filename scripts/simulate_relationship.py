@@ -155,6 +155,13 @@ class SimulationRunner:
         # Ensure user profiles exist for simulation emails (required by FK constraint)
         self._ensure_user_profiles()
 
+        # Cost tracking accumulators
+        self._day_tokens = {'input': 0, 'output': 0}
+        self._day_cost = 0.0
+        self._total_tokens = {'input': 0, 'output': 0}
+        self._total_cost = 0.0
+        self._day_costs = []  # list of (day_number, input_tokens, output_tokens, cost)
+
         # Internal state for each companion (mood, energy, scene)
         self.states = {}
         for cid in companions:
@@ -298,6 +305,48 @@ class SimulationRunner:
         except Exception as e:
             logger.error(f"Failed to create user profiles: {e}")
 
+    def _track_simulation_cost(self, provider, model: str, companion_id: str):
+        """Record token usage and cost from the last provider call."""
+        usage = provider.get_last_usage()
+        if not usage:
+            return
+        input_tokens = usage.get('input_tokens', 0)
+        output_tokens = usage.get('output_tokens', 0)
+        if not input_tokens and not output_tokens:
+            return
+
+        try:
+            from src.services.cost_tracker import get_cost_tracker
+            tracker = get_cost_tracker()
+            cost = tracker.track_openrouter_call(
+                user_id=f"{companion_id}@simulation",
+                prompt_tokens=input_tokens,
+                completion_tokens=output_tokens,
+                model=model,
+            )
+        except Exception as e:
+            logger.debug(f"Cost tracking failed: {e}")
+            cost = 0.0
+
+        self._day_tokens['input'] += input_tokens
+        self._day_tokens['output'] += output_tokens
+        self._day_cost += cost
+        self._total_tokens['input'] += input_tokens
+        self._total_tokens['output'] += output_tokens
+        self._total_cost += cost
+
+    def _reset_day_cost(self):
+        """Reset per-day accumulators and record the day's totals."""
+        if self._day_tokens['input'] or self._day_tokens['output']:
+            self._day_costs.append((
+                getattr(self, '_current_day', 0),
+                self._day_tokens['input'],
+                self._day_tokens['output'],
+                self._day_cost,
+            ))
+        self._day_tokens = {'input': 0, 'output': 0}
+        self._day_cost = 0.0
+
     def run_week(self, week_number: int):
         """Run one week (7 days), then stop for review."""
         start_day = (week_number - 1) * 7
@@ -412,6 +461,11 @@ class SimulationRunner:
                     self._run_value_inference(cid)
                 except Exception as e:
                     logger.warning(f"  [{cid}] value_inference failed: {e}")
+
+        # Log and reset per-day cost accumulators
+        if self._day_tokens['input'] or self._day_tokens['output']:
+            logger.info(f"  Day {day + 1} tokens: {self._day_tokens['input']} in / {self._day_tokens['output']} out  (${self._day_cost:.4f})")
+        self._reset_day_cost()
 
         # Reset clock to next morning (7 AM) for the following day
         self.clock.set(self.clock.now().replace(hour=7, minute=0, second=0))
@@ -605,6 +659,7 @@ class SimulationRunner:
                 base_url='https://openrouter.ai/api/v1',
                 context_limit=131072
             )
+            summary_model = self.MODEL_ROTATION[0] if self.MODEL_ROTATION else 'nvidia/nemotron-3-super-120b-a12b:free'
             summary = provider.generate_sync(
                 messages=[
                     {"role": "system", "content": "Summarize these recent conversations in 2-3 brief bullet points. These are messages from multiple different conversations with different people. Note who said what and any important information shared. Be concise."},
@@ -613,6 +668,7 @@ class SimulationRunner:
                 max_tokens=self.SUMMARY_MAX_TOKENS,
                 temperature=self.SUMMARY_TEMPERATURE,
             )
+            self._track_simulation_cost(provider, summary_model, speaker)
             result = summary.strip() if isinstance(summary, str) else ""
             return result
         except Exception as e:
@@ -803,6 +859,7 @@ You communicate via {comm_device}. {comm_style}
                 max_tokens=self.LLM_MAX_TOKENS,
                 temperature=self.LLM_TEMPERATURE,
             )
+            self._track_simulation_cost(provider, model, speaker)
 
             result = response.strip() if isinstance(response, str) else ""
             # Strip leaked character name prefixes like "Thorne:" or "**Grimble:**"
@@ -1019,6 +1076,16 @@ You communicate via {comm_device}. {comm_style}
                     print(f"  Curiosities: none yet")
             except Exception:
                 print(f"  Curiosities: (unavailable)")
+
+        # Token and cost summary
+        print(f"\n--- COST SUMMARY ---")
+        if self._day_costs:
+            print(f"  Per-day breakdown:")
+            for day_num, t_in, t_out, cost in self._day_costs:
+                print(f"    Day {day_num}: {t_in} in / {t_out} out  (${cost:.4f})")
+        total_tokens = self._total_tokens['input'] + self._total_tokens['output']
+        print(f"  Total tokens: {total_tokens} ({self._total_tokens['input']} in / {self._total_tokens['output']} out)")
+        print(f"  Estimated cost: ${self._total_cost:.4f}")
 
         print(f"\n{'='*60}")
         print(f"Review complete. Run --week {week_number + 1} to continue.")
