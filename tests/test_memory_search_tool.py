@@ -456,9 +456,9 @@ class TestMemoryValidationAgentIntegration:
         ]
 
         formatted = agent._format_records(records)
-        assert "[conversation]" in formatted[0]
-        assert "[search]" in formatted[1]
-        assert "[fact]" in formatted[2]
+        assert "[FROM PAST CONVERSATION]" in formatted[0]
+        assert "[FROM PAST CONVERSATION]" in formatted[1]
+        assert "[VERIFIED FACT]" in formatted[2]
 
 
 # =========================================================================

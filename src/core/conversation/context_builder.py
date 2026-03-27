@@ -94,12 +94,55 @@ class ConversationContext:
         if self.conversation_turns is None:
             self.conversation_turns = []
 
+    # Provenance tags — help the LLM distinguish memory types (issue #24).
+    # Each tag is prepended to the section content so the model can attribute
+    # information correctly and avoid presenting simulated/inferred content
+    # as genuine memories.
+    PROVENANCE_TAGS = {
+        # Verified — from actual interactions or ground truth
+        'entity_profiles': '[VERIFIED FACT]',
+        'memories': '[FROM PAST CONVERSATION]',
+        'conversation_history': '[CURRENT SESSION]',
+        'core_memory': '[YOUR CURATED MEMORY]',
+        'graphiti_context': '[KNOWLEDGE GRAPH — VERIFIED]',
+        'episode_context': '[PAST EPISODE — VERIFIED]',
+        'observations_context': '[YOUR OBSERVATION — FROM CONVERSATIONS]',
+        'biographies': '[BIOGRAPHICAL SUMMARY — DERIVED FROM FACTS]',
+
+        # Inferred — LLM-generated, may not reflect reality
+        'opinions_context': '[YOUR OPINION — INFERRED, NOT STATED BY USER]',
+        'values_context': '[INFERRED VALUES — NOT DIRECTLY OBSERVED]',
+        'reflections_context': '[YOUR REFLECTION — INTERNAL THOUGHT]',
+        'curiosity_context': '[YOUR CURIOSITY — INTERNAL THOUGHT]',
+
+        # Simulated — not real events
+        'activities_context': '[SIMULATED ACTIVITY — NOT A REAL EVENT]',
+        'user_context': '[INFERRED USER STATE — GUESS BASED ON TIME]',
+        'fertility_context': '[BIOLOGICAL TRACKING — PRIVATE]',
+
+        # Static — personality/config
+        'personality': '[YOUR PERSONALITY]',
+        'relationship_dynamics': '[RELATIONSHIP STATE — COMPUTED]',
+        'relationship_evaluation': '[RELATIONSHIP EVALUATION — COMPUTED]',
+        'relationship_insights': '[RELATIONSHIP INSIGHTS — COMPUTED]',
+        'schedule': '[SCHEDULE/CALENDAR]',
+        'goals_context': '[YOUR GOALS]',
+        'scene_state': '[CURRENT SCENE]',
+        'internal_state': '[YOUR INTERNAL STATE]',
+        'temporal_context': '[RECENT EVENTS — VERIFIED]',
+        'synthesized_events': '[EVENT NARRATIVE — DERIVED]',
+        'session_summary': '[SESSION SUMMARY — COMPRESSED]',
+    }
+
     def to_prompt_sections(self) -> Dict[str, str]:
         """Return non-empty sections as dict for prompt assembly.
 
         Each section is truncated to its per-source token budget
         (see token_budget.py) so that no single source can dominate
         the prompt. Truncation is sentence-boundary-aware.
+
+        Provenance tags (issue #24) are prepended to each section so the
+        LLM can distinguish verified facts from inferred/simulated content.
         """
         from .token_budget import apply_source_budgets
 
@@ -154,6 +197,12 @@ class ConversationContext:
             sections['biographies'] = self.biographies
         if self.conversation_history:
             sections['conversation_history'] = self.conversation_history
+
+        # Prepend provenance tags (issue #24)
+        for name in list(sections):
+            tag = self.PROVENANCE_TAGS.get(name)
+            if tag:
+                sections[name] = f"{tag}\n{sections[name]}"
 
         # Apply per-source token budgets (sentence-boundary truncation)
         return apply_source_budgets(sections)
