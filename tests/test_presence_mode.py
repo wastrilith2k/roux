@@ -453,3 +453,103 @@ class TestPresenceModeTokenBudget:
     def test_presence_mode_in_tier_1(self):
         from src.core.conversation.token_budget import TIER_1
         assert 'presence_mode' in TIER_1
+
+
+# =========================================================================
+# Regression: Issue #67 — companion_id filter in queries
+# =========================================================================
+
+class TestPresenceModeCompanionIdFilter:
+    """Ensure PresenceModeManager filters by companion_id in all queries.
+
+    Issue #67: scene_state has a composite UNIQUE(user_email, companion_id).
+    Without filtering by companion_id, queries could match the wrong row
+    in multi-companion setups.
+    """
+
+    def _make_manager_with_mock_db(self, execute_return=None):
+        manager = PresenceModeManager()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = execute_return
+        mock_db = MagicMock()
+        mock_db.execute.return_value = mock_result
+        manager._db = mock_db
+        return manager, mock_db
+
+    def test_get_query_includes_companion_id_filter(self):
+        """get_presence_mode SQL must contain 'companion_id' in WHERE clause."""
+        manager, mock_db = self._make_manager_with_mock_db(execute_return=None)
+        manager.get_presence_mode("test@example.com")
+
+        query = mock_db.execute.call_args[0][0]
+        assert 'companion_id' in query, (
+            f"Expected companion_id filter in query, got: {query}"
+        )
+
+    def test_get_passes_default_companion_id(self):
+        """get_presence_mode passes 'default' companion_id when not specified."""
+        manager, mock_db = self._make_manager_with_mock_db(execute_return=None)
+        manager.get_presence_mode("test@example.com")
+
+        params = mock_db.execute.call_args[0][1]
+        assert 'default' in params, (
+            f"Expected 'default' in query params, got: {params}"
+        )
+
+    def test_get_passes_custom_companion_id(self):
+        """get_presence_mode forwards a custom companion_id to the query."""
+        manager, mock_db = self._make_manager_with_mock_db(execute_return=None)
+        manager.get_presence_mode("test@example.com", companion_id="companion-2")
+
+        params = mock_db.execute.call_args[0][1]
+        assert 'companion-2' in params, (
+            f"Expected 'companion-2' in query params, got: {params}"
+        )
+
+    def test_set_query_includes_companion_id_filter(self):
+        """set_presence_mode SQL must contain 'companion_id' in WHERE clause."""
+        manager, mock_db = self._make_manager_with_mock_db(
+            execute_return={'user_email': 'test@example.com'}
+        )
+        manager.set_presence_mode("test@example.com", PresenceMode.TEXTING)
+
+        query = mock_db.execute.call_args[0][0]
+        assert 'companion_id' in query, (
+            f"Expected companion_id filter in query, got: {query}"
+        )
+
+    def test_set_passes_default_companion_id(self):
+        """set_presence_mode passes 'default' companion_id when not specified."""
+        manager, mock_db = self._make_manager_with_mock_db(
+            execute_return={'user_email': 'test@example.com'}
+        )
+        manager.set_presence_mode("test@example.com", PresenceMode.TEXTING)
+
+        params = mock_db.execute.call_args[0][1]
+        assert 'default' in params, (
+            f"Expected 'default' in query params, got: {params}"
+        )
+
+    def test_set_passes_custom_companion_id(self):
+        """set_presence_mode forwards a custom companion_id to the query."""
+        manager, mock_db = self._make_manager_with_mock_db(
+            execute_return={'user_email': 'test@example.com'}
+        )
+        manager.set_presence_mode("test@example.com", PresenceMode.TEXTING, companion_id="companion-2")
+
+        params = mock_db.execute.call_args[0][1]
+        assert 'companion-2' in params, (
+            f"Expected 'companion-2' in query params, got: {params}"
+        )
+
+    def test_format_for_prompt_forwards_companion_id(self):
+        """format_for_prompt must pass companion_id through to get_presence_mode."""
+        manager, mock_db = self._make_manager_with_mock_db(
+            execute_return={'scene_data': {'presence_mode': 'texting'}}
+        )
+        manager.format_for_prompt("test@example.com", companion_id="companion-2")
+
+        params = mock_db.execute.call_args[0][1]
+        assert 'companion-2' in params, (
+            f"Expected 'companion-2' in query params, got: {params}"
+        )

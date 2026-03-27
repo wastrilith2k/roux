@@ -53,7 +53,7 @@ class PresenceModeManager:
             self._db = get_db()
         return self._db
 
-    def get_presence_mode(self, user_email: str) -> PresenceMode:
+    def get_presence_mode(self, user_email: str, companion_id: str = 'default') -> PresenceMode:
         """
         Get the current presence mode for a user.
 
@@ -61,8 +61,8 @@ class PresenceModeManager:
         """
         try:
             result = self.db.execute(
-                f'SELECT scene_data FROM {T.SCENE_STATE} WHERE user_email = %s',
-                (user_email,)
+                f'SELECT scene_data FROM {T.SCENE_STATE} WHERE user_email = %s AND companion_id = %s',
+                (user_email, companion_id)
             )
             row = result.fetchone()
 
@@ -82,7 +82,7 @@ class PresenceModeManager:
 
         return DEFAULT_PRESENCE_MODE
 
-    def set_presence_mode(self, user_email: str, mode: PresenceMode) -> bool:
+    def set_presence_mode(self, user_email: str, mode: PresenceMode, companion_id: str = 'default') -> bool:
         """
         Set the presence mode for a user.
 
@@ -96,10 +96,10 @@ class PresenceModeManager:
                 f"""UPDATE {T.SCENE_STATE}
                     SET scene_data = COALESCE(scene_data, '{{}}'::jsonb)
                                       || %s::jsonb
-                    WHERE user_email = %s
+                    WHERE user_email = %s AND companion_id = %s
                     RETURNING user_email
                 """,
-                (json.dumps({'presence_mode': mode.value}), user_email)
+                (json.dumps({'presence_mode': mode.value}), user_email, companion_id)
             )
             row = result.fetchone()
             if not row:
@@ -113,13 +113,13 @@ class PresenceModeManager:
             logger.warning(f"Failed to save presence mode: {e}")
             return False
 
-    def format_for_prompt(self, user_email: str) -> str:
+    def format_for_prompt(self, user_email: str, companion_id: str = 'default') -> str:
         """
         Format the current presence mode for injection into the conversation context.
 
         Returns a short context string describing the communication mode.
         """
-        mode = self.get_presence_mode(user_email)
+        mode = self.get_presence_mode(user_email, companion_id)
 
         if mode == PresenceMode.TEXTING:
             return (
