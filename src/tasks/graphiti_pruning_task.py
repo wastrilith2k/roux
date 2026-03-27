@@ -120,13 +120,27 @@ def prune_old_episodes(self, dry_run: bool = True):
         edges_removed = 0
 
         if not dry_run:
-            # Step 4: Remove old episodes (DETACH DELETE removes the node and its edges)
+            # Step 4: Remove old episodes, preserving high-importance edges.
+            # First remove only edges below the importance floor from old episodes,
+            # then delete only episode nodes that have no remaining relationships.
             if old_episodes > 0:
                 with driver.session() as session:
+                    # 4a: Remove low-importance edges from old episodes
+                    session.run("""
+                        MATCH (e:Episodic)-[r]-()
+                        WHERE e.created_at < $cutoff
+                          AND (r.importance IS NULL
+                               OR r.importance < $importance_floor)
+                        DELETE r
+                    """, cutoff=episode_cutoff.isoformat(),
+                        importance_floor=HIGH_IMPORTANCE_EDGE_FLOOR)
+
+                    # 4b: Delete only episode nodes that have no remaining edges
                     result = session.run("""
                         MATCH (e:Episodic)
                         WHERE e.created_at < $cutoff
-                        DETACH DELETE e
+                          AND NOT (e)-[]-()
+                        DELETE e
                     """, cutoff=episode_cutoff.isoformat())
                     episodes_removed = result.consume().counters.nodes_deleted
 
