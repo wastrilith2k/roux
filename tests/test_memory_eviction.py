@@ -285,6 +285,116 @@ class TestGraphitiPruningTask:
         assert 'dry_run' in source, "Must support dry_run parameter"
         assert 'not dry_run' in source, "Must check dry_run before deleting"
 
+    def test_graphiti_pruning_uses_actual_delete_counts(self):
+        """Deletion counts must come from result.consume().counters, not estimated counts (issue #59)."""
+        task_path = os.path.join('src', 'tasks', 'graphiti_pruning_task.py')
+        with open(task_path) as f:
+            source = f.read()
+
+        # After DETACH DELETE, the code must read from consume().counters
+        assert 'consume().counters.nodes_deleted' in source, \
+            "Episode deletion count must come from result.consume().counters.nodes_deleted"
+        assert 'consume().counters.relationships_deleted' in source, \
+            "Edge deletion count must come from result.consume().counters.relationships_deleted"
+
+        # Must NOT assign the estimated count variables to the removed counters
+        lines = source.split('\n')
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith('#'):
+                continue
+            # The old bug: episodes_removed = old_episodes or edges_removed = expired_edges
+            if 'episodes_removed = old_episodes' in stripped:
+                pytest.fail(
+                    "episodes_removed must not be set from old_episodes estimate — "
+                    "use result.consume().counters.nodes_deleted"
+                )
+            if 'edges_removed = expired_edges' in stripped:
+                pytest.fail(
+                    "edges_removed must not be set from expired_edges estimate — "
+                    "use result.consume().counters.relationships_deleted"
+                )
+
+    def test_graphiti_pruning_returns_actual_counts_from_driver(self):
+        """The pruning task must return actual deletion counts from Neo4j, not estimates (issue #59)."""
+        from src.tasks.graphiti_pruning_task import prune_old_episodes
+
+        # Build mock Neo4j counters that differ from the COUNT estimates
+        mock_episode_counters = MagicMock()
+        mock_episode_counters.nodes_deleted = 3  # actual: 3 deleted
+
+        mock_edge_counters = MagicMock()
+        mock_edge_counters.relationships_deleted = 7  # actual: 7 deleted
+
+        mock_episode_summary = MagicMock()
+        mock_episode_summary.counters = mock_episode_counters
+
+        mock_edge_summary = MagicMock()
+        mock_edge_summary.counters = mock_edge_counters
+
+        mock_episode_result = MagicMock()
+        mock_episode_result.consume.return_value = mock_episode_summary
+
+        mock_edge_result = MagicMock()
+        mock_edge_result.consume.return_value = mock_edge_summary
+
+        # Track which query is being run to return appropriate mocks
+        call_count = {'n': 0}
+
+        def mock_session_run(query, **kwargs):
+            call_count['n'] += 1
+            n = call_count['n']
+            result = MagicMock()
+
+            if n == 1:
+                # Total episode count
+                record = MagicMock()
+                record.__getitem__ = lambda self, key: 100
+                result.single.return_value = record
+            elif n == 2:
+                # Total edge count
+                record = MagicMock()
+                record.__getitem__ = lambda self, key: 200
+                result.single.return_value = record
+            elif n == 3:
+                # Old episode count estimate (5, but only 3 will actually be deleted)
+                record = MagicMock()
+                record.__getitem__ = lambda self, key: 5
+                result.single.return_value = record
+            elif n == 4:
+                # Expired edge count estimate (10, but only 7 will actually be deleted)
+                record = MagicMock()
+                record.__getitem__ = lambda self, key: 10
+                result.single.return_value = record
+            elif n == 5:
+                # DETACH DELETE episodes — return mock with counters
+                return mock_episode_result
+            elif n == 6:
+                # DELETE edges — return mock with counters
+                return mock_edge_result
+            return result
+
+        mock_session = MagicMock()
+        mock_session.run = mock_session_run
+        mock_session.__enter__ = lambda self: self
+        mock_session.__exit__ = MagicMock(return_value=False)
+
+        mock_driver = MagicMock()
+        mock_driver.session.return_value = mock_session
+
+        with patch('src.tasks.graphiti_pruning_task._get_neo4j_driver', return_value=mock_driver):
+            # __wrapped__ gives us the raw function without Celery's bound-task self injection
+            result = prune_old_episodes.__wrapped__(dry_run=False)
+
+        # The key assertion: returned counts must be from the driver, not estimates
+        assert result['episodes_removed'] == 3, \
+            f"Expected 3 (actual), got {result['episodes_removed']} — must use counters.nodes_deleted, not estimate"
+        assert result['edges_removed'] == 7, \
+            f"Expected 7 (actual), got {result['edges_removed']} — must use counters.relationships_deleted, not estimate"
+        # Estimates should still be reported separately
+        assert result['old_episodes'] == 5
+        assert result['expired_low_importance_edges'] == 10
+
     def test_graphiti_pruning_only_deletes_episodes_and_edges(self):
         """The task must not delete Entity nodes — only episodes and edges."""
         task_path = os.path.join('src', 'tasks', 'graphiti_pruning_task.py')

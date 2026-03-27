@@ -123,24 +123,24 @@ def prune_old_episodes(self, dry_run: bool = True):
             # Step 4: Remove old episodes (DETACH DELETE removes the node and its edges)
             if old_episodes > 0:
                 with driver.session() as session:
-                    session.run("""
+                    result = session.run("""
                         MATCH (e:Episodic)
                         WHERE e.created_at < $cutoff
                         DETACH DELETE e
                     """, cutoff=episode_cutoff.isoformat())
-                    episodes_removed = old_episodes
+                    episodes_removed = result.consume().counters.nodes_deleted
 
             # Step 5: Remove expired low-importance edges (preserve high-importance)
             if expired_edges > 0:
                 with driver.session() as session:
-                    session.run("""
+                    result = session.run("""
                         MATCH ()-[r:RELATES_TO]->()
                         WHERE r.importance IS NOT NULL
                           AND r.importance <= $threshold
                           AND r.created_at < $cutoff
                         DELETE r
                     """, threshold=EDGE_IMPORTANCE_THRESHOLD, cutoff=edge_cutoff.isoformat())
-                    edges_removed = expired_edges
+                    edges_removed = result.consume().counters.relationships_deleted
 
         mode = "DRY RUN" if dry_run else "EXECUTED"
         logger.info(
