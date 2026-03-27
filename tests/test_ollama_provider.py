@@ -177,11 +177,9 @@ class TestOllamaStreamKwargsFiltering:
 
     def test_generate_stream_filters_invalid_kwargs(self):
         """generate_stream must filter timeout, chain, tools from payload."""
-        import sys
-        import types
 
-        class MockAsyncContent:
-            """Mock async iterator for response.content."""
+        class MockAsyncLineIterator:
+            """Mock async iterator for response.aiter_lines()."""
             def __init__(self, lines):
                 self._lines = iter(lines)
 
@@ -194,31 +192,27 @@ class TestOllamaStreamKwargsFiltering:
                 except StopIteration:
                     raise StopAsyncIteration
 
-        # Create a mock aiohttp module since it may not be installed in test env
-        mock_aiohttp = types.ModuleType("aiohttp")
-
-        mock_session = MagicMock()
         mock_response = MagicMock()
-        mock_response.content = MockAsyncContent([b'data: [DONE]\n'])
+        mock_response.aiter_lines = MagicMock(
+            return_value=MockAsyncLineIterator(['data: [DONE]'])
+        )
 
-        mock_post_ctx = MagicMock()
-        mock_post_ctx.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_post_ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_session.post = MagicMock(return_value=mock_post_ctx)
+        mock_stream_ctx = MagicMock()
+        mock_stream_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_stream_ctx.__aexit__ = AsyncMock(return_value=False)
 
-        mock_session_ctx = MagicMock()
-        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_client = MagicMock()
+        mock_client.stream = MagicMock(return_value=mock_stream_ctx)
 
-        mock_client_session = MagicMock(return_value=mock_session_ctx)
-        mock_aiohttp.ClientSession = mock_client_session
-        mock_aiohttp.ClientTimeout = MagicMock()
+        mock_client_ctx = MagicMock()
+        mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
 
         provider = OllamaProvider()
         messages = [{"role": "user", "content": "Hi"}]
 
         async def _run():
-            with patch.dict(sys.modules, {"aiohttp": mock_aiohttp}):
+            with patch("httpx.AsyncClient", return_value=mock_client_ctx):
                 chunks = []
                 async for chunk in provider.generate_stream(
                     messages,
@@ -228,12 +222,90 @@ class TestOllamaStreamKwargsFiltering:
                 ):
                     chunks.append(chunk)
 
-                # Verify payload passed to aiohttp does not contain filtered keys
-                call_kwargs = mock_session.post.call_args
-                payload = call_kwargs[1]["json"]
+                # Verify payload passed to httpx does not contain filtered keys
+                call_args = mock_client.stream.call_args
+                payload = call_args[1]["json"]
                 assert "timeout" not in payload
                 assert "chain" not in payload
                 assert "tools" not in payload
+
+        asyncio.run(_run())
+
+
+class TestOllamaStreamUsesHttpx:
+    """Regression test: generate_stream must not depend on aiohttp (Issue #65)."""
+
+    def test_generate_stream_does_not_import_aiohttp(self):
+        """generate_stream uses httpx (a listed dependency), not aiohttp."""
+        import ast
+        import inspect
+        import textwrap
+
+        source = textwrap.dedent(inspect.getsource(OllamaProvider.generate_stream))
+        tree = ast.parse(source)
+
+        imported_names = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imported_names.append(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    imported_names.append(node.module)
+
+        assert "aiohttp" not in imported_names, (
+            "generate_stream must not import aiohttp — it is not in requirements"
+        )
+        assert "httpx" in imported_names, (
+            "generate_stream should use httpx (an existing dependency)"
+        )
+
+    def test_generate_stream_yields_content_chunks(self):
+        """generate_stream yields content from SSE data lines via httpx."""
+
+        sse_lines = [
+            'data: {"choices":[{"delta":{"content":"Hello"}}]}',
+            'data: {"choices":[{"delta":{"content":" world"}}]}',
+            'data: [DONE]',
+        ]
+
+        class MockAsyncLineIterator:
+            def __init__(self, lines):
+                self._lines = iter(lines)
+            def __aiter__(self):
+                return self
+            async def __anext__(self):
+                try:
+                    return next(self._lines)
+                except StopIteration:
+                    raise StopAsyncIteration
+
+        mock_response = MagicMock()
+        mock_response.aiter_lines = MagicMock(
+            return_value=MockAsyncLineIterator(sse_lines)
+        )
+
+        mock_stream_ctx = MagicMock()
+        mock_stream_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_stream_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_client = MagicMock()
+        mock_client.stream = MagicMock(return_value=mock_stream_ctx)
+
+        mock_client_ctx = MagicMock()
+        mock_client_ctx.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        provider = OllamaProvider()
+
+        async def _run():
+            with patch("httpx.AsyncClient", return_value=mock_client_ctx):
+                chunks = []
+                async for chunk in provider.generate_stream(
+                    [{"role": "user", "content": "Hi"}],
+                ):
+                    chunks.append(chunk)
+                assert chunks == ["Hello", " world"]
 
         asyncio.run(_run())
 
