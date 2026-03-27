@@ -20,6 +20,7 @@ Singleton: get_schedule_context_provider() at module bottom.
 """
 
 import logging
+import threading
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -84,13 +85,16 @@ DAY_TYPE_KEYWORDS = {
 
 # Module-level singleton
 _provider: Optional['ScheduleContextProvider'] = None
+_provider_lock = threading.Lock()
 
 
 def get_schedule_context_provider() -> 'ScheduleContextProvider':
     """Get or create the singleton ScheduleContextProvider."""
     global _provider
     if _provider is None:
-        _provider = ScheduleContextProvider()
+        with _provider_lock:
+            if _provider is None:
+                _provider = ScheduleContextProvider()
     return _provider
 
 

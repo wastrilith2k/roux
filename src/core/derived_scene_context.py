@@ -24,6 +24,7 @@ Singleton: get_derived_scene_context_builder() at module bottom.
 """
 
 import logging
+import threading
 from datetime import datetime
 from typing import Optional, List
 
@@ -33,13 +34,16 @@ logger = logging.getLogger(__name__)
 
 # Module-level singleton
 _builder: Optional['DerivedSceneContextBuilder'] = None
+_builder_lock = threading.Lock()
 
 
 def get_derived_scene_context_builder() -> 'DerivedSceneContextBuilder':
     """Get or create the singleton DerivedSceneContextBuilder."""
     global _builder
     if _builder is None:
-        _builder = DerivedSceneContextBuilder()
+        with _builder_lock:
+            if _builder is None:
+                _builder = DerivedSceneContextBuilder()
     return _builder
 
 

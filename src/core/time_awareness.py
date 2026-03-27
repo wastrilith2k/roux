@@ -21,6 +21,7 @@ Singleton: `get_time_awareness()` at module top.
 
 import logging
 import os
+import threading
 from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -33,13 +34,16 @@ PST = ZoneInfo('America/Los_Angeles')
 
 # Module-level singleton
 _time_awareness: Optional['TimeAwareness'] = None
+_time_awareness_lock = threading.Lock()
 
 
 def get_time_awareness() -> 'TimeAwareness':
     """Get or create the singleton TimeAwareness instance."""
     global _time_awareness
     if _time_awareness is None:
-        _time_awareness = TimeAwareness()
+        with _time_awareness_lock:
+            if _time_awareness is None:
+                _time_awareness = TimeAwareness()
     return _time_awareness
 
 
