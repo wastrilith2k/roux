@@ -530,6 +530,7 @@ class ContextBuilder:
         futures.append(self._executor.submit(timed_fetch, 'reflections_context', self._get_reflections_context, user_email))
         futures.append(self._executor.submit(timed_fetch, 'opinions_context', self._get_opinions_context, user_email, user_message))
         futures.append(self._executor.submit(timed_fetch, 'curiosity_context', self._get_curiosity_context))
+        futures.append(self._executor.submit(timed_fetch, 'goals_context', self._get_goals_context, user_email))
         # Use structured conversation history for multi-turn chat format
         futures.append(self._executor.submit(timed_fetch, 'conversation_turns', self._get_conversation_history_structured, user_email))
         # Time awareness: calendar + routine + companion's schedule (populates the schedule field)
