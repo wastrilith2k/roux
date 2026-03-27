@@ -603,6 +603,111 @@ class TestTwoPassGeneration:
 
 
 # =========================================================================
+# Issue #57: time_range parameter must be used in _search_conversations
+# =========================================================================
+
+
+class TestTimeRangeFiltering:
+    """Regression tests for issue #57: time_range was accepted but ignored."""
+
+    def test_time_range_to_since_recent(self):
+        """'recent' maps to ~3 days ago."""
+        from src.tools.memory_search_tool import _time_range_to_since
+        from datetime import datetime, timezone, timedelta
+
+        since = _time_range_to_since("recent")
+        assert since is not None
+        expected = datetime.now(timezone.utc) - timedelta(days=3)
+        assert abs((since - expected).total_seconds()) < 5
+
+    def test_time_range_to_since_last_week(self):
+        """'last_week' maps to ~7 days ago."""
+        from src.tools.memory_search_tool import _time_range_to_since
+        from datetime import datetime, timezone, timedelta
+
+        since = _time_range_to_since("last_week")
+        assert since is not None
+        expected = datetime.now(timezone.utc) - timedelta(weeks=1)
+        assert abs((since - expected).total_seconds()) < 5
+
+    def test_time_range_to_since_last_month(self):
+        """'last_month' maps to ~30 days ago."""
+        from src.tools.memory_search_tool import _time_range_to_since
+        from datetime import datetime, timezone, timedelta
+
+        since = _time_range_to_since("last_month")
+        assert since is not None
+        expected = datetime.now(timezone.utc) - timedelta(days=30)
+        assert abs((since - expected).total_seconds()) < 5
+
+    def test_time_range_to_since_last_year(self):
+        """'last_year' maps to ~365 days ago."""
+        from src.tools.memory_search_tool import _time_range_to_since
+        from datetime import datetime, timezone, timedelta
+
+        since = _time_range_to_since("last_year")
+        assert since is not None
+        expected = datetime.now(timezone.utc) - timedelta(days=365)
+        assert abs((since - expected).total_seconds()) < 5
+
+    def test_time_range_to_since_all_returns_none(self):
+        """'all' returns None (no filtering)."""
+        from src.tools.memory_search_tool import _time_range_to_since
+
+        assert _time_range_to_since("all") is None
+
+    def test_time_range_to_since_unknown_returns_none(self):
+        """Unknown time_range returns None (no filtering)."""
+        from src.tools.memory_search_tool import _time_range_to_since
+
+        assert _time_range_to_since("bogus") is None
+
+    def test_search_conversations_passes_since_to_pgvector(self):
+        """_search_conversations must pass a `since` kwarg derived from time_range."""
+        from src.tools.memory_search_tool import _search_conversations
+
+        with patch('src.tools.memory_search_tool._time_range_to_since') as mock_since, \
+             patch('src.memory.semantic_search.search_memory') as mock_search:
+            from datetime import datetime, timezone, timedelta
+            fake_since = datetime.now(timezone.utc) - timedelta(days=3)
+            mock_since.return_value = fake_since
+            mock_search.return_value = []
+
+            _search_conversations("test query", "user@test.com", "recent", 10)
+
+            mock_since.assert_called_once_with("recent")
+            mock_search.assert_called_once()
+            call_kwargs = mock_search.call_args
+            assert call_kwargs[1].get('since') == fake_since or \
+                   (len(call_kwargs[0]) > 4 and call_kwargs[0][4] == fake_since), \
+                   f"Expected since={fake_since} to be passed to pgvector_search, got {call_kwargs}"
+
+    def test_search_conversations_all_passes_no_since(self):
+        """time_range='all' should pass since=None (no time filtering)."""
+        from src.tools.memory_search_tool import _search_conversations
+
+        with patch('src.memory.semantic_search.search_memory') as mock_search:
+            mock_search.return_value = []
+
+            _search_conversations("test query", "user@test.com", "all", 10)
+
+            call_kwargs = mock_search.call_args
+            assert call_kwargs[1].get('since') is None, \
+                   f"Expected since=None for time_range='all', got {call_kwargs}"
+
+    def test_different_time_ranges_produce_different_since(self):
+        """'recent' and 'last_year' must produce different cutoff dates."""
+        from src.tools.memory_search_tool import _time_range_to_since
+
+        recent = _time_range_to_since("recent")
+        last_year = _time_range_to_since("last_year")
+        assert recent is not None
+        assert last_year is not None
+        # recent should be a more recent cutoff (larger datetime) than last_year
+        assert recent > last_year
+
+
+# =========================================================================
 # Integration: Full tier routing through pipeline classification
 # =========================================================================
 
