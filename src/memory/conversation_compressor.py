@@ -147,8 +147,7 @@ def compress_messages(
         from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
 
         chain = get_resilient_provider_chain(
-            primary="openai:gpt-4o-mini",
-            fallback="openai:gpt-4o-mini",
+            primary="openai",
         )
 
         llm_messages = [
