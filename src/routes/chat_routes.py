@@ -26,6 +26,7 @@ Architecture notes:
 import logging
 import os
 import threading
+import redis as _redis_mod
 from flask import Blueprint, request
 from flask_socketio import emit, join_room, leave_room
 from src.database.db import get_db
@@ -33,6 +34,22 @@ from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 from src.utils.timezone_utils import now_pacific_naive
+
+# ---------------------------------------------------------------------------
+# Module-level Redis singleton – avoids creating a new connection per call
+# ---------------------------------------------------------------------------
+_redis_client = None
+_redis_lock = threading.Lock()
+
+
+def _get_redis():
+    global _redis_client
+    if _redis_client is None:
+        with _redis_lock:
+            if _redis_client is None:
+                redis_url = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+                _redis_client = _redis_mod.from_url(redis_url)
+    return _redis_client
 
 
 # ============================================================================
@@ -273,9 +290,7 @@ def register_socketio_handlers(socketio):
             # Mark user as online in Redis (1h TTL) so autonomy tasks can
             # check presence before sending proactive messages
             try:
-                import redis as _redis
-                _r = _redis.from_url(os.environ.get('REDIS_URL', 'redis://redis:6379/0'))
-                _r.set(f'ws_connected:{email}', request.sid, ex=3600)
+                _get_redis().set(f'ws_connected:{email}', request.sid, ex=3600)
             except Exception as _re:
                 logger.debug(f"Could not set Redis connection key: {_re}")
 
@@ -321,9 +336,7 @@ def register_socketio_handlers(socketio):
 
             # Remove Redis presence key so autonomy knows user is offline
             try:
-                import redis as _redis
-                _r = _redis.from_url(os.environ.get('REDIS_URL', 'redis://redis:6379/0'))
-                _r.delete(f'ws_connected:{email}')
+                _get_redis().delete(f'ws_connected:{email}')
             except Exception as _re:
                 logger.debug(f"Could not delete Redis connection key: {_re}")
 
