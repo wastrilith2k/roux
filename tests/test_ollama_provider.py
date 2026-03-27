@@ -11,10 +11,11 @@ Covers:
 - Error message lists Ollama as supported provider
 """
 
+import asyncio
 import os
 import json
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 os.environ.setdefault('ENVIRONMENT', 'test')
 os.environ.setdefault('POSTGRES_PASSWORD', 'test')
@@ -141,6 +142,100 @@ class TestOllamaProviderGenerateSync:
         assert "timeout" not in payload
         assert "chain" not in payload
         assert "tools" not in payload
+
+
+class TestOllamaGenerateAsync:
+    """Test that async generate() does not block the event loop (Issue #51)."""
+
+    @patch("src.llm.ollama_provider.requests.post")
+    def test_generate_uses_asyncio_to_thread(self, mock_post):
+        """generate() must offload to a thread, not call generate_sync directly."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": "threaded response"}}]
+        }
+        mock_post.return_value = mock_response
+
+        provider = OllamaProvider()
+        messages = [{"role": "user", "content": "Hi"}]
+
+        async def _run():
+            with patch("src.llm.ollama_provider.asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+                mock_to_thread.return_value = "threaded response"
+                result = await provider.generate(messages, temperature=0.5, max_tokens=100)
+                mock_to_thread.assert_called_once_with(
+                    provider.generate_sync, messages, 0.5, 100
+                )
+                assert result == "threaded response"
+
+        asyncio.run(_run())
+
+
+class TestOllamaStreamKwargsFiltering:
+    """Test that generate_stream filters invalid kwargs (Issue #51)."""
+
+    def test_generate_stream_filters_invalid_kwargs(self):
+        """generate_stream must filter timeout, chain, tools from payload."""
+        import sys
+        import types
+
+        class MockAsyncContent:
+            """Mock async iterator for response.content."""
+            def __init__(self, lines):
+                self._lines = iter(lines)
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                try:
+                    return next(self._lines)
+                except StopIteration:
+                    raise StopAsyncIteration
+
+        # Create a mock aiohttp module since it may not be installed in test env
+        mock_aiohttp = types.ModuleType("aiohttp")
+
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = MockAsyncContent([b'data: [DONE]\n'])
+
+        mock_post_ctx = MagicMock()
+        mock_post_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_post_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_session.post = MagicMock(return_value=mock_post_ctx)
+
+        mock_session_ctx = MagicMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_client_session = MagicMock(return_value=mock_session_ctx)
+        mock_aiohttp.ClientSession = mock_client_session
+        mock_aiohttp.ClientTimeout = MagicMock()
+
+        provider = OllamaProvider()
+        messages = [{"role": "user", "content": "Hi"}]
+
+        async def _run():
+            with patch.dict(sys.modules, {"aiohttp": mock_aiohttp}):
+                chunks = []
+                async for chunk in provider.generate_stream(
+                    messages,
+                    timeout=30,
+                    chain="ignored",
+                    tools=[{"name": "foo"}],
+                ):
+                    chunks.append(chunk)
+
+                # Verify payload passed to aiohttp does not contain filtered keys
+                call_kwargs = mock_session.post.call_args
+                payload = call_kwargs[1]["json"]
+                assert "timeout" not in payload
+                assert "chain" not in payload
+                assert "tools" not in payload
+
+        asyncio.run(_run())
 
 
 # =========================================================================

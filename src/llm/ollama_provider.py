@@ -5,6 +5,7 @@ Uses Ollama's OpenAI-compatible API for fully local LLM inference.
 Supports all LLM call sites via the standard provider interface.
 """
 
+import asyncio
 import requests
 import logging
 from typing import Dict, List, Optional
@@ -34,8 +35,8 @@ class OllamaProvider(LLMProvider):
         max_tokens: int = 4096,
         **kwargs
     ) -> str:
-        """Async generate - wraps sync for now (Ollama is local, latency is low)."""
-        return self.generate_sync(messages, temperature, max_tokens, **kwargs)
+        """Async generate - offloads blocking sync call to a thread."""
+        return await asyncio.to_thread(self.generate_sync, messages, temperature, max_tokens, **kwargs)
 
     def generate_sync(
         self,
@@ -104,13 +105,16 @@ class OllamaProvider(LLMProvider):
 
         url = f"{self.base_url}/v1/chat/completions"
 
+        # Filter out kwargs that aren't valid API params
+        filtered = {k: v for k, v in kwargs.items() if k not in ('timeout', 'chain', 'tools')}
+
         payload = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": True,
-            **kwargs
+            **filtered
         }
 
         try:
