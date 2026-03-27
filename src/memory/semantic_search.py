@@ -276,7 +276,6 @@ def search_memory_formatted(query: str, email: str = None, limit: int = 5) -> st
         time_label = ''
         if ts:
             try:
-                from datetime import datetime, timezone
                 if isinstance(ts, str):
                     msg_time = datetime.fromisoformat(ts.replace('Z', '+00:00'))
                 else:
