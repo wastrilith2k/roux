@@ -229,17 +229,7 @@ def get_or_create_session_summary(
         logger.warning(f"Redis cache check failed: {e}")
 
     # Cache miss — compress via LLM
-    # Check if there's a previous summary we should extend (rolling compression)
-    existing_summary = ""
-    try:
-        r = _get_redis()
-        # Look for any existing summary for this user (partial match)
-        # We use a simpler approach: just compress all older messages fresh
-        # For very long sessions, the LLM handles the full batch efficiently
-    except Exception:
-        pass
-
-    summary = compress_messages(older_messages, existing_summary)
+    summary = compress_messages(older_messages)
 
     # Cache the result
     if summary:

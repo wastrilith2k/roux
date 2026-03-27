@@ -414,3 +414,56 @@ class TestAmnesiaCliffRegression:
         turns, continuity, session_summary = result
         assert isinstance(turns, list)
         assert isinstance(session_summary, str)
+
+
+# ---------------------------------------------------------------------------
+# Regression test for issue #54: dead code stub removed
+# ---------------------------------------------------------------------------
+
+class TestNoDeadCodeStub:
+    """
+    Regression test for issue #54: conversation_compressor.py contained a dead
+    try/except block that fetched Redis but did nothing, leaving
+    existing_summary as "" unconditionally. The stub has been removed.
+    """
+
+    def test_no_dead_try_except_in_get_or_create(self):
+        """
+        get_or_create_session_summary should NOT contain a try/except block
+        whose body only assigns to Redis without using the result.
+        Verify by checking that compress_messages is called with only
+        older_messages (no existing_summary arg) on a cache miss.
+        """
+        import inspect
+        from src.memory.conversation_compressor import get_or_create_session_summary
+
+        source = inspect.getsource(get_or_create_session_summary)
+        # The dead code had 'existing_summary = ""' followed by a try block
+        # that did nothing with it. Ensure that pattern is gone.
+        assert 'existing_summary = ""' not in source
+
+    def test_compress_called_without_existing_summary_on_cache_miss(self):
+        """
+        On a cache miss, compress_messages should be called with only
+        older_messages — no existing_summary argument.
+        """
+        from src.memory.conversation_compressor import get_or_create_session_summary
+
+        messages = _make_messages(40)
+        fake_summary = "[Session summary]"
+
+        with patch('src.memory.conversation_compressor.COMPRESSION_THRESHOLD', 25), \
+             patch('src.memory.conversation_compressor.RECENT_MESSAGES_KEEP', 15), \
+             patch('src.memory.conversation_compressor._get_redis') as mock_redis, \
+             patch('src.memory.conversation_compressor.compress_messages', return_value=fake_summary) as mock_compress:
+            mock_r = MagicMock()
+            mock_r.get.return_value = None  # Cache miss
+            mock_redis.return_value = mock_r
+
+            get_or_create_session_summary("test@test.com", messages)
+
+        # Should be called with just older_messages, no existing_summary kwarg
+        mock_compress.assert_called_once()
+        args, kwargs = mock_compress.call_args
+        assert len(args) == 1  # Only older_messages
+        assert 'existing_summary' not in kwargs
