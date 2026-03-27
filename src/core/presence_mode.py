@@ -6,7 +6,7 @@ WHAT: Manages the communication context between user and companion: whether they
 WHY:  Without this, the companion has no way to distinguish between the user being
       physically present (narrative/roleplay context) and texting remotely. This leads
       to inappropriate responses like physical actions when the user is texting from work.
-HOW:  PresenceMode is stored as a simple string in the user_state JSONB. The manager
+HOW:  PresenceMode is stored in the scene_state table's scene_data JSONB. The manager
       provides get/set/format methods. The context builder injects the mode into every
       conversation turn, and the pipeline adds behavioral constraints based on the mode.
 
@@ -61,13 +61,13 @@ class PresenceModeManager:
         """
         try:
             result = self.db.execute(
-                f'SELECT scene_state FROM {T.USER_STATE} WHERE email = %s',
+                f'SELECT scene_data FROM {T.SCENE_STATE} WHERE user_email = %s',
                 (user_email,)
             )
             row = result.fetchone()
 
-            if row and row.get('scene_state'):
-                state = row['scene_state']
+            if row and row.get('scene_data'):
+                state = row['scene_data']
                 if isinstance(state, str):
                     state = json.loads(state)
                 mode_str = state.get('presence_mode')
@@ -86,24 +86,24 @@ class PresenceModeManager:
         """
         Set the presence mode for a user.
 
-        Merges into the existing scene_state JSONB so other scene fields
+        Merges into the existing scene_data JSONB so other scene fields
         are preserved. Uses an atomic UPDATE with JSONB merge operator.
 
         Returns True if saved successfully.
         """
         try:
             result = self.db.execute(
-                f"""UPDATE {T.USER_STATE}
-                    SET scene_state = COALESCE(scene_state, '{{}}'::jsonb)
+                f"""UPDATE {T.SCENE_STATE}
+                    SET scene_data = COALESCE(scene_data, '{{}}'::jsonb)
                                       || %s::jsonb
-                    WHERE email = %s
-                    RETURNING email
+                    WHERE user_email = %s
+                    RETURNING user_email
                 """,
                 (json.dumps({'presence_mode': mode.value}), user_email)
             )
             row = result.fetchone()
             if not row:
-                logger.warning(f"No user_state row found for {user_email}")
+                logger.warning(f"No scene_state row found for {user_email}")
                 return False
 
             logger.info(f"Presence mode set to {mode.value} for {user_email}")
