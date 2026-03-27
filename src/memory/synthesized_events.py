@@ -370,28 +370,28 @@ def extract_event_subject(text: str, event_type: str) -> str:
     """
     text_lower = text.lower()
 
-    # === Rule 1: Tuck filter ===
-    # If Tuck is mentioned and no other humans, use LLM to determine
-    # This handles cases like "Tuck claimed my pillow" - event is about cat behavior, not James
-    tuck_keywords = ['tuck']
-    # Build entity list dynamically from persona config
+    # === Rule 1: Pet filter ===
+    # If a pet is mentioned and no other humans, use LLM to determine
+    # whether it's a human event or pet behavior. Pet names come from
+    # persona.yaml so instances can configure their own.
     _pc = get_persona_config()
+    pet_keywords = [name.lower() for name in _pc.pet_names] if _pc.pet_names else []
     human_entities = [_pc.companion_short_name.lower(), _pc.primary_user_name.lower()]
     first_person = ['i ', "i'", 'my ', 'me ']
 
-    has_tuck = any(kw in text_lower for kw in tuck_keywords)
+    has_pet = any(kw in text_lower for kw in pet_keywords) if pet_keywords else False
     has_human = any(ent in text_lower for ent in human_entities)
     has_first_person = any(fp in text_lower for fp in first_person)
 
-    if has_tuck and not has_human:
-        # Tuck mentioned, no humans - use LLM to determine if this is pet behavior (SKIP)
+    if has_pet and not has_human:
+        # Pet mentioned, no humans - use LLM to determine if this is pet behavior (SKIP)
         llm_result = _extract_subject_via_llm(text, event_type)
         if llm_result:
             if llm_result == "SKIP":
                 logger.debug(f"Skipping event - LLM determined this is about pet behavior")
             return llm_result
         # Fallback: if LLM fails and no humans mentioned, skip
-        logger.debug(f"Skipping event - only Tuck (cat) mentioned, LLM unavailable")
+        logger.debug(f"Skipping event - only pet mentioned, LLM unavailable")
         return "SKIP"
 
     # === Rule 2: Clear first-person career/milestone = primary user ===

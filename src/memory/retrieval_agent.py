@@ -108,21 +108,10 @@ class RetrievalAgent:
     def __init__(self):
         self._client = None
         _pc = get_persona_config()
-        user = _pc.primary_user_name
-        companion = _pc.companion_short_name
         # Known entities -- provided to the LLM so it can resolve references
-        # like "the kids" -> jesse, kyler. Hardcoded for now; could be
-        # dynamically populated from entity_profile_manager in the future.
-        self.KNOWN_ENTITIES = {
-            user.lower(): f'{user} (the user)',
-            companion.lower(): f'{companion} (AI companion)',
-            'jesse': f'Jesse ({user}\'s 16yo son)',
-            'kyler': f'Kyler ({user}\'s 12yo son)',
-            'alia': f'Alia ({user}\'s ex-wife)',
-            'carol': f'Carol ({user}\'s mother)',
-            'tuck': f'Tuck ({companion}\'s cat)',
-            'lena': f'Lena ({companion}\'s estranged sister)'
-        }
+        # like "the kids" -> specific names. Loaded from persona.yaml
+        # known_entities.entries so instances can configure their own.
+        self.KNOWN_ENTITIES = _pc.get_known_entities_dict()
 
     def _get_client(self):
         """Lazy load OpenAI client."""

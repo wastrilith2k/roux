@@ -279,26 +279,15 @@ def validate_facts(facts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     _pc = get_persona_config()
     companion_name_lower = _pc.companion_short_name.lower()
 
-    # Known invalid patterns - ONLY reject actual contradictions, not backstory
+    # Invalid fact patterns — loaded from persona.yaml so instances can
+    # configure their own without editing source code.
     INVALID_PATTERNS = [
-        # The companion doesn't HAVE children (but childhood memories are fine)
-        (companion_name_lower, "has a child"),
-        (companion_name_lower, "has a son"),
-        (companion_name_lower, "has a daughter"),
-        (companion_name_lower, "her child"),
-        (companion_name_lower, "her son"),
-        (companion_name_lower, "her daughter"),
-        (companion_name_lower, "mother of"),
-        (companion_name_lower, "has_child"),
-        # Wrong children names for James
-        ("james", "nicholas"),
-        ("nicholas", ""),
-        # Subject/object confusion
-        (companion_name_lower, "has_lady_love"),
+        (p[0], p[1]) for p in _pc.get_resolved_invalid_fact_patterns()
     ]
 
-    # Valid children for James
-    JAMES_CHILDREN = {"jesse", "kyler"}
+    # Valid children for the primary user — loaded from persona.yaml
+    USER_CHILDREN = set(_pc.user_children)
+    user_name_lower = _pc.primary_user_name.lower()
 
     for fact in facts:
         subject = fact.get('subject', '').lower().strip()
@@ -319,14 +308,12 @@ def validate_facts(facts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if is_invalid:
             continue
 
-        # If fact mentions James having a child, verify it's Jesse or Kyler
-        if 'james' in subject and ('child' in fact_text or 'son' in fact_text):
-            has_valid_child = any(child in fact_text for child in JAMES_CHILDREN)
-            if not has_valid_child and ('child' in fact_text or 'son' in fact_text):
-                # Check if it's not just mentioning children generically
-                if any(name in fact_text for name in ['nicholas', 'nick', 'other_wrong_name']):
-                    logger.warning(f"[FACT_VALIDATION] Rejected wrong child name: {fact}")
-                    continue
+        # If fact mentions the user having a child, verify against configured children
+        if USER_CHILDREN and user_name_lower in subject and ('child' in fact_text or 'son' in fact_text or 'daughter' in fact_text):
+            has_valid_child = any(child in fact_text for child in USER_CHILDREN)
+            if not has_valid_child:
+                logger.warning(f"[FACT_VALIDATION] Rejected wrong child name: {fact}")
+                continue
 
         validated.append(fact)
 

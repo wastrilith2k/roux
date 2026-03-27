@@ -35,7 +35,7 @@ cost_bp = Blueprint('costs', __name__, url_prefix='/api/costs')
 def get_cost_summary():
     """Get complete cost summary across all services"""
     try:
-        username = session.get('username', 'admin')
+        username = session.get('username', os.environ.get('DEFAULT_ADMIN_USERNAME', 'admin'))
         cost_tracker = get_cost_tracker()
         summary = cost_tracker.get_cost_summary(username)
 
@@ -77,7 +77,7 @@ def get_cost_summary():
 def get_cost_history():
     """Get historical cost data for charting"""
     try:
-        username = session.get('username', 'admin')
+        username = session.get('username', os.environ.get('DEFAULT_ADMIN_USERNAME', 'admin'))
         days = int(request.args.get('days', 30))
         cost_tracker = get_cost_tracker()
         history = cost_tracker.get_historical_data(username, days)
@@ -96,7 +96,7 @@ def get_cost_history():
 def export_costs():
     """Export cost data to CSV"""
     try:
-        username = session.get('username', 'admin')
+        username = session.get('username', os.environ.get('DEFAULT_ADMIN_USERNAME', 'admin'))
         days = int(request.args.get('days', 30))
         cost_tracker = get_cost_tracker()
         history = cost_tracker.get_historical_data(username, days)
