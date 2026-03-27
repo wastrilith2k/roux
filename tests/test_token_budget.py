@@ -122,6 +122,87 @@ class TestTruncateToBudget:
 
 
 # ---------------------------------------------------------------------------
+# Issue #60: fragile sentence detection
+# ---------------------------------------------------------------------------
+
+class TestSentenceBoundaryHeuristic:
+    """Regression tests for issue #60: the sentence-boundary detector must
+    not break at abbreviations, decimals, URLs, or ellipsis."""
+
+    def test_no_break_at_abbreviation(self):
+        from src.core.conversation.token_budget import truncate_to_budget
+        # "Dr." followed by a space and uppercase — the old code would break here.
+        # Budget is tight enough to force truncation, so the function must skip "Dr."
+        text = "Dr. Smith is a very qualified doctor and researcher in this field."
+        # Budget ~10 tokens = 40 chars; "Dr." is at index 2, old code would stop there.
+        result = truncate_to_budget(text, 10)
+        assert result != "Dr."
+        # Should fall back to a word boundary instead of breaking after "Dr."
+        assert len(result) > 3
+
+    def test_no_break_at_ellipsis(self):
+        from src.core.conversation.token_budget import truncate_to_budget
+        text = "She paused... And then she continued talking for a while more."
+        result = truncate_to_budget(text, 10)  # ~40 chars
+        # Must not break after any dot in the ellipsis
+        assert not result.endswith(".")  or "..." not in result
+
+    def test_no_break_at_abbreviation_with_periods(self):
+        from src.core.conversation.token_budget import truncate_to_budget
+        text = "The U.S. Government issued a statement about something important."
+        result = truncate_to_budget(text, 10)  # ~40 chars
+        # Must not break at "U." or "S."
+        assert "U." not in result or "S." not in result or len(result) > 10
+
+    def test_no_break_at_decimal(self):
+        from src.core.conversation.token_budget import truncate_to_budget
+        # Decimal followed by whitespace: "3. " — old code would break here
+        text = "The value was approx 3. The experiment showed some results here."
+        result = truncate_to_budget(text, 10)  # ~40 chars
+        # "3" is a 1-char word, so the heuristic should reject this as a sentence end
+        assert not result.endswith("3.")
+
+    def test_still_breaks_at_real_sentence(self):
+        from src.core.conversation.token_budget import truncate_to_budget
+        text = "First sentence here. Second sentence here. Third sentence here."
+        result = truncate_to_budget(text, 8)  # ~32 chars
+        assert result.endswith(".")
+        assert "Third" not in result
+
+    def test_exclamation_after_lowercase_rejected(self):
+        from src.core.conversation.token_budget import truncate_to_budget
+        text = "wow! really cool stuff happening here and more and more text."
+        result = truncate_to_budget(text, 8)  # ~32 chars
+        # "wow!" followed by " really" — 'r' is lowercase, should not break
+        assert not result.endswith("!")  or result != "wow!"
+
+    def test_question_followed_by_uppercase_accepted(self):
+        from src.core.conversation.token_budget import truncate_to_budget
+        text = "Is it done? Yes it is and we should keep going with more text."
+        result = truncate_to_budget(text, 5)  # ~20 chars
+        assert result == "Is it done?"
+
+    def test_is_sentence_boundary_direct(self):
+        from src.core.conversation.token_budget import _is_sentence_boundary
+        # Real sentence boundary: period + space + uppercase
+        assert _is_sentence_boundary("Hello. World", 5) is True
+        # Abbreviation: short word before period
+        assert _is_sentence_boundary("Dr. Smith", 2) is False
+        # Ellipsis: period preceded by period
+        assert _is_sentence_boundary("Wait... Then", 6) is False
+        # Embedded periods: "U.S."
+        assert _is_sentence_boundary("U.S. Army", 3) is False
+        # Period followed by lowercase
+        assert _is_sentence_boundary("end. then", 3) is False
+        # Period at end of string
+        assert _is_sentence_boundary("The end.", 7) is True
+        # Exclamation + space + uppercase
+        assert _is_sentence_boundary("Go! Now", 2) is True
+        # Question + space + lowercase
+        assert _is_sentence_boundary("what? no", 4) is False
+
+
+# ---------------------------------------------------------------------------
 # apply_source_budgets
 # ---------------------------------------------------------------------------
 

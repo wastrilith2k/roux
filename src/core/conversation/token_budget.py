@@ -114,6 +114,50 @@ def get_tier(source_name: str) -> int:
 # Sentence-boundary-aware truncation
 # ---------------------------------------------------------------------------
 
+def _is_sentence_boundary(text: str, i: int) -> bool:
+    """Check whether position *i* in *text* is a likely sentence boundary.
+
+    Requires the punctuation to be followed by whitespace (or end-of-string)
+    and then an uppercase letter (or end-of-string).  Additionally rejects
+    common false positives for periods:
+
+    * Ellipsis — period preceded by another period (``"..."``)
+    * Abbreviations — preceding word is 1-2 characters (``"Dr."``, ``"U.S."``)
+    """
+    ch = text[i]
+
+    # Must be followed by whitespace or end of string
+    if i + 1 < len(text) and text[i + 1] not in ' \n\t':
+        return False
+
+    # Period-specific guards
+    if ch == '.':
+        # Reject ellipsis: period preceded by another period
+        if i > 0 and text[i - 1] == '.':
+            return False
+
+        # Reject short-word abbreviations (Dr., Mr., U., e.g., etc.)
+        # Walk back to find the start of the word before the period.
+        word_start = i - 1
+        while word_start >= 0 and text[word_start] not in ' \n\t':
+            if text[word_start] == '.':
+                # Embedded period (e.g. "U.S.") — also not a sentence end
+                return False
+            word_start -= 1
+        word_len = i - (word_start + 1)
+        if word_len <= 2:
+            return False
+
+    # The next non-whitespace character must be uppercase or end-of-string
+    j = i + 1
+    while j < len(text) and text[j] in ' \n\t':
+        j += 1
+    if j < len(text) and not text[j].isupper():
+        return False
+
+    return True
+
+
 def truncate_to_budget(text: str, budget_tokens: int) -> str:
     """Truncate text to fit within a token budget at a sentence boundary.
 
@@ -137,11 +181,7 @@ def truncate_to_budget(text: str, budget_tokens: int) -> str:
     # Try to find the last sentence boundary within the limit
     best_break = -1
     for i in range(len(truncated) - 1, -1, -1):
-        if truncated[i] in '.!?' and (i + 1 >= len(truncated) or truncated[i + 1] in ' \n\t'):
-            best_break = i + 1
-            break
-        # Also accept sentence-ending punctuation at the very end
-        if truncated[i] in '.!?' and i == len(truncated) - 1:
+        if truncated[i] in '.!?' and _is_sentence_boundary(truncated, i):
             best_break = i + 1
             break
 
