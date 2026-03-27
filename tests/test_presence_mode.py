@@ -65,56 +65,52 @@ class TestPresenceModeEnum:
 class TestPresenceModeManager:
     """Test PresenceModeManager get/set/format with mocked DB."""
 
-    def _make_manager_with_mock_db(self, scene_state=None):
-        """Create a manager with a mocked database returning the given scene_state."""
+    def _make_manager_with_mock_db(self, execute_return=None):
+        """Create a manager with a mocked database using public execute() API.
+
+        Args:
+            execute_return: The value that execute().fetchone() should return.
+        """
         manager = PresenceModeManager()
 
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-        mock_conn.__exit__ = MagicMock(return_value=False)
-        mock_conn.cursor.return_value = mock_cursor
-
-        if scene_state is not None:
-            mock_cursor.fetchone.return_value = {'scene_state': scene_state}
-        else:
-            mock_cursor.fetchone.return_value = None
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = execute_return
 
         mock_db = MagicMock()
-        mock_db._get_connection.return_value = mock_conn
+        mock_db.execute.return_value = mock_result
         manager._db = mock_db
 
-        return manager, mock_cursor
+        return manager, mock_db
 
     def test_get_returns_default_when_no_row(self):
-        manager, _ = self._make_manager_with_mock_db(scene_state=None)
+        manager, _ = self._make_manager_with_mock_db(execute_return=None)
         mode = manager.get_presence_mode("test@example.com")
         assert mode == DEFAULT_PRESENCE_MODE
 
     def test_get_returns_default_when_no_presence_key(self):
         manager, _ = self._make_manager_with_mock_db(
-            scene_state={'location': 'bedroom'}
+            execute_return={'scene_state': {'location': 'bedroom'}}
         )
         mode = manager.get_presence_mode("test@example.com")
         assert mode == DEFAULT_PRESENCE_MODE
 
     def test_get_returns_texting_when_set(self):
         manager, _ = self._make_manager_with_mock_db(
-            scene_state={'presence_mode': 'texting'}
+            execute_return={'scene_state': {'presence_mode': 'texting'}}
         )
         mode = manager.get_presence_mode("test@example.com")
         assert mode == PresenceMode.TEXTING
 
     def test_get_returns_in_person_when_set(self):
         manager, _ = self._make_manager_with_mock_db(
-            scene_state={'presence_mode': 'in_person'}
+            execute_return={'scene_state': {'presence_mode': 'in_person'}}
         )
         mode = manager.get_presence_mode("test@example.com")
         assert mode == PresenceMode.IN_PERSON
 
     def test_get_returns_default_for_invalid_mode_in_db(self):
         manager, _ = self._make_manager_with_mock_db(
-            scene_state={'presence_mode': 'invalid_mode'}
+            execute_return={'scene_state': {'presence_mode': 'invalid_mode'}}
         )
         mode = manager.get_presence_mode("test@example.com")
         assert mode == DEFAULT_PRESENCE_MODE
@@ -122,31 +118,72 @@ class TestPresenceModeManager:
     def test_get_handles_json_string_scene_state(self):
         """scene_state may come back as a JSON string from the DB."""
         manager, _ = self._make_manager_with_mock_db(
-            scene_state=json.dumps({'presence_mode': 'texting'})
+            execute_return={'scene_state': json.dumps({'presence_mode': 'texting'})}
         )
         mode = manager.get_presence_mode("test@example.com")
         assert mode == PresenceMode.TEXTING
 
     def test_set_persists_mode(self):
-        manager, mock_cursor = self._make_manager_with_mock_db(
-            scene_state={'location': 'kitchen'}
+        manager, mock_db = self._make_manager_with_mock_db(
+            execute_return={'email': 'test@example.com'}
         )
-        mock_cursor.rowcount = 1  # Simulate successful update
 
         result = manager.set_presence_mode("test@example.com", PresenceMode.TEXTING)
         assert result is True
 
-        # Verify the UPDATE was called with presence_mode merged in
-        update_call = mock_cursor.execute.call_args_list[-1]
-        saved_json = json.loads(update_call[0][1][0])
-        assert saved_json['presence_mode'] == 'texting'
-        assert saved_json['location'] == 'kitchen'  # Preserved existing field
+        # Verify execute was called with the JSONB merge UPDATE
+        call_args = mock_db.execute.call_args
+        query = call_args[0][0]
+        params = call_args[0][1]
+        assert 'UPDATE' in query
+        assert 'COALESCE' in query
+        assert json.loads(params[0]) == {'presence_mode': 'texting'}
+        assert params[1] == 'test@example.com'
 
     def test_set_returns_false_when_no_row(self):
-        manager, mock_cursor = self._make_manager_with_mock_db(scene_state=None)
-        # fetchone returns None -> no row
+        manager, _ = self._make_manager_with_mock_db(execute_return=None)
         result = manager.set_presence_mode("test@example.com", PresenceMode.TEXTING)
         assert result is False
+
+
+# =========================================================================
+# Regression: Issue #53 — no private DB API usage
+# =========================================================================
+
+class TestPresenceModeNoPrivateDbApi:
+    """Ensure PresenceModeManager uses only the public db.execute() API.
+
+    Issue #53: the original implementation called db._get_connection() directly,
+    creating tight coupling to private database internals.
+    """
+
+    def test_get_uses_public_execute_not_private_connection(self):
+        """get_presence_mode must call db.execute(), not db._get_connection()."""
+        manager = PresenceModeManager()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = None
+        mock_db = MagicMock()
+        mock_db.execute.return_value = mock_result
+        manager._db = mock_db
+
+        manager.get_presence_mode("test@example.com")
+
+        mock_db.execute.assert_called_once()
+        mock_db._get_connection.assert_not_called()
+
+    def test_set_uses_public_execute_not_private_connection(self):
+        """set_presence_mode must call db.execute(), not db._get_connection()."""
+        manager = PresenceModeManager()
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = {'email': 'test@example.com'}
+        mock_db = MagicMock()
+        mock_db.execute.return_value = mock_result
+        manager._db = mock_db
+
+        manager.set_presence_mode("test@example.com", PresenceMode.TEXTING)
+
+        mock_db.execute.assert_called_once()
+        mock_db._get_connection.assert_not_called()
 
 
 # =========================================================================
@@ -158,16 +195,12 @@ class TestPresenceModePromptFormatting:
 
     def _make_manager_with_mode(self, mode_value):
         manager = PresenceModeManager()
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-        mock_conn.__exit__ = MagicMock(return_value=False)
-        mock_conn.cursor.return_value = mock_cursor
-        mock_cursor.fetchone.return_value = {
+        mock_result = MagicMock()
+        mock_result.fetchone.return_value = {
             'scene_state': {'presence_mode': mode_value}
         }
         mock_db = MagicMock()
-        mock_db._get_connection.return_value = mock_conn
+        mock_db.execute.return_value = mock_result
         manager._db = mock_db
         return manager
 
