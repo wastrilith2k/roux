@@ -65,6 +65,8 @@ SOURCE_TOKEN_BUDGETS = {
     'presence_mode': 200,
     'continuity_context': 400,
     'memory_validation': 800,
+    'derived_scene_context': 500,
+    'schedule': 600,
 }
 
 # Hard cap for all context sources combined (excludes fixed identity/instructions)
@@ -90,7 +92,7 @@ TIER_2 = frozenset({
     'memories', 'graphiti_context', 'biographies', 'episode_context',
     'memory_validation', 'relationship_dynamics', 'relationship_insights',
     'relationship_evaluation', 'scene_state', 'internal_state',
-    'session_summary',
+    'session_summary', 'derived_scene_context', 'schedule',
 })
 
 TIER_3 = frozenset({

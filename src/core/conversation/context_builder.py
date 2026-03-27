@@ -189,6 +189,8 @@ class ConversationContext:
             sections['curiosity_context'] = self.curiosity_context
         if self.goals_context:
             sections['goals_context'] = self.goals_context
+        if self.schedule:
+            sections['schedule'] = self.schedule
         if self.relationship_insights:
             sections['relationship_insights'] = self.relationship_insights
         if self.relationship_dynamics:

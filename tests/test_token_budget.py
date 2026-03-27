@@ -520,3 +520,116 @@ class TestDiagnosticsIncludeTokenBudgets:
         assert 'personality' in diagnostics['token_budgets']['per_source']
         assert 'total_tokens' in diagnostics['token_budgets']
         assert 'total_cap' in diagnostics['token_budgets']
+
+
+# ---------------------------------------------------------------------------
+# Regression: issue #64 — missing budget entries for context sources
+# ---------------------------------------------------------------------------
+
+class TestIssue64MissingBudgetEntries:
+    """Regression tests for issue #64: derived_scene_context and schedule
+    were missing from SOURCE_TOKEN_BUDGETS, bypassing per-source token caps.
+
+    Without budget entries these sources pass through apply_source_budgets()
+    unmodified and default to Tier 3 via get_tier(), meaning they get
+    no per-source cap and incorrect tier assignment.
+    """
+
+    def test_derived_scene_context_has_budget_entry(self):
+        """derived_scene_context must have a SOURCE_TOKEN_BUDGETS entry."""
+        from src.core.conversation.token_budget import SOURCE_TOKEN_BUDGETS
+        assert 'derived_scene_context' in SOURCE_TOKEN_BUDGETS, \
+            "derived_scene_context missing from SOURCE_TOKEN_BUDGETS"
+        assert SOURCE_TOKEN_BUDGETS['derived_scene_context'] > 0
+
+    def test_schedule_has_budget_entry(self):
+        """schedule must have a SOURCE_TOKEN_BUDGETS entry."""
+        from src.core.conversation.token_budget import SOURCE_TOKEN_BUDGETS
+        assert 'schedule' in SOURCE_TOKEN_BUDGETS, \
+            "schedule missing from SOURCE_TOKEN_BUDGETS"
+        assert SOURCE_TOKEN_BUDGETS['schedule'] > 0
+
+    def test_derived_scene_context_not_default_tier(self):
+        """derived_scene_context must be explicitly assigned to a tier,
+        not fall through to the Tier 3 default."""
+        from src.core.conversation.token_budget import (
+            TIER_1, TIER_2, TIER_3, get_tier,
+        )
+        assert 'derived_scene_context' in (TIER_1 | TIER_2 | TIER_3), \
+            "derived_scene_context not in any explicit tier set"
+        # Should be Tier 2 (important derived context)
+        assert get_tier('derived_scene_context') == 2
+
+    def test_schedule_not_default_tier(self):
+        """schedule must be explicitly assigned to a tier,
+        not fall through to the Tier 3 default."""
+        from src.core.conversation.token_budget import (
+            TIER_1, TIER_2, TIER_3, get_tier,
+        )
+        assert 'schedule' in (TIER_1 | TIER_2 | TIER_3), \
+            "schedule not in any explicit tier set"
+        # Should be Tier 2 (can be large, important reference)
+        assert get_tier('schedule') == 2
+
+    def test_derived_scene_context_truncated_when_oversized(self):
+        """Oversized derived_scene_context must be truncated by apply_source_budgets."""
+        from src.core.conversation.token_budget import (
+            apply_source_budgets, SOURCE_TOKEN_BUDGETS, estimate_tokens,
+        )
+        budget = SOURCE_TOKEN_BUDGETS['derived_scene_context']
+        oversized = "This is a derived context sentence. " * 500  # Way over budget
+        sections = {'derived_scene_context': oversized}
+        result = apply_source_budgets(sections)
+        result_tokens = estimate_tokens(result['derived_scene_context'])
+        assert result_tokens <= budget + 1, \
+            f"derived_scene_context should be capped at ~{budget} tokens, got {result_tokens}"
+
+    def test_schedule_truncated_when_oversized(self):
+        """Oversized schedule must be truncated by apply_source_budgets."""
+        from src.core.conversation.token_budget import (
+            apply_source_budgets, SOURCE_TOKEN_BUDGETS, estimate_tokens,
+        )
+        budget = SOURCE_TOKEN_BUDGETS['schedule']
+        oversized = "Calendar event for today. " * 500  # Way over budget
+        sections = {'schedule': oversized}
+        result = apply_source_budgets(sections)
+        result_tokens = estimate_tokens(result['schedule'])
+        assert result_tokens <= budget + 1, \
+            f"schedule should be capped at ~{budget} tokens, got {result_tokens}"
+
+    def test_derived_scene_context_in_to_prompt_sections(self):
+        """derived_scene_context must appear in to_prompt_sections() output."""
+        from src.core.conversation.context_builder import ConversationContext
+        ctx = ConversationContext()
+        ctx.derived_scene_context = "It is evening and the user is at home."
+        sections = ctx.to_prompt_sections()
+        assert 'derived_scene_context' in sections
+
+    def test_schedule_in_to_prompt_sections(self):
+        """schedule must appear in to_prompt_sections() output."""
+        from src.core.conversation.context_builder import ConversationContext
+        ctx = ConversationContext()
+        ctx.schedule = "10:00 AM — Meeting with team. 2:00 PM — Dentist."
+        sections = ctx.to_prompt_sections()
+        assert 'schedule' in sections
+
+    def test_all_to_prompt_sections_have_budget_entries(self):
+        """Every source emitted by to_prompt_sections() must have a
+        SOURCE_TOKEN_BUDGETS entry so it cannot bypass per-source caps."""
+        from src.core.conversation.context_builder import ConversationContext
+        from src.core.conversation.token_budget import SOURCE_TOKEN_BUDGETS
+
+        # Populate every string field on ConversationContext with a non-empty value
+        # so to_prompt_sections() emits all possible keys.
+        ctx = ConversationContext()
+        for field_name in vars(ctx):
+            if field_name.startswith('_') or field_name == 'PROVENANCE_TAGS':
+                continue
+            current = getattr(ctx, field_name)
+            if isinstance(current, str) and not current:
+                setattr(ctx, field_name, f"test content for {field_name}")
+
+        sections = ctx.to_prompt_sections()
+        missing = [name for name in sections if name not in SOURCE_TOKEN_BUDGETS]
+        assert not missing, \
+            f"Sources emitted by to_prompt_sections() missing from SOURCE_TOKEN_BUDGETS: {missing}"
