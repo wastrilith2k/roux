@@ -113,8 +113,8 @@ class ScheduleContextProvider:
     def fact_store(self):
         """Lazy-load fact store."""
         if self._fact_store is None:
-            from src.memory.fact_store import FactStore
-            self._fact_store = FactStore()
+            from src.memory.fact_store import get_fact_store
+            self._fact_store = get_fact_store()
         return self._fact_store
 
     def get_learned_schedule_facts(self, user_name: str) -> List[Dict[str, Any]]:
