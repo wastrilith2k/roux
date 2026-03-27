@@ -15,8 +15,9 @@ HOW:  `get_resilient_provider_chain()` builds a priority-ordered list of provide
       backoff before moving to the next. On total failure, a rate-limited Telegram
       notification is sent via the ops bot.
 
-      Default chain: Fireworks primary -> Fireworks fallback model -> DeepSeek
-      direct -> OpenAI gpt-4o-mini -> Anthropic (last resort).
+      Default chain: Ollama (if configured) -> Fireworks primary -> Fireworks
+      fallback model -> DeepSeek direct -> OpenAI gpt-4o-mini -> Anthropic
+      (last resort).
 """
 
 import os
@@ -224,7 +225,7 @@ def get_resilient_provider_chain(
     """
     Create a resilient provider chain with failover capability.
 
-    Default order: OpenRouter (free) → Fireworks → DeepSeek direct → OpenAI → Anthropic
+    Default order: Ollama (local) → OpenRouter (free) → Fireworks → DeepSeek direct → OpenAI → Anthropic
 
     Args:
         primary: Override primary provider ('fireworks' or 'anthropic')
@@ -238,6 +239,19 @@ def get_resilient_provider_chain(
     # Determine primary provider
     if primary is None:
         primary = os.getenv("LLM_PROVIDER", "fireworks").lower()
+
+    # Primary: Ollama (local, tried first when configured)
+    if primary == "ollama":
+        from .ollama_provider import OllamaProvider
+        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_model = os.getenv("OLLAMA_MODEL", "llama3.1")
+        ollama_ctx = int(os.getenv("OLLAMA_CONTEXT_LIMIT", "8192"))
+        providers.append(OllamaProvider(
+            base_url=ollama_base_url,
+            model=ollama_model,
+            context_limit=ollama_ctx
+        ))
+        logger.debug(f"Added Ollama primary: {ollama_model} at {ollama_base_url}")
 
     # Primary: OpenRouter (free, tried first when configured)
     openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
@@ -304,7 +318,7 @@ def get_resilient_provider_chain(
 
     if not providers:
         raise ValueError(
-            "No LLM providers configured. Set FIREWORKS_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY, or ANTHROPIC_API_KEY."
+            "No LLM providers configured. Set LLM_PROVIDER=ollama, or set FIREWORKS_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY, or ANTHROPIC_API_KEY."
         )
 
     logger.info(f"Created resilient provider chain: {[p.get_model_name() for p in providers]}")
@@ -369,7 +383,15 @@ def get_llm_provider(
 
     logger.info(f"Initializing LLM provider: {provider_name}")
 
-    if provider_name == "fireworks":
+    if provider_name == "ollama":
+        from .ollama_provider import OllamaProvider
+        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        if model is None:
+            model = os.getenv("OLLAMA_MODEL", "llama3.1")
+        context_limit = int(os.getenv("OLLAMA_CONTEXT_LIMIT", "8192"))
+        return OllamaProvider(base_url=base_url, model=model, context_limit=context_limit)
+
+    elif provider_name == "fireworks":
         api_key = os.getenv("FIREWORKS_API_KEY")
         if not api_key:
             raise ValueError("FIREWORKS_API_KEY environment variable not set")
@@ -399,7 +421,7 @@ def get_llm_provider(
     else:
         raise ValueError(
             f"Unknown LLM provider: {provider_name}. "
-            f"Supported providers: 'fireworks', 'anthropic'"
+            f"Supported providers: 'ollama', 'fireworks', 'anthropic'"
         )
 
 
