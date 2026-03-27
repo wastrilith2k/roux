@@ -3,12 +3,14 @@ Semantic Memory Search - Vector search over conversation history.
 
 WHAT: Provides semantic search over the messages table using pgvector for
 fast cosine-similarity retrieval, with optional Fireworks Qwen3 reranking
-for improved relevance ordering.
+for improved relevance ordering. Applies recency weighting so recent
+messages score higher than stale ones at the same similarity level.
 
 WHY: The companion needs to recall specific past messages that are
 semantically relevant to the current conversation. Embedding-based search
 finds matches that keyword search would miss (e.g., "beverage preferences"
-matching a message about "peppermint tea").
+matching a message about "peppermint tea"). Recency weighting prevents
+old messages from crowding out recent, more relevant ones.
 
 HOW it fits:
   - context_builder.py calls get_context_for_message() to retrieve relevant
@@ -21,6 +23,11 @@ Two-stage retrieval:
   2. Fireworks Qwen3 reranker: reorders by true relevance (optional,
      controlled by ENABLE_RERANKING env var).
 
+Recency weighting (applied after retrieval):
+  - score = similarity * recency_factor
+  - recency_factor decays linearly from 1.0 to RECENCY_FLOOR over
+    RECENCY_DECAY_DAYS (default 180 days).
+
 Usage:
     from src.memory.semantic_search import search_memory
 
@@ -30,16 +37,98 @@ Usage:
 """
 import os
 import logging
+from datetime import datetime, timezone
 from typing import List, Dict, Optional
 
 from src.memory.embeddings import generate_embedding
 from src.database.db import get_db
+from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
 # Enable/disable reranking via environment variable
 ENABLE_RERANKING = os.environ.get('ENABLE_RERANKING', 'true').lower() == 'true'
 RERANK_MULTIPLIER = int(os.environ.get('RERANK_MULTIPLIER', '3'))  # Get 3x candidates for reranking
+
+# Recency weighting configuration
+RECENCY_DECAY_DAYS = int(os.environ.get('RECENCY_DECAY_DAYS', '180'))
+RECENCY_FLOOR = float(os.environ.get('RECENCY_FLOOR', '0.5'))
+
+
+def _apply_recency_weighting(results: List[Dict], now: datetime = None) -> List[Dict]:
+    """
+    Apply recency weighting to search results.
+
+    Multiplies each result's similarity score by a recency factor that decays
+    linearly from 1.0 (today) to RECENCY_FLOOR over RECENCY_DECAY_DAYS.
+    Messages older than the decay window get the floor value.
+
+    Args:
+        results: Search results with 'similarity' and 'timestamp' fields
+        now: Current time (injectable for testing)
+
+    Returns:
+        Results with updated similarity scores and added recency_factor field,
+        re-sorted by the weighted score
+    """
+    if not results:
+        return results
+
+    if now is None:
+        now = datetime.now(timezone.utc)
+
+    weighted = []
+    for r in results:
+        r_copy = r.copy()
+        ts = r_copy.get('timestamp')
+        if ts:
+            try:
+                if isinstance(ts, str):
+                    msg_time = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                else:
+                    msg_time = ts
+                if msg_time.tzinfo is None:
+                    from zoneinfo import ZoneInfo
+                    msg_time = msg_time.replace(tzinfo=ZoneInfo('America/Los_Angeles'))
+                days_old = (now - msg_time.astimezone(timezone.utc)).days
+                # Linear decay from 1.0 to RECENCY_FLOOR over RECENCY_DECAY_DAYS
+                recency_factor = max(
+                    RECENCY_FLOOR,
+                    1.0 - (1.0 - RECENCY_FLOOR) * (days_old / RECENCY_DECAY_DAYS)
+                )
+            except Exception:
+                recency_factor = RECENCY_FLOOR
+        else:
+            recency_factor = RECENCY_FLOOR
+
+        r_copy['recency_factor'] = round(recency_factor, 3)
+        r_copy['similarity'] = round(r_copy['similarity'] * recency_factor, 4)
+        weighted.append(r_copy)
+
+    # Re-sort by weighted similarity (highest first)
+    weighted.sort(key=lambda x: x['similarity'], reverse=True)
+    return weighted
+
+
+def _update_last_retrieved_at(message_ids: List[int]) -> None:
+    """
+    Update last_retrieved_at timestamp for retrieved messages.
+
+    Tracks when embeddings were last used in search, enabling
+    retrieval-frequency-based eviction in the pruning task.
+    """
+    if not message_ids:
+        return
+
+    try:
+        db = get_db()
+        db.execute(f"""
+            UPDATE {T.MESSAGES}
+            SET last_retrieved_at = CURRENT_TIMESTAMP
+            WHERE id = ANY(%s)
+        """, (message_ids,))
+    except Exception as e:
+        logger.debug(f"Failed to update last_retrieved_at: {e}")
 
 
 def search_memory(query: str, email: str = None, limit: int = 10,
@@ -50,6 +139,10 @@ def search_memory(query: str, email: str = None, limit: int = 10,
     Uses two-stage retrieval:
     1. pgvector similarity search (fast, gets 3x candidates)
     2. Fireworks reranking (accurate, reorders by true relevance)
+
+    After retrieval, applies recency weighting so recent messages rank higher
+    than stale ones at the same similarity level. Also updates last_retrieved_at
+    to track retrieval frequency for eviction decisions.
 
     Args:
         query: Natural language query (e.g., "What does James like to drink?")
@@ -93,6 +186,13 @@ def search_memory(query: str, email: str = None, limit: int = 10,
         else:
             results = results[:limit]
             logger.info(f"Memory search for '{query[:50]}...' returned {len(results)} results")
+
+        # Apply recency weighting
+        results = _apply_recency_weighting(results)
+
+        # Track retrieval for eviction decisions (fire-and-forget)
+        message_ids = [r['id'] for r in results if r.get('id')]
+        _update_last_retrieved_at(message_ids)
 
         return results
 

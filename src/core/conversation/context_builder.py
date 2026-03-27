@@ -148,6 +148,42 @@ class ConversationContext:
 
 
 # ---------------------------------------------------------------------------
+# Storage metrics for diagnostics
+# ---------------------------------------------------------------------------
+
+def _get_storage_metrics() -> dict:
+    """
+    Gather storage metrics for embedding and graph lifecycle monitoring.
+
+    Returns counts and age statistics for pgvector embeddings. Failures
+    are swallowed — diagnostics should never break the main path.
+    """
+    metrics = {}
+    try:
+        from src.database.db import get_db
+        db = get_db()
+        result = db.execute(f"""
+            SELECT
+                COUNT(*) FILTER (WHERE embedding_vec IS NOT NULL) AS embedding_count,
+                COUNT(*) AS total_messages,
+                MIN(timestamp) FILTER (WHERE embedding_vec IS NOT NULL) AS oldest_embedding,
+                AVG(EXTRACT(EPOCH FROM (NOW() - timestamp)) / 86400)
+                    FILTER (WHERE embedding_vec IS NOT NULL) AS avg_embedding_age_days
+            FROM {T.MESSAGES}
+        """)
+        row = result.fetchone()
+        if row:
+            metrics['embedding_count'] = row['embedding_count']
+            metrics['total_messages'] = row['total_messages']
+            metrics['oldest_embedding'] = row['oldest_embedding'].isoformat() if row['oldest_embedding'] else None
+            metrics['avg_embedding_age_days'] = round(row['avg_embedding_age_days'], 1) if row['avg_embedding_age_days'] else None
+    except Exception as e:
+        logger.debug(f"Storage metrics unavailable: {e}")
+
+    return metrics
+
+
+# ---------------------------------------------------------------------------
 # ContextBuilder — parallel context assembly engine
 # ---------------------------------------------------------------------------
 
@@ -472,6 +508,7 @@ class ContextBuilder:
             'slowest_source': max(self._source_timings.items(), key=lambda x: x[1]) if self._source_timings else None,
             'largest_source': max(source_sizes.items(), key=lambda x: x[1]) if source_sizes else None,
             'conversation_turns': len(context.conversation_turns) if context.conversation_turns else 0,
+            'storage_metrics': _get_storage_metrics(),
         }
 
         return context, diagnostics
