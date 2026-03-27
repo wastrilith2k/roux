@@ -60,25 +60,22 @@ class PresenceModeManager:
         Returns DEFAULT_PRESENCE_MODE if no mode has been set.
         """
         try:
-            with self.db._get_connection() as conn:
-                from psycopg2.extras import RealDictCursor
-                cursor = conn.cursor(cursor_factory=RealDictCursor)
-                cursor.execute(
-                    f'SELECT scene_state FROM {T.USER_STATE} WHERE email = %s',
-                    (user_email,)
-                )
-                row = cursor.fetchone()
+            result = self.db.execute(
+                f'SELECT scene_state FROM {T.USER_STATE} WHERE email = %s',
+                (user_email,)
+            )
+            row = result.fetchone()
 
-                if row and row.get('scene_state'):
-                    state = row['scene_state']
-                    if isinstance(state, str):
-                        state = json.loads(state)
-                    mode_str = state.get('presence_mode')
-                    if mode_str:
-                        try:
-                            return PresenceMode(mode_str)
-                        except ValueError:
-                            logger.warning(f"Invalid presence mode in DB: {mode_str}")
+            if row and row.get('scene_state'):
+                state = row['scene_state']
+                if isinstance(state, str):
+                    state = json.loads(state)
+                mode_str = state.get('presence_mode')
+                if mode_str:
+                    try:
+                        return PresenceMode(mode_str)
+                    except ValueError:
+                        logger.warning(f"Invalid presence mode in DB: {mode_str}")
 
         except Exception as e:
             logger.warning(f"Failed to load presence mode: {e}")
@@ -90,36 +87,24 @@ class PresenceModeManager:
         Set the presence mode for a user.
 
         Merges into the existing scene_state JSONB so other scene fields
-        are preserved.
+        are preserved. Uses an atomic UPDATE with JSONB merge operator.
 
         Returns True if saved successfully.
         """
         try:
-            with self.db._get_connection() as conn:
-                from psycopg2.extras import RealDictCursor
-                cursor = conn.cursor(cursor_factory=RealDictCursor)
-
-                # Read current scene_state
-                cursor.execute(
-                    f'SELECT scene_state FROM {T.USER_STATE} WHERE email = %s',
-                    (user_email,)
-                )
-                row = cursor.fetchone()
-
-                if not row:
-                    logger.warning(f"No user_state row found for {user_email}")
-                    return False
-
-                current_state = row.get('scene_state') or {}
-                if isinstance(current_state, str):
-                    current_state = json.loads(current_state)
-
-                current_state['presence_mode'] = mode.value
-
-                cursor.execute(
-                    f'UPDATE {T.USER_STATE} SET scene_state = %s WHERE email = %s',
-                    (json.dumps(current_state), user_email)
-                )
+            result = self.db.execute(
+                f"""UPDATE {T.USER_STATE}
+                    SET scene_state = COALESCE(scene_state, '{{}}'::jsonb)
+                                      || %s::jsonb
+                    WHERE email = %s
+                    RETURNING email
+                """,
+                (json.dumps({'presence_mode': mode.value}), user_email)
+            )
+            row = result.fetchone()
+            if not row:
+                logger.warning(f"No user_state row found for {user_email}")
+                return False
 
             logger.info(f"Presence mode set to {mode.value} for {user_email}")
             return True
