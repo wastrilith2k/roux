@@ -892,6 +892,54 @@ class CostTracker:
 
         return [dict(row) for row in rows]
 
+    # ========================================================================
+    # BUDGET ENFORCEMENT
+    # ========================================================================
+
+    def check_budget(self, user_id: str, service: str = None) -> Dict[str, Any]:
+        """Check whether the user is within budget for a service (or overall).
+
+        Args:
+            user_id: User identifier (email).
+            service: Optional service name ('fireworks', 'openai', etc.).
+                     If None, checks total budget.
+
+        Returns:
+            Dict with keys:
+              - allowed (bool): True if under budget
+              - budget (float): Monthly budget limit
+              - spent (float): Amount spent this month
+              - remaining (float): Budget remaining
+              - percentage (float): Percentage of budget used
+        """
+        today = date.today()
+        costs_month = self._get_costs_for_month(user_id, today.year, today.month)
+        budgets = self._get_budgets(user_id)
+
+        key = service if service else 'total'
+        spent = costs_month.get(key, 0.0)
+        budget = budgets.get(key, 0.0)
+
+        if budget <= 0:
+            return {
+                'allowed': True,
+                'budget': budget,
+                'spent': spent,
+                'remaining': 0.0,
+                'percentage': 0.0,
+            }
+
+        remaining = max(0.0, budget - spent)
+        percentage = (spent / budget) * 100
+
+        return {
+            'allowed': remaining > 0,
+            'budget': budget,
+            'spent': spent,
+            'remaining': remaining,
+            'percentage': percentage,
+        }
+
 
 # ============================================================================
 # SINGLETON INSTANCE

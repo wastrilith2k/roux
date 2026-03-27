@@ -213,6 +213,30 @@ class ResilientProviderChain:
         """Return name of currently preferred provider."""
         return self.providers[self._last_successful_provider].get_model_name()
 
+    def get_last_usage(self) -> Dict:
+        """Return usage stats from the last successful provider call."""
+        provider = self.providers[self._last_successful_provider]
+        return provider.get_last_usage()
+
+    def get_last_provider_type(self) -> str:
+        """Return the type name of the last successful provider.
+
+        Returns one of: 'fireworks', 'openai', 'anthropic', 'ollama', 'unknown'
+        """
+        provider = self.providers[self._last_successful_provider]
+        from .fireworks_provider import FireworksProvider
+        if isinstance(provider, FireworksProvider):
+            return 'fireworks'
+        if isinstance(provider, OpenAIProvider):
+            return 'openai'
+        try:
+            from .anthropic_provider import AnthropicProvider
+            if isinstance(provider, AnthropicProvider):
+                return 'anthropic'
+        except ImportError:
+            pass
+        return 'unknown'
+
     def get_context_limit(self) -> int:
         """Return context limit of currently preferred provider."""
         return self.providers[self._last_successful_provider].get_context_limit()

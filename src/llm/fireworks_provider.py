@@ -26,6 +26,7 @@ class FireworksProvider(LLMProvider):
         self.model = model
         self.base_url = base_url
         self.context_limit = 262144  # 262K tokens
+        self._last_usage = {}
 
     async def generate(
         self,
@@ -67,6 +68,11 @@ class FireworksProvider(LLMProvider):
                         raise Exception(f"Fireworks API error: {response.status}")
 
                     result = await response.json()
+                    usage = result.get('usage', {})
+                    self._last_usage = {
+                        'input_tokens': usage.get('prompt_tokens', 0),
+                        'output_tokens': usage.get('completion_tokens', 0),
+                    }
                     return result['choices'][0]['message']['content']
 
         except Exception as e:
@@ -111,6 +117,11 @@ class FireworksProvider(LLMProvider):
                 raise Exception(f"Fireworks API error: {response.status_code}")
 
             result = response.json()
+            usage = result.get('usage', {})
+            self._last_usage = {
+                'input_tokens': usage.get('prompt_tokens', 0),
+                'output_tokens': usage.get('completion_tokens', 0),
+            }
             return result['choices'][0]['message']['content']
 
         except Exception as e:
