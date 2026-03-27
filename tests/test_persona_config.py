@@ -39,6 +39,32 @@ class TestPersonaConfig:
         kai = get_persona_config(companion_id='kai')
         assert default is not kai
 
+    def test_path_traversal_in_companion_id_rejected(self):
+        """companion_id with path traversal characters must be rejected."""
+        malicious_ids = [
+            '../etc',
+            '../../secrets',
+            'foo/../../bar',
+            'kai/../../../etc',
+            '..',
+            '.',
+            'foo/bar',
+        ]
+        for malicious_id in malicious_ids:
+            with pytest.raises(ValueError, match="Invalid companion_id"):
+                get_persona_config(companion_id=malicious_id)
+
+    def test_valid_companion_id_formats_accepted(self):
+        """Legitimate companion_id values should not be rejected by validation."""
+        # These should not raise ValueError (they may fail to find a file, but
+        # that's fine — the validation step should pass)
+        valid_ids = ['kai', 'mira', 'companion-1', 'test_bot', 'Agent007']
+        for valid_id in valid_ids:
+            try:
+                get_persona_config(companion_id=valid_id)
+            except ValueError:
+                pytest.fail(f"Valid companion_id '{valid_id}' was incorrectly rejected")
+
     def test_env_var_overrides(self):
         reset_persona_config()
         os.environ['COMPANION_NAME'] = 'TestBot'

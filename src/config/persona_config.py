@@ -16,6 +16,7 @@ Priority chain: env vars > YAML values > hardcoded defaults.
 
 import os
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional
@@ -135,6 +136,11 @@ def _load_config(companion_id: str = None) -> PersonaConfig:
         companion_id = os.environ.get('COMPANION_ID')
 
     if companion_id:
+        if not re.match(r'^[a-zA-Z0-9_-]+$', companion_id):
+            raise ValueError(
+                f"Invalid companion_id '{companion_id}': "
+                "must contain only alphanumeric characters, hyphens, and underscores"
+            )
         yaml_path = project_root / 'instances' / companion_id / 'persona.yaml'
     else:
         yaml_path = project_root / 'data' / 'persona.yaml'
