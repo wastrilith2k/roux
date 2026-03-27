@@ -367,10 +367,13 @@ class TestGraphitiPruningTask:
                 record.__getitem__ = lambda self, key: 10
                 result.single.return_value = record
             elif n == 5:
-                # DETACH DELETE episodes — return mock with counters
-                return mock_episode_result
+                # Step 4a: remove low-importance edges from old episodes
+                pass
             elif n == 6:
-                # DELETE edges — return mock with counters
+                # Step 4b: delete orphaned episode nodes — return mock with counters
+                return mock_episode_result
+            elif n == 7:
+                # Step 5: DELETE expired low-importance edges — return mock with counters
                 return mock_edge_result
             return result
 
