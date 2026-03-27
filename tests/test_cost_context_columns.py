@@ -379,6 +379,7 @@ class TestSimulationPassesContext:
 
     def test_simulation_tags_openrouter_call(self):
         with patch('scripts.simulate_relationship.SimulationRunner._load_simulation_config'), \
+             patch('scripts.simulate_relationship.SimulationRunner._ensure_schema'), \
              patch('scripts.simulate_relationship.SimulationRunner._ensure_user_profiles'), \
              patch('scripts.simulate_relationship.SimulationRunner._save_all_states'), \
              patch('scripts.simulate_relationship.SimulationEventEmitter'), \

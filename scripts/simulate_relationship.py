@@ -152,6 +152,9 @@ class SimulationRunner:
         # Load config from external YAML files
         self._load_simulation_config()
 
+        # Ensure Postgres schema and tables exist (bypasses normal web_chat init path)
+        self._ensure_schema()
+
         # Ensure user profiles exist for simulation emails (required by FK constraint)
         self._ensure_user_profiles()
 
@@ -289,6 +292,42 @@ class SimulationRunner:
                 )
         except Exception as e:
             logger.warning(f"Failed to save internal states: {e}")
+
+    def _ensure_schema(self):
+        """Ensure public and per-user Postgres schemas exist.
+
+        The normal app path bootstraps tables via web_chat -> db, but the
+        simulation bypasses that, so we must create them explicitly.
+        """
+        try:
+            import psycopg2
+            from src.database.schema_ddl import get_public_schema_ddl
+            from src.database.schema_manager import ensure_user_schema
+
+            conn = psycopg2.connect(
+                host=os.environ.get('POSTGRES_HOST', 'localhost'),
+                port=os.environ.get('POSTGRES_PORT', '5432'),
+                database=os.environ.get('POSTGRES_DB', 'companion'),
+                user=os.environ.get('POSTGRES_USER', 'companion'),
+                password=os.environ.get('POSTGRES_PASSWORD', ''),
+            )
+            try:
+                # Create public schema tables (user_profiles, etc.)
+                with conn.cursor() as cur:
+                    cur.execute(get_public_schema_ddl())
+                conn.commit()
+
+                # Create per-companion user schemas
+                for cid in self.companions:
+                    email = f"{cid}@companion.local"
+                    ensure_user_schema(conn, email)
+            finally:
+                conn.close()
+
+            logger.info("Database schema ensured for simulation")
+        except Exception as e:
+            logger.error(f"Failed to ensure database schema: {e}")
+            raise
 
     def _ensure_user_profiles(self):
         """Create user_profiles rows for simulation companion emails."""
@@ -923,7 +962,7 @@ You communicate via {comm_device}. {comm_style}
         """Generate daily schedule for a companion."""
         try:
             from src.scheduling.calendar_schedule_generator import generate_daily_schedule
-            generate_daily_schedule(companion_id=cid)
+            generate_daily_schedule(target_date=self.clock.now())
             logger.info(f"  [{cid}] Schedule generated")
         except Exception as e:
             logger.warning(f"  [{cid}] Schedule generation skipped: {e}")

@@ -22,6 +22,7 @@ def _make_runner(companions=None):
     companions = companions or ['alice', 'bob']
 
     with patch('scripts.simulate_relationship.SimulationRunner._load_simulation_config'), \
+         patch('scripts.simulate_relationship.SimulationRunner._ensure_schema'), \
          patch('scripts.simulate_relationship.SimulationRunner._ensure_user_profiles'), \
          patch('scripts.simulate_relationship.SimulationRunner._save_all_states'), \
          patch('scripts.simulate_relationship.SimulationEventEmitter'), \
