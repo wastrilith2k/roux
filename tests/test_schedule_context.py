@@ -387,3 +387,16 @@ class TestSingleton:
             assert isinstance(p, ScheduleContextProvider)
         finally:
             mod._provider = old
+
+    def test_fact_store_uses_singleton_not_direct_instantiation(self):
+        """Regression for #55: fact_store property must use get_fact_store(), not FactStore().
+
+        The lazy import inside the property should call get_fact_store() (the
+        singleton factory) rather than FactStore() directly.
+        """
+        sentinel = MagicMock(name='singleton_fact_store')
+        provider = ScheduleContextProvider()
+        with patch('src.memory.fact_store.get_fact_store', return_value=sentinel) as mock_get:
+            store = provider.fact_store
+            mock_get.assert_called_once()
+            assert store is sentinel
