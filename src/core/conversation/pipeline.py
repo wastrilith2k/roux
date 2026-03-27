@@ -266,6 +266,7 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
         """
         start_time = time.time()
         self._current_user_email = user_email
+        self._model_override = extra_context.get('model_override') if extra_context else None
         is_proactive_msg = extra_context.get('is_proactive_message', False) if extra_context else False
 
         # Initialize profiler if enabled
@@ -1377,8 +1378,9 @@ Just write the message itself, nothing else.
         """
         from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
 
-        # Get resilient provider chain (Fireworks -> Anthropic failover)
-        chain = get_resilient_provider_chain()
+        # Get resilient provider chain with optional per-request model override
+        model_override = getattr(self, '_model_override', None)
+        chain = get_resilient_provider_chain(model_override=model_override)
 
         # Build messages in proper multi-turn format
         messages = [{"role": "system", "content": system_prompt}]
@@ -1440,7 +1442,14 @@ Just write the message itself, nothing else.
             from src.services.cost_tracker import get_cost_tracker
             tracker = get_cost_tracker()
 
-            if provider_type == 'fireworks':
+            if provider_type == 'openrouter':
+                tracker.track_openrouter_call(
+                    user_id=user_email,
+                    prompt_tokens=input_tokens,
+                    completion_tokens=output_tokens,
+                    model=model,
+                )
+            elif provider_type == 'fireworks':
                 tracker.track_fireworks_call(
                     user_id=user_email,
                     prompt_tokens=input_tokens,

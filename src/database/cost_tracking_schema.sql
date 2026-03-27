@@ -42,6 +42,23 @@ CREATE TABLE IF NOT EXISTS openai_usage (
 CREATE INDEX IF NOT EXISTS idx_openai_user_timestamp ON openai_usage(user_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_openai_date ON openai_usage(DATE(timestamp));
 
+-- OpenRouter usage tracking
+CREATE TABLE IF NOT EXISTS openrouter_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    user_id TEXT NOT NULL,
+    model TEXT DEFAULT 'deepseek/deepseek-chat',
+    prompt_tokens INTEGER NOT NULL,
+    completion_tokens INTEGER NOT NULL,
+    total_tokens INTEGER NOT NULL,
+    cost_usd REAL NOT NULL,
+    response_time_ms INTEGER,
+    error BOOLEAN DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_openrouter_user_timestamp ON openrouter_usage(user_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_openrouter_date ON openrouter_usage(DATE(timestamp));
+
 -- Hedra avatar video usage tracking
 CREATE TABLE IF NOT EXISTS hedra_usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,6 +141,12 @@ CREATE TABLE IF NOT EXISTS daily_cost_summary (
     date DATE NOT NULL,
     user_id TEXT NOT NULL,
 
+    -- OpenRouter
+    openrouter_calls INTEGER DEFAULT 0,
+    openrouter_tokens_in INTEGER DEFAULT 0,
+    openrouter_tokens_out INTEGER DEFAULT 0,
+    openrouter_cost_usd REAL DEFAULT 0,
+
     -- Fireworks.ai
     fireworks_calls INTEGER DEFAULT 0,
     fireworks_tokens_in INTEGER DEFAULT 0,
@@ -172,6 +195,7 @@ CREATE TABLE IF NOT EXISTS budget_limits (
     user_id TEXT PRIMARY KEY,
 
     -- Per-service monthly budgets
+    openrouter_monthly_limit_usd REAL DEFAULT 50.00,
     fireworks_monthly_limit_usd REAL DEFAULT 150.00,
     openai_monthly_limit_usd REAL DEFAULT 50.00,
     hedra_monthly_limit_usd REAL DEFAULT 100.00,
@@ -222,6 +246,7 @@ CREATE TABLE IF NOT EXISTS service_links (
 
 -- Insert default service links
 INSERT OR REPLACE INTO service_links (service_name, billing_url, usage_url, api_dashboard_url, support_url) VALUES
+('openrouter', 'https://openrouter.ai/settings/credits', 'https://openrouter.ai/activity', 'https://openrouter.ai/settings/keys', 'https://openrouter.ai/docs'),
 ('fireworks', 'https://fireworks.ai/account/billing', 'https://fireworks.ai/account/usage', 'https://fireworks.ai/account/api-keys', 'https://docs.fireworks.ai/'),
 ('openai', 'https://platform.openai.com/account/billing/overview', 'https://platform.openai.com/usage', 'https://platform.openai.com/api-keys', 'https://help.openai.com/'),
 ('hedra', 'https://www.hedra.com/account/billing', 'https://www.hedra.com/account/usage', 'https://www.hedra.com/api', 'https://docs.hedra.com/'),
@@ -237,6 +262,7 @@ INSERT OR REPLACE INTO service_links (service_name, billing_url, usage_url, api_
 CREATE VIEW IF NOT EXISTS v_current_month_summary AS
 SELECT
     user_id,
+    SUM(openrouter_cost_usd) as openrouter_total,
     SUM(fireworks_cost_usd) as fireworks_total,
     SUM(openai_cost_usd) as openai_total,
     SUM(hedra_cost_usd) as hedra_total,
@@ -253,6 +279,7 @@ GROUP BY user_id;
 CREATE VIEW IF NOT EXISTS v_today_summary AS
 SELECT
     user_id,
+    openrouter_cost_usd,
     fireworks_cost_usd,
     openai_cost_usd,
     hedra_cost_usd,

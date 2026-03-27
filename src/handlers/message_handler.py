@@ -112,6 +112,11 @@ class MessageProcessor:
                 if temporal:
                     extra_context['client_temporal'] = temporal
 
+            # Per-request model override (e.g. from user tier or API header)
+            model_override = data.get('model_override')
+            if model_override:
+                extra_context['model_override'] = model_override
+
             # Process through pipeline
             logger.info(f"📨 Processing message from {email}: {message[:100]}...")
 

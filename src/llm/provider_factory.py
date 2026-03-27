@@ -34,6 +34,7 @@ except ImportError:
 
 from .provider_interface import LLMProvider
 from .openai_provider import OpenAIProvider
+from .openrouter_provider import OpenRouterProvider
 
 logger = logging.getLogger(__name__)
 
@@ -221,12 +222,15 @@ class ResilientProviderChain:
     def get_last_provider_type(self) -> str:
         """Return the type name of the last successful provider.
 
-        Returns one of: 'fireworks', 'openai', 'anthropic', 'ollama', 'unknown'
+        Returns one of: 'openrouter', 'fireworks', 'openai', 'anthropic', 'ollama', 'unknown'
         """
         provider = self.providers[self._last_successful_provider]
         from .fireworks_provider import FireworksProvider
         if isinstance(provider, FireworksProvider):
             return 'fireworks'
+        # Check OpenRouterProvider before OpenAIProvider (it's a subclass)
+        if isinstance(provider, OpenRouterProvider):
+            return 'openrouter'
         if isinstance(provider, OpenAIProvider):
             return 'openai'
         try:
@@ -244,16 +248,20 @@ class ResilientProviderChain:
 
 def get_resilient_provider_chain(
     primary: str = None,
-    fallback: str = None
+    fallback: str = None,
+    model_override: str = None,
 ) -> ResilientProviderChain:
     """
     Create a resilient provider chain with failover capability.
 
-    Default order: Ollama (local) → OpenRouter (free) → Fireworks → DeepSeek direct → OpenAI → Anthropic
+    Default order: Ollama (local) → OpenRouter → Fireworks → DeepSeek direct → OpenAI → Anthropic
 
     Args:
         primary: Override primary provider ('fireworks' or 'anthropic')
         fallback: Override fallback provider ('fireworks' or 'anthropic')
+        model_override: Per-request model override (e.g. 'deepseek/deepseek-chat').
+                       When set and OpenRouter is configured, creates an OpenRouter
+                       provider with this model as the primary in the chain.
 
     Returns:
         Configured ResilientProviderChain
@@ -277,15 +285,17 @@ def get_resilient_provider_chain(
         ))
         logger.debug(f"Added Ollama primary: {ollama_model} at {ollama_base_url}")
 
-    # Primary: OpenRouter (free, tried first when configured)
+    # Primary: OpenRouter (tried first when configured)
     openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
     if openrouter_api_key:
-        openrouter_model = os.getenv("OPENROUTER_MODEL", "openrouter/free")
-        providers.append(OpenAIProvider(
+        # Per-request model override: use the override model for OpenRouter
+        openrouter_model = model_override or os.getenv(
+            "OPENROUTER_DEFAULT_MODEL",
+            os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat")
+        )
+        providers.append(OpenRouterProvider(
             api_key=openrouter_api_key,
             model=openrouter_model,
-            base_url="https://openrouter.ai/api/v1",
-            context_limit=131072
         ))
         logger.debug(f"Added OpenRouter primary: {openrouter_model}")
 
@@ -442,10 +452,23 @@ def get_llm_provider(
         from .anthropic_provider import AnthropicProvider
         return AnthropicProvider(api_key=api_key, model=model)
 
+    elif provider_name == "openrouter":
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY environment variable not set")
+
+        if model is None:
+            model = os.getenv(
+                "OPENROUTER_DEFAULT_MODEL",
+                os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat")
+            )
+
+        return OpenRouterProvider(api_key=api_key, model=model)
+
     else:
         raise ValueError(
             f"Unknown LLM provider: {provider_name}. "
-            f"Supported providers: 'ollama', 'fireworks', 'anthropic'"
+            f"Supported providers: 'ollama', 'fireworks', 'anthropic', 'openrouter'"
         )
 
 
