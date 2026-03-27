@@ -20,7 +20,6 @@ Singleton: get_schedule_context_provider() at module bottom.
 """
 
 import logging
-import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -296,9 +295,12 @@ class ScheduleContextProvider:
             line = f"- {predicate}: {obj}"
             lines.append(line)
 
+        from src.config.persona_config import get_persona_config
+        u_subject = get_persona_config().user_pronoun_subject
+
         lines.append(
             f"\nUse this to understand what {user_name} is likely doing "
-            "right now. These are things he's told you — reference them "
+            f"right now. These are things {u_subject}'s told you — reference them "
             "naturally, not as a list."
         )
 

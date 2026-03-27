@@ -284,6 +284,25 @@ class TestPromptFormatting:
         result = provider.format_for_prompt('James', current_time=now)
         assert 'naturally' in result
 
+    def test_format_uses_persona_pronouns_not_hardcoded(self):
+        """Regression: pronouns in prompt must come from persona config, not hardcoded."""
+        facts = [_make_fact('James', 'has_routine', 'works 9-5')]
+        provider = self._make_provider_with_facts(facts)
+        now = datetime(2026, 3, 25, 10, 0, tzinfo=ZoneInfo('America/Los_Angeles'))
+
+        # Mock persona config to return "she" as the user's subject pronoun
+        mock_config = MagicMock()
+        mock_config.primary_user_name = 'James'
+        mock_config.user_pronoun_subject = 'she'
+
+        with patch('src.config.persona_config.get_persona_config', return_value=mock_config):
+            result = provider.format_for_prompt('James', current_time=now)
+
+        # Must use the configured pronoun, not hardcoded "he"
+        assert "she's told you" in result
+        # Verify the pronoun actually came from config (not hardcoded "he")
+        assert "things he's" not in result
+
 
 # =========================================================================
 # TimeAwareness Integration Tests
@@ -330,22 +349,10 @@ class TestTimeAwarenessIntegration:
 
         assert "LEARNED ROUTINE" not in context
 
-    @patch('src.core.time_awareness.TimeAwareness._get_calendar_section', return_value='')
-    @patch('src.core.time_awareness.TimeAwareness._get_routine_section', return_value='')
-    @patch('src.core.time_awareness.TimeAwareness._get_companion_schedule_section', return_value='')
-    @patch('src.core.time_awareness.TimeAwareness._get_work_projects_section', return_value='')
-    def test_graceful_degradation_on_error(self, _work, _comp, _routine, _cal):
-        """If schedule context provider throws, time context still works."""
+    def test_graceful_degradation_on_error(self):
+        """If schedule context provider throws, _get_learned_schedule_section returns empty."""
         from src.core.time_awareness import TimeAwareness
 
-        with patch('src.core.time_awareness.TimeAwareness._get_learned_schedule_section', side_effect=Exception("boom")):
-            ta = TimeAwareness()
-            # Should not raise — the method handles errors internally
-            # But since we patched the method itself to throw, let's test
-            # the internal error handling path instead
-            pass
-
-        # Test the internal error handling of _get_learned_schedule_section
         ta = TimeAwareness()
         with patch('src.core.schedule_context.get_schedule_context_provider', side_effect=Exception("import fail")):
             result = ta._get_learned_schedule_section(datetime.now())
