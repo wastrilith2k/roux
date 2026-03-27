@@ -128,6 +128,11 @@ class TimeAwareness:
         if routine_section:
             sections.append(routine_section)
 
+        # 3b. User's learned routine (from conversations — issue #28)
+        learned_section = self._get_learned_schedule_section(now)
+        if learned_section:
+            sections.append(learned_section)
+
         # 4. Companion's schedule
         companion_section = self._get_companion_schedule_section(now)
         if companion_section:
@@ -192,6 +197,31 @@ class TimeAwareness:
 
         except Exception as e:
             logger.debug(f"Routine section unavailable: {e}")
+            return ""
+
+    def _get_learned_schedule_section(self, now: datetime) -> str:
+        """
+        Get schedule context learned from conversations (issue #28).
+
+        Queries the fact store for schedule/routine facts the user has
+        mentioned and formats the most time-relevant ones for the prompt.
+        """
+        try:
+            from src.core.schedule_context import get_schedule_context_provider
+            from src.config.persona_config import get_persona_config
+
+            provider = get_schedule_context_provider()
+            user_name = get_persona_config().primary_user_name
+            context = provider.format_for_prompt(user_name, current_time=now)
+
+            if context:
+                logger.debug("Learned schedule context loaded for prompt")
+                return context
+
+            return ""
+
+        except Exception as e:
+            logger.debug(f"Learned schedule section unavailable: {e}")
             return ""
 
     def _get_companion_schedule_section(self, now: datetime) -> str:
