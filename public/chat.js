@@ -460,8 +460,12 @@
         showTyping();
         waitingForResponse = true;
 
-        // Send to backend
-        socket.emit('send_message', { message: text });
+        // Send to backend with device clock context
+        socket.emit('send_message', {
+            message: text,
+            client_timestamp: new Date().toISOString(),
+            client_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        });
     }
 
     // ── Input handling ──

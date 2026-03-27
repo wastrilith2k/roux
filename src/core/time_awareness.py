@@ -43,6 +43,63 @@ def get_time_awareness() -> 'TimeAwareness':
     return _time_awareness
 
 
+def derive_temporal_context(client_timestamp: str, client_timezone: str) -> dict:
+    """
+    Derive structured temporal context from client-provided clock data.
+
+    Args:
+        client_timestamp: ISO 8601 timestamp from the client device
+        client_timezone: IANA timezone string (e.g., 'America/New_York')
+
+    Returns:
+        Dict with keys: local_time, time_of_day, day_of_week, is_weekend,
+        date_str, timezone, formatted (human-readable summary)
+    """
+    try:
+        tz = ZoneInfo(client_timezone)
+    except (KeyError, ValueError):
+        logger.warning(f"Invalid client timezone '{client_timezone}', falling back to server clock")
+        return {}
+
+    try:
+        from datetime import timezone as dt_timezone
+        parsed = datetime.fromisoformat(client_timestamp.replace('Z', '+00:00'))
+        local_time = parsed.astimezone(tz)
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid client timestamp '{client_timestamp}', falling back to server clock")
+        return {}
+
+    hour = local_time.hour
+    if 5 <= hour < 12:
+        time_of_day = 'morning'
+    elif 12 <= hour < 17:
+        time_of_day = 'afternoon'
+    elif 17 <= hour < 21:
+        time_of_day = 'evening'
+    else:
+        time_of_day = 'night'
+
+    day_of_week = local_time.strftime('%A')
+    is_weekend = local_time.weekday() >= 5
+    date_str = local_time.strftime('%B %d, %Y')
+
+    # Abbreviate timezone for display (e.g., 'America/New_York' -> 'EST'/'EDT')
+    tz_abbr = local_time.strftime('%Z') or client_timezone.split('/')[-1]
+
+    formatted = local_time.strftime(f"Current time: %A, %B %d, %Y at %-I:%M %p {tz_abbr}")
+
+    return {
+        'local_time': local_time,
+        'time_of_day': time_of_day,
+        'day_of_week': day_of_week,
+        'is_weekend': is_weekend,
+        'date_str': date_str,
+        'timezone': client_timezone,
+        'tz_abbr': tz_abbr,
+        'formatted': formatted,
+    }
+
+
 class TimeAwareness:
     """Provides rich temporal context beyond just the clock."""
 

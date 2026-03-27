@@ -102,6 +102,16 @@ class MessageProcessor:
             # If stored before, the pipeline's history fetch would include this message,
             # causing the companion to see the user's message twice in context.
 
+            # Derive temporal context from client device clock if provided
+            extra_context = {}
+            client_ts = data.get('client_timestamp')
+            client_tz = data.get('client_timezone')
+            if client_ts and client_tz:
+                from src.core.time_awareness import derive_temporal_context
+                temporal = derive_temporal_context(client_ts, client_tz)
+                if temporal:
+                    extra_context['client_temporal'] = temporal
+
             # Process through pipeline
             logger.info(f"📨 Processing message from {email}: {message[:100]}...")
 
@@ -109,6 +119,7 @@ class MessageProcessor:
                 user_email=email,
                 user_message=message,
                 closeness_score=closeness,
+                extra_context=extra_context or None,
                 cancel_check=cancel_check
             )
 

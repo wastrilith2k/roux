@@ -262,14 +262,35 @@ def get_entity_profile_loader() -> EntityProfileLoader:
     return get_entity_profile_loader._instance
 
 
-def get_current_time_context() -> str:
+def get_current_time_context(client_temporal: dict = None) -> str:
     """
-    Get current date/time in PST for inclusion in LLM prompts.
-    This gives the companion their perception of "now".
+    Get current date/time for inclusion in LLM prompts.
+
+    When client_temporal data is provided (from the user's device clock),
+    uses that instead of the server clock so the companion knows the user's
+    actual local time and timezone.
+
+    Args:
+        client_temporal: Optional dict from derive_temporal_context() with keys
+            'formatted', 'time_of_day', 'is_weekend', 'day_of_week'.
 
     Returns:
-        Formatted string like: "Current time: Monday, November 25, 2025 at 2:30 PM PST"
+        Formatted string like: "Current time: Monday, November 25, 2025 at 2:30 PM EST"
     """
+    if client_temporal and client_temporal.get('formatted'):
+        parts = [client_temporal['formatted']]
+
+        time_of_day = client_temporal.get('time_of_day', '')
+        day_of_week = client_temporal.get('day_of_week', '')
+        is_weekend = client_temporal.get('is_weekend', False)
+
+        day_type = 'weekend' if is_weekend else 'weekday'
+        if time_of_day and day_of_week:
+            parts.append(f"It's {day_of_week} {time_of_day} ({day_type}).")
+
+        return ' '.join(parts)
+
+    # Fallback: server clock in Pacific time
     now = datetime.now(ZoneInfo('America/Los_Angeles'))
     return now.strftime("Current time: %A, %B %d, %Y at %-I:%M %p PST")
 
