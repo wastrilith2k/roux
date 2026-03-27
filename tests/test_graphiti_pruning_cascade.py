@@ -6,8 +6,6 @@ splits this into two sub-steps: remove only low-importance edges first, then
 delete only orphaned episode nodes.
 """
 
-import types
-from datetime import datetime, timezone, timedelta
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -15,7 +13,6 @@ import pytest
 from src.tasks.graphiti_pruning_task import (
     prune_old_episodes,
     HIGH_IMPORTANCE_EDGE_FLOOR,
-    EPISODE_MAX_AGE_DAYS,
 )
 
 
