@@ -25,6 +25,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 
 from src.core.clock import now as clock_now
+from src.core.time_awareness import time_of_day_label
 
 logger = logging.getLogger(__name__)
 
@@ -240,15 +241,7 @@ class ScheduleContextProvider:
             current_time = clock_now()
 
         # Determine time context
-        hour = current_time.hour
-        if 5 <= hour < 12:
-            time_of_day = 'morning'
-        elif 12 <= hour < 17:
-            time_of_day = 'afternoon'
-        elif 17 <= hour < 21:
-            time_of_day = 'evening'
-        else:
-            time_of_day = 'night'
+        time_of_day = time_of_day_label(current_time.hour)
 
         day_type = 'weekend' if current_time.weekday() >= 5 else 'weekday'
 
