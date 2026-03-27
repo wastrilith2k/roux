@@ -285,6 +285,87 @@ class TestToPromptSectionsAppliesBudgets:
 
 
 # ---------------------------------------------------------------------------
+# Integration: _assemble_prompt applies per-source budgets (Phase 1)
+# ---------------------------------------------------------------------------
+
+class TestAssemblePromptAppliesPerSourceBudgets:
+    """Verify that per-source token budgets are enforced in the main prompt
+    assembly path (_assemble_prompt), not just in to_prompt_sections().
+
+    This is a regression test for the gap identified in the first attempt at
+    issue #21: apply_source_budgets was only called from to_prompt_sections()
+    which is never invoked by _assemble_prompt.
+    """
+
+    @patch('src.core.conversation.pipeline.get_context_builder')
+    @patch('src.core.conversation.pipeline.get_memory_validation_agent')
+    @patch('src.core.conversation.pipeline.get_message_validator_agent')
+    def test_oversized_source_truncated_in_assemble_prompt(
+        self, mock_validator, mock_memory, mock_ctx_builder
+    ):
+        """A source that exceeds its per-source budget should be truncated
+        in the prompt produced by _assemble_prompt."""
+        from src.core.conversation.context_builder import ConversationContext
+        from src.core.conversation.token_budget import (
+            SOURCE_TOKEN_BUDGETS, estimate_tokens,
+        )
+
+        pipeline = _make_pipeline()
+
+        bio_budget = SOURCE_TOKEN_BUDGETS['biographies']  # 1000 tokens
+        # Create biographies WAY over budget (~3750 tokens).
+        # Use a unique marker at the end so we can verify truncation removed it.
+        oversized_bio = "This is a biography sentence. " * 500
+        oversized_bio += "MARKER_END_OF_BIOGRAPHY."
+
+        ctx = ConversationContext()
+        ctx.biographies = oversized_bio
+
+        with patch.object(pipeline, '_get_provider_context_limit', return_value=50000), \
+             patch('src.config.persona_config.get_persona_config', _get_fake_persona_config):
+            prompt = pipeline._assemble_prompt(ctx, "hello")
+
+        # The biography content should appear in the prompt (start is kept)
+        assert "biography sentence" in prompt
+
+        # The end-of-text marker should be gone — truncation removed it
+        assert "MARKER_END_OF_BIOGRAPHY" not in prompt, \
+            "Oversized biography should be truncated, but the end marker survived"
+
+        # The full original text should not be present
+        assert oversized_bio not in prompt, \
+            "The full oversized biography should not appear in the prompt"
+
+        # Count occurrences to confirm significant truncation happened.
+        # Original has 500 occurrences; budget of 1000 tokens (~4000 chars)
+        # means roughly 133 occurrences should survive.
+        occurrences = prompt.count("biography sentence")
+        assert occurrences < 250, \
+            f"Expected significant truncation of biography (got {occurrences} " \
+            f"occurrences out of 500 original)"
+
+    @patch('src.core.conversation.pipeline.get_context_builder')
+    @patch('src.core.conversation.pipeline.get_memory_validation_agent')
+    @patch('src.core.conversation.pipeline.get_message_validator_agent')
+    def test_within_budget_source_unchanged_in_assemble_prompt(
+        self, mock_validator, mock_memory, mock_ctx_builder
+    ):
+        """A source within its budget should appear unchanged in the prompt."""
+        from src.core.conversation.context_builder import ConversationContext
+
+        pipeline = _make_pipeline()
+
+        ctx = ConversationContext()
+        ctx.personality = "I have a warm and caring personality."
+
+        with patch.object(pipeline, '_get_provider_context_limit', return_value=50000), \
+             patch('src.config.persona_config.get_persona_config', _get_fake_persona_config):
+            prompt = pipeline._assemble_prompt(ctx, "hello")
+
+        assert "I have a warm and caring personality." in prompt
+
+
+# ---------------------------------------------------------------------------
 # Integration: pipeline uses reasoning reserve
 # ---------------------------------------------------------------------------
 

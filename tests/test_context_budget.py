@@ -180,24 +180,38 @@ class TestAssemblePromptBudgetIntegration:
         pipeline = _make_pipeline()
         pipeline.CONTEXT_BUDGET_FRACTION = 0.6
 
-        # Create context with large low-priority sections.
-        # The fixed sections (identity, cognitive prompt, instructions,
-        # final_reminder) are ~5000 chars = ~1250 tokens.  We need a
-        # provider_limit where high-priority sources fit but large
-        # low-priority ones push the total over budget.
-        # Note: issue #21 added a reasoning reserve (default 4000 tokens)
-        # that reduces the effective limit, so we use a larger provider_limit.
+        # Create context with many sources that together exceed the budget.
+        # Issue #21 added per-source token budgets that truncate individual
+        # sources before section-dropping runs.  To still trigger section
+        # dropping, we need enough sources that the total (post-per-source
+        # truncation) still exceeds the budget.
+        # Note: issue #21 also added a reasoning reserve (default 4000 tokens)
+        # that reduces the effective limit.
         context = ConversationContext()
         context.entity_profiles = "ENTITY_MARKER " + "x" * 200
         context.personality = "PERSONALITY_MARKER " + "x" * 200
-        context.activities_context = "ACTIVITIES_MARKER " + "x" * 10000  # large, priority 9
-        context.curiosity_context = "CURIOSITY_MARKER " + "x" * 10000   # large, priority 8
 
-        # Provider limit 12000 tokens, minus 4000 reasoning reserve = 8000 effective.
-        # Budget at 0.6 fraction = 4800 tokens.
-        # Fixed ~1250 + entity/personality ~100 = ~1350 (fits in 4800).
-        # activities + curiosity add ~5000 tokens -> total ~6350 > 4800.
-        with patch.object(pipeline, '_get_provider_context_limit', return_value=12000), \
+        # Fill many low-priority sources to their per-source budgets so
+        # the total droppable content is large.  Per-source budgets for
+        # activities=400, curiosity=400, observations=600, reflections=500,
+        # opinions=500, values=400, goals=400, temporal=400.
+        # After per-source truncation these stay at their budgets (~3600
+        # tokens total for low-priority).  Combined with fixed sections
+        # (~1250 tokens) this should exceed a tight budget.
+        context.activities_context = "ACTIVITIES_MARKER " + "x" * 10000   # budget 400
+        context.curiosity_context = "CURIOSITY_MARKER " + "x" * 10000    # budget 400
+        context.observations_context = "OBSERVATIONS_MARKER " + "x" * 10000  # budget 600
+        context.reflections_context = "REFLECTIONS_MARKER " + "x" * 10000    # budget 500
+        context.opinions_context = "OPINIONS_MARKER " + "x" * 10000         # budget 500
+        context.values_context = "VALUES_MARKER " + "x" * 10000             # budget 400
+        context.goals_context = "GOALS_MARKER " + "x" * 10000               # budget 400
+        context.temporal_context = "TEMPORAL_MARKER " + "x" * 10000          # budget 400
+
+        # Provider limit 8000 tokens, minus 4000 reasoning reserve = 4000 effective.
+        # Budget at 0.6 fraction = 2400 tokens.
+        # Fixed ~1250 + entity/personality ~100 = ~1350 (fits in 2400).
+        # But low-priority sources add ~3600 tokens -> total ~4950 > 2400.
+        with patch.object(pipeline, '_get_provider_context_limit', return_value=8000), \
              patch('src.config.persona_config.get_persona_config', _get_fake_persona_config):
             prompt = pipeline._assemble_prompt(context, "hello")
 
@@ -205,11 +219,13 @@ class TestAssemblePromptBudgetIntegration:
         assert "ENTITY_MARKER" in prompt, "entity_profiles (priority 1) must survive"
         assert "PERSONALITY_MARKER" in prompt, "personality (priority 2) must survive"
 
-        # Low-priority large sections should be dropped to fit budget
-        # (at least one of these must be dropped given the limit)
-        activities_present = "ACTIVITIES_MARKER" in prompt
-        curiosity_present = "CURIOSITY_MARKER" in prompt
-        assert not (activities_present and curiosity_present), \
+        # At least one low-priority section should be dropped to fit budget
+        low_priority_present = sum(1 for marker in [
+            "ACTIVITIES_MARKER", "CURIOSITY_MARKER", "OBSERVATIONS_MARKER",
+            "REFLECTIONS_MARKER", "OPINIONS_MARKER", "VALUES_MARKER",
+            "GOALS_MARKER", "TEMPORAL_MARKER",
+        ] if marker in prompt)
+        assert low_priority_present < 8, \
             "At least one low-priority section should be dropped to fit budget"
 
     @patch('src.core.conversation.pipeline.get_context_builder')

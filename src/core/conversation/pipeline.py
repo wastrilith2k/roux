@@ -1115,12 +1115,14 @@ Just write the message itself, nothing else.
         # using tier-based reallocation before whole-section dropping.
         # Phase 2 (issue #19): drop entire sections if still over budget.
         from .token_budget import (
-            estimate_tokens as _est_tokens, enforce_total_cap, TOTAL_CAP,
+            apply_source_budgets, enforce_total_cap, TOTAL_CAP,
             REASONING_RESERVE,
         )
 
-        # Build a dict of droppable source content for tier-based trimming
+        # Build a dict of droppable source content for per-source budget
+        # truncation (Phase 1) then tier-based reallocation (Phase 2).
         droppable_dict = {name: content for name, priority, content in droppable}
+        droppable_dict = apply_source_budgets(droppable_dict)
         trimmed_dict = enforce_total_cap(droppable_dict, TOTAL_CAP)
 
         # Rebuild droppable tuples with trimmed content (preserve priority)
