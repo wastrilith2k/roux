@@ -196,6 +196,16 @@ Respond with ONLY the JSON array:"""
                 temperature=0.4,
                 messages=[{"role": "user", "content": prompt}]
             )
+            try:
+                from src.services.cost_tracker import get_cost_tracker
+                usage = response.usage
+                if usage:
+                    get_cost_tracker().track_fireworks_call(
+                        user_id='system', prompt_tokens=usage.prompt_tokens or 0,
+                        completion_tokens=usage.completion_tokens or 0,
+                        model=FIREWORKS_MODEL, call_purpose='goal_planning')
+            except Exception:
+                pass
             response_text = (response.choices[0].message.content or '').strip()
             if not response_text:
                 return []

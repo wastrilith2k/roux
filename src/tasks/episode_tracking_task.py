@@ -246,11 +246,16 @@ Conversation:
 
 Write a 1-2 sentence summary of what worked:"""
 
+        from src.llm.provider_factory import get_resilient_provider_chain
+        chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=100,
-            temperature=0.3
+            temperature=0.3,
+            chain=chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(chain, call_purpose='episode_tracking')
 
         if response:
             summary = response.strip()

@@ -332,7 +332,7 @@ def form_opinions_from_reflections(user_email: str = None) -> int:
 
     try:
         from src.memory.companion_journal import get_companion_journal
-        from src.llm.provider_factory import generate_sync
+        from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
 
         journal = get_companion_journal(user_email)
         store = get_opinion_store(user_email)
@@ -378,11 +378,15 @@ Return JSON array of opinions (max 3):
 Only include opinions with actual evidence from the reflections.
 Return ONLY valid JSON array:"""
 
+        _chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
-            max_tokens=500
+            max_tokens=500,
+            chain=_chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(_chain, call_purpose='opinion_formation')
         if not response:
             return 0
 

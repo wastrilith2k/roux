@@ -111,6 +111,8 @@ Example: DUPLICATE Already asked about his weekend plans 10 messages ago."""
                 chain=chain,
                 timeout=3  # tight timeout -- fail open if slow
             )
+            from src.services.cost_tracker import track_llm_call
+            track_llm_call(chain, call_purpose='topic_novelty')
 
             processing_time = int((time.time() - start) * 1000)
 

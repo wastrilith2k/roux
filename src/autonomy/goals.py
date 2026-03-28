@@ -375,7 +375,7 @@ class GoalManager:
             return None
 
         try:
-            from src.llm.provider_factory import generate_sync
+            from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
 
             actions_text = (
                 "\n".join([f"- {a}" for a in goal.actions_taken[-5:]])
@@ -392,11 +392,15 @@ Actions taken:
 Suggest ONE specific, actionable next step she could take toward this goal.
 Keep it simple and achievable. Under 20 words."""
 
+            _chain = get_resilient_provider_chain()
             response = generate_sync(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
-                max_tokens=50
+                max_tokens=50,
+                chain=_chain
             )
+            from src.services.cost_tracker import track_llm_call
+            track_llm_call(_chain, call_purpose='goal_next_step')
             return response.strip() if response else None
 
         except Exception as e:

@@ -366,7 +366,7 @@ def score_episode_satisfaction(episode_id: str, store: EpisodeStore = None) -> O
         store = get_episode_store()
 
     try:
-        from src.llm.provider_factory import generate_sync
+        from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
 
         conn = store._get_connection()
 
@@ -409,11 +409,16 @@ Reply with ONLY a decimal number between 0.0 and 1.0 (e.g., 0.7 or 0.85).
 
 Score:"""
 
+        _chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=10,
-            temperature=0.1
+            temperature=0.1,
+            chain=_chain
         )
+
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(_chain, call_purpose='episodic_analysis')
 
         if response:
             try:
@@ -545,7 +550,7 @@ def detect_topic(message: str, use_llm: bool = True) -> str:
         return _extract_topic_keywords(message)
 
     try:
-        from src.llm.provider_factory import generate_sync
+        from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
 
         prompt = f"""Identify the main topic of this message in 2-5 words.
 Focus on what the person wants to discuss.
@@ -554,11 +559,16 @@ Message: "{message[:500]}"
 
 Reply with ONLY the topic (2-5 words), nothing else."""
 
+        _chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=20,
-            temperature=0.1
+            temperature=0.1,
+            chain=_chain
         )
+
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(_chain, call_purpose='episodic_analysis')
 
         if response:
             topic = response.strip().strip('"\'')
@@ -651,7 +661,7 @@ def detect_emotional_state(message: str, use_llm: bool = True) -> str:
         return 'neutral'
 
     try:
-        from src.llm.provider_factory import generate_sync
+        from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
 
         prompt = f"""What is the primary emotional state expressed in this message?
 
@@ -666,11 +676,16 @@ Consider:
 
 Reply with ONLY ONE WORD from the list above."""
 
+        _chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=10,
-            temperature=0.1
+            temperature=0.1,
+            chain=_chain
         )
+
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(_chain, call_purpose='episodic_analysis')
 
         if response:
             state = response.strip().lower().strip('.,!?')

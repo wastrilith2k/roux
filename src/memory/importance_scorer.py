@@ -87,6 +87,18 @@ def score_importance(fact: str) -> Optional[int]:
         )
 
         result = response.choices[0].message.content
+
+        try:
+            from src.services.cost_tracker import get_cost_tracker
+            usage = response.usage
+            if usage:
+                get_cost_tracker().track_fireworks_call(
+                    user_id='system', prompt_tokens=usage.prompt_tokens or 0,
+                    completion_tokens=usage.completion_tokens or 0,
+                    model=FIREWORKS_MODEL, call_purpose='importance_scoring')
+        except Exception:
+            pass
+
         return _parse_score(result)
 
     except Exception as e:

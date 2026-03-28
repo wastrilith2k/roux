@@ -297,6 +297,8 @@ Return ONLY valid JSON:"""
                 max_tokens=500,
                 chain=chain
             )
+            from src.services.cost_tracker import track_llm_call
+            track_llm_call(chain, call_purpose='reflection_engine')
             return json.loads(response.strip())
 
         except Exception as e:

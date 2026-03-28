@@ -146,6 +146,18 @@ class BenchmarkEvaluator:
             )
 
             judge_output = response.choices[0].message.content.strip()
+
+            try:
+                from src.services.cost_tracker import get_cost_tracker
+                usage = response.usage
+                if usage:
+                    get_cost_tracker().track_openai_call(
+                        user_id='system', prompt_tokens=usage.prompt_tokens or 0,
+                        completion_tokens=usage.completion_tokens or 0,
+                        model='gpt-4o-mini', service_type='benchmark_evaluation', call_purpose='benchmark_evaluation')
+            except Exception:
+                pass
+
             scores = json.loads(judge_output)
 
             result.accuracy = max(0.0, min(1.0, float(scores.get("accuracy", 0))))

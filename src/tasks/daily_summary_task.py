@@ -329,6 +329,8 @@ Don't list everything - focus on what mattered most.
             max_tokens=1500,
             chain=chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(chain, call_purpose='daily_summary')
 
         return response.strip()
 

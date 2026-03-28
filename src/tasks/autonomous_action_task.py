@@ -401,11 +401,16 @@ Respond with JSON only:
   "reason": "brief explanation of why"
 }}"""
 
+        from src.llm.provider_factory import get_resilient_provider_chain
+        _chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
-            max_tokens=200
+            max_tokens=200,
+            chain=_chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(_chain, call_purpose='autonomous_decision')
 
         if not response:
             return None, None
@@ -534,11 +539,16 @@ Respond with JSON only:
   "reason": "brief explanation"
 }}"""
 
+        from src.llm.provider_factory import get_resilient_provider_chain
+        _chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
-            max_tokens=200
+            max_tokens=200,
+            chain=_chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(_chain, call_purpose='autonomous_decision')
 
         if not response:
             return None, None
@@ -680,11 +690,16 @@ Keep it conversational and natural - something she might say "hey, I was reading
 
 Keep response under 100 words. Be specific based on the search results."""
 
+            from src.llm.provider_factory import get_resilient_provider_chain
+            _chain = get_resilient_provider_chain()
             response = generate_sync(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
-                max_tokens=150
+                max_tokens=150,
+                chain=_chain
             )
+            from src.services.cost_tracker import track_llm_call
+            track_llm_call(_chain, call_purpose='autonomous_research')
         else:
             # Fall back to LLM's knowledge if web search fails
             prompt = f"""The companion is curious about: {topic}
@@ -695,11 +710,16 @@ might say "hey, I was reading about X and found out..."
 
 Keep response under 100 words. Be specific and interesting, not generic."""
 
+            from src.llm.provider_factory import get_resilient_provider_chain
+            _chain = get_resilient_provider_chain()
             response = generate_sync(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
-                max_tokens=150
+                max_tokens=150,
+                chain=_chain
             )
+            from src.services.cost_tracker import track_llm_call
+            track_llm_call(_chain, call_purpose='autonomous_research')
 
         if response:
             source = 'web_research' if search_results else 'llm_research'
@@ -785,11 +805,16 @@ with James. These should be natural, conversational, and show genuine interest.
 
 Keep response under 100 words."""
 
+        from src.llm.provider_factory import get_resilient_provider_chain
+        _chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
-            max_tokens=150
+            max_tokens=150,
+            chain=_chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(_chain, call_purpose='autonomous_preparation')
 
         if response:
             _store_finding(f"Prep: {topic}", response.strip(), source='preparation')
@@ -830,11 +855,16 @@ natural and genuine, not performative.
 
 Keep response under 50 words."""
 
+        from src.llm.provider_factory import get_resilient_provider_chain
+        _chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.8,
-            max_tokens=80
+            max_tokens=80,
+            chain=_chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(_chain, call_purpose='autonomous_project')
 
         if response:
             _store_finding(f"Project: {project}", response.strip(), source='personal_project')
@@ -865,7 +895,7 @@ Keep response under 50 words."""
 def _prepare_followup(topic: str, context: Dict) -> Dict:
     """Prepare thoughtful follow-up questions for a curiosity topic."""
     try:
-        from src.llm.provider_factory import generate_sync
+        from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
 
         prompt = f"""The companion wants to ask James more about: {topic}
 
@@ -876,11 +906,15 @@ Generate 2-3 natural follow-up questions she could ask. These should:
 
 Keep response under 80 words. Just the questions, no intro."""
 
+        _chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
-            max_tokens=120
+            max_tokens=120,
+            chain=_chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(_chain, call_purpose='autonomous_followup')
 
         if response:
             _store_finding(f"Follow-up: {topic}", response.strip(), source='follow_up')

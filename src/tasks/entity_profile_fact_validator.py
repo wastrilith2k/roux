@@ -222,13 +222,17 @@ If there are NO contradictions, return an empty array: []
 Return ONLY the JSON array, no other text."""
 
     try:
-        from src.llm.provider_factory import generate_sync
+        from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
 
+        chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
             max_tokens=2048,
+            chain=chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(chain, call_purpose='fact_validation')
 
         # Parse JSON from response
         response = response.strip()

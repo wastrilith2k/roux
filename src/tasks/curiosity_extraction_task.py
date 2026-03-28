@@ -159,11 +159,16 @@ Return a JSON array with AT MOST 1 topic (empty array [] if nothing qualifies):
 Most conversations will have NOTHING worth extracting. Return [] if in doubt.
 Return ONLY the JSON array, no other text:"""
 
+        from src.llm.provider_factory import get_resilient_provider_chain
+        chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
-            max_tokens=300
+            max_tokens=300,
+            chain=chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(chain, call_purpose='curiosity_extraction')
 
         if not response:
             return []
@@ -485,11 +490,16 @@ If the topic was only mentioned in passing but not actually discussed, it's DEFL
 Respond with JSON only:
 {{"satisfied": true/false, "reason": "brief explanation", "note": "if deflected, a brief note about what was unsatisfying (e.g. 'gave a vague answer about just being public'). null if satisfied."}}"""
 
+        from src.llm.provider_factory import get_resilient_provider_chain
+        chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
-            max_tokens=200
+            max_tokens=200,
+            chain=chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(chain, call_purpose='curiosity_resolution')
 
         if not response:
             return None

@@ -505,10 +505,10 @@ class SimulationRunner:
 
         # Scale by party size: 2 people can have 1-3 chats/day, 4 people need more pairs
         if len(self.companions) <= 2:
-            # 2-person: energy drives 1-3 conversations with the same pair
-            base = max(1, round(avg_energy * 3))
-            num_conversations = max(1, base + random.randint(-1, 1))
-            num_conversations = min(num_conversations, 3)
+            # 2-person: energy drives 2-5 conversations with the same pair
+            base = max(2, round(avg_energy * 5))
+            num_conversations = max(2, base + random.randint(-1, 1))
+            num_conversations = min(num_conversations, 5)
             day_pairs = [all_pairs[0]] * num_conversations  # Same pair, multiple conversations
         else:
             # 3+ people: pick from unique pairs, ensuring coverage
@@ -588,7 +588,7 @@ class SimulationRunner:
 
     def _run_conversation_between(self, initiator: str, responder: str):
         """Two specific companions talking to each other."""
-        num_exchanges = random.randint(2, 5)
+        num_exchanges = random.randint(3, 8)
         conv_id = self._new_conversation_id()
         self._current_conversation_id = conv_id
         # All messages in this conversation are stored in the responder's schema,
@@ -660,13 +660,16 @@ class SimulationRunner:
 
     def _process_conversation(self, initiator: str, responder: str, conv_id: int, user_email: str = None):
         """Run post-conversation processing inline (normally done by Celery tasks).
-        Extracts facts, relationships, and curiosity from the conversation."""
+
+        Runs the same 13 background tasks that message_handler.py triggers via
+        Celery .delay(), but synchronously so their LLM calls hit the cost tracker.
+        """
         try:
             from src.database.db import get_db
             db = get_db()
             conv_email = user_email or f"{responder}@companion.local"
             result = db.execute(
-                "SELECT sender_name, message_text FROM messages WHERE conversation_id = %s ORDER BY timestamp ASC",
+                "SELECT id, sender_name, message_text FROM messages WHERE conversation_id = %s ORDER BY timestamp ASC",
                 (conv_id,),
                 user_email=conv_email
             )
@@ -674,31 +677,35 @@ class SimulationRunner:
             if not rows or len(rows) < 2:
                 return
 
+            task_count = 0
+
             # Build paired exchanges (user message + companion response)
             for i in range(0, len(rows) - 1, 2):
                 user_msg = rows[i]['message_text']
+                user_msg_id = rows[i]['id']
                 companion_msg = rows[i + 1]['message_text'] if i + 1 < len(rows) else ''
+                companion_msg_id = rows[i + 1]['id'] if i + 1 < len(rows) else None
                 if not user_msg or not companion_msg:
                     continue
 
-                # Determine who is "user" and who is "companion" for each pair
                 speaker_a = rows[i]['sender_name']
                 speaker_b = rows[i + 1]['sender_name'] if i + 1 < len(rows) else ''
-                email_a = f"{speaker_b}@companion.local"  # The listener's email
+                email_a = conv_email
 
-                # Extract facts
+                # 1. Fact extraction (LLM call)
                 try:
                     from src.tasks.fact_extraction_task import extract_facts_via_llm, store_facts
-                    import time; time.sleep(5)  # Rate limit
+                    import time; time.sleep(2)  # Rate limit for free tier
                     facts = extract_facts_via_llm(user_msg, companion_msg)
                     if facts:
                         stored = store_facts(facts, email_a)
                         if stored > 0:
-                            logger.info(f"    Extracted {stored} facts from conv {conv_id}")
+                            logger.info(f"    📝 Extracted {stored} facts")
+                            task_count += 1
                 except Exception as e:
                     logger.debug(f"    Fact extraction failed: {e}")
 
-                # Extract curiosity
+                # 2. Curiosity extraction (LLM call)
                 try:
                     from src.tasks.curiosity_extraction_task import extract_curiosity_from_conversation
                     extract_curiosity_from_conversation(
@@ -706,8 +713,86 @@ class SimulationRunner:
                         companion_response=companion_msg,
                         user_email=email_a
                     )
+                    task_count += 1
                 except Exception as e:
                     logger.debug(f"    Curiosity extraction failed: {e}")
+
+                # 3. Curiosity resolution
+                try:
+                    from src.tasks.curiosity_extraction_task import resolve_discussed_curiosities
+                    resolve_discussed_curiosities(
+                        companion_response=companion_msg,
+                        user_message=user_msg
+                    )
+                    task_count += 1
+                except Exception as e:
+                    logger.debug(f"    Curiosity resolution failed: {e}")
+
+                # 4. Relationship extraction (LLM call)
+                try:
+                    from src.tasks.relationship_extraction_task import extract_relationships
+                    time.sleep(2)
+                    extract_relationships(email_a, user_msg, companion_msg, user_msg_id)
+                    task_count += 1
+                except Exception as e:
+                    logger.debug(f"    Relationship extraction failed: {e}")
+
+                # 5. Scene extraction (LLM call)
+                try:
+                    from src.tasks.scene_extraction_task import extract_scene_state
+                    time.sleep(2)
+                    extract_scene_state(email_a, user_msg, companion_msg, 'simulation')
+                    task_count += 1
+                except Exception as e:
+                    logger.debug(f"    Scene extraction failed: {e}")
+
+                # 6. Internal state update (LLM call)
+                try:
+                    from src.tasks.internal_state_task import update_internal_state
+                    time.sleep(2)
+                    update_internal_state(email_a, user_msg, companion_msg)
+                    task_count += 1
+                except Exception as e:
+                    logger.debug(f"    Internal state update failed: {e}")
+
+                # 7. Relationship dynamics (LLM call)
+                try:
+                    from src.tasks.relationship_dynamics_task import analyze_relationship_dynamics
+                    time.sleep(2)
+                    analyze_relationship_dynamics(email_a, user_msg, companion_msg)
+                    task_count += 1
+                except Exception as e:
+                    logger.debug(f"    Relationship dynamics failed: {e}")
+
+                # 8. Event synthesis (LLM call)
+                try:
+                    from src.tasks.event_synthesis_task import detect_and_synthesize_events
+                    time.sleep(2)
+                    detect_and_synthesize_events(email_a, user_msg, companion_msg, user_msg_id)
+                    task_count += 1
+                except Exception as e:
+                    logger.debug(f"    Event synthesis failed: {e}")
+
+                # 9. Episode tracking (LLM call)
+                try:
+                    from src.tasks.episode_tracking_task import process_message_episode
+                    time.sleep(2)
+                    process_message_episode(email_a, user_msg, companion_msg, user_msg_id, companion_msg_id)
+                    task_count += 1
+                except Exception as e:
+                    logger.debug(f"    Episode tracking failed: {e}")
+
+                # 10. Graphiti extraction (knowledge graph)
+                try:
+                    from src.tasks.graphiti_extraction_task import process_exchange_graphiti
+                    time.sleep(2)
+                    process_exchange_graphiti(email_a, user_msg, companion_msg)
+                    task_count += 1
+                except Exception as e:
+                    logger.debug(f"    Graphiti extraction failed: {e}")
+
+            if task_count > 0:
+                logger.info(f"    ✅ Post-conversation: {task_count} background tasks completed for conv {conv_id}")
 
         except Exception as e:
             logger.warning(f"    Post-conversation processing failed: {e}")

@@ -136,6 +136,8 @@ Respond with ONLY valid JSON:"""
             max_tokens=800,
             chain=chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(chain, call_purpose='monthly_reflection')
 
         # Parse JSON
         response_text = response.strip()

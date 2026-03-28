@@ -366,11 +366,16 @@ Only include gaps you genuinely find interesting to follow up on.
 Skip any that feel forced or nosy.
 Return ONLY the JSON array:"""
 
+        from src.llm.provider_factory import get_resilient_provider_chain
+        chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.5,
-            max_tokens=400
+            max_tokens=400,
+            chain=chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(chain, call_purpose='memory_gap_analysis')
 
         if not response:
             logger.warning("LLM returned empty response for gap curiosity generation")

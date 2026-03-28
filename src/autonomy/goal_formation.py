@@ -86,7 +86,7 @@ def form_goals_from_reflections(user_email: str = None) -> int:
 
     try:
         from src.memory.companion_journal import get_companion_journal
-        from src.llm.provider_factory import generate_sync
+        from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
         from src.autonomy.goals import get_goal_manager
 
         journal = get_companion_journal(user_email)
@@ -156,11 +156,15 @@ energy_cost guide:
 Only include genuinely new goals with evidence in reflections.
 Return ONLY valid JSON array:"""
 
+        _chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
-            max_tokens=400
+            max_tokens=400,
+            chain=_chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(_chain, call_purpose='goal_formation')
         if not response:
             return 0
 
@@ -202,7 +206,7 @@ def form_goals_from_signals(user_email: str = None) -> int:
         user_email = _pc.primary_user_email
 
     try:
-        from src.llm.provider_factory import generate_sync
+        from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
         from src.autonomy.goals import get_goal_manager
 
         manager = get_goal_manager(user_email)
@@ -289,11 +293,15 @@ Return JSON array (max 2, empty [] if nothing warrants a new goal):
 
 Return ONLY valid JSON array:"""
 
+        _chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
-            max_tokens=400
+            max_tokens=400,
+            chain=_chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(_chain, call_purpose='goal_formation')
         if not response:
             return 0
 

@@ -94,11 +94,16 @@ Return JSON array (empty if nothing interesting):
 
 Return ONLY valid JSON array:"""
 
+        from src.llm.provider_factory import get_resilient_provider_chain
+        chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
-            max_tokens=400
+            max_tokens=400,
+            chain=chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(chain, call_purpose='gmail_check')
 
         if not response:
             return {'status': 'success', 'processed': 0}

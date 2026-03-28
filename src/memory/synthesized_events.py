@@ -196,7 +196,7 @@ def detect_event_type(text: str, use_llm: bool = True) -> Optional[Tuple[str, Li
         return detect_event_type_keyword(text)
 
     try:
-        from src.llm.provider_factory import generate_sync
+        from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
 
         prompt = f"""Classify if this message describes a significant life event. Return ONLY the event type or "none".
 
@@ -226,11 +226,16 @@ MESSAGE: {text[:500]}
 
 Respond with ONLY ONE WORD: crisis, career, milestone, relationship, health, school, activities, or none"""
 
+        _chain = get_resilient_provider_chain()
         response = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=10,
-            temperature=0.1
+            temperature=0.1,
+            chain=_chain
         )
+
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(_chain, call_purpose='event_synthesis')
 
         if response:
             event_type = response.strip().lower()
@@ -327,6 +332,17 @@ Reply with ONLY one word: James, {_companion_name}, Jesse, Kyler, Alia, Carol, F
         )
 
         result = response.choices[0].message.content.strip()
+
+        try:
+            from src.services.cost_tracker import get_cost_tracker
+            usage = response.usage
+            if usage:
+                get_cost_tracker().track_fireworks_call(
+                    user_id='system', prompt_tokens=usage.prompt_tokens or 0,
+                    completion_tokens=usage.completion_tokens or 0,
+                    model=FIREWORKS_MODEL, call_purpose='event_synthesis')
+        except Exception:
+            pass
 
         # Clean up response - get first word only
         result = result.split()[0] if result else None
@@ -762,7 +778,7 @@ class EventSynthesizer:
     ) -> str:
         """Generate narrative paragraph using LLM."""
         try:
-            from src.llm.provider_factory import generate_sync
+            from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
 
             # Format timeline for prompt
             timeline_text = "\n".join([
@@ -782,11 +798,16 @@ Write a brief narrative that captures:
 
 Write ONLY the narrative paragraph, nothing else:"""
 
+            _chain = get_resilient_provider_chain()
             response = generate_sync(
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=200,
-                temperature=0.3
+                temperature=0.3,
+                chain=_chain
             )
+
+            from src.services.cost_tracker import track_llm_call
+            track_llm_call(_chain, call_purpose='event_synthesis')
 
             if response:
                 return response.strip()

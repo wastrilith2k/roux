@@ -297,6 +297,9 @@ Do NOT include headers like "Core Memory" - just start with the sections.
                 chain=chain
             )
 
+            from src.services.cost_tracker import track_llm_call
+            track_llm_call(chain, call_purpose='core_memory')
+
             return response.strip()
 
         except Exception as e:

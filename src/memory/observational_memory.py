@@ -341,6 +341,18 @@ CONVERSATION:
             )
 
             compressed = response.choices[0].message.content.strip()
+
+            try:
+                from src.services.cost_tracker import get_cost_tracker
+                usage = response.usage
+                if usage:
+                    get_cost_tracker().track_openai_call(
+                        user_id='system', prompt_tokens=usage.prompt_tokens or 0,
+                        completion_tokens=usage.completion_tokens or 0,
+                        model='gpt-4o-mini', service_type='observational_memory', call_purpose='observational_memory')
+            except Exception:
+                pass
+
             compressed_tokens = len(compressed) // 4
 
             # Extract topics and emotional tone from the compressed text
@@ -392,6 +404,17 @@ Output JSON: {{"topics": "...", "emotional_tone": "..."}}"""},
                 max_tokens=100,
                 response_format={"type": "json_object"},
             )
+
+            try:
+                from src.services.cost_tracker import get_cost_tracker
+                usage = response.usage
+                if usage:
+                    get_cost_tracker().track_openai_call(
+                        user_id='system', prompt_tokens=usage.prompt_tokens or 0,
+                        completion_tokens=usage.completion_tokens or 0,
+                        model='gpt-4o-mini', service_type='observational_memory', call_purpose='observational_memory')
+            except Exception:
+                pass
 
             data = json.loads(response.choices[0].message.content)
             return data.get("topics", ""), data.get("emotional_tone", "")
@@ -536,6 +559,17 @@ OBSERVATIONS:
 
             reflection_content = response.choices[0].message.content.strip()
 
+            try:
+                from src.services.cost_tracker import get_cost_tracker
+                usage = response.usage
+                if usage:
+                    get_cost_tracker().track_openai_call(
+                        user_id='system', prompt_tokens=usage.prompt_tokens or 0,
+                        completion_tokens=usage.completion_tokens or 0,
+                        model='gpt-4o-mini', service_type='observational_memory', call_purpose='observational_memory')
+            except Exception:
+                pass
+
             # Extract themes
             themes = self._extract_themes(reflection_content)
 
@@ -590,6 +624,17 @@ Output JSON: {{"themes": "theme1, theme2, theme3"}}"""},
                 max_tokens=100,
                 response_format={"type": "json_object"},
             )
+            try:
+                from src.services.cost_tracker import get_cost_tracker
+                usage = response.usage
+                if usage:
+                    get_cost_tracker().track_openai_call(
+                        user_id='system', prompt_tokens=usage.prompt_tokens or 0,
+                        completion_tokens=usage.completion_tokens or 0,
+                        model='gpt-4o-mini', service_type='observational_memory', call_purpose='observational_memory')
+            except Exception:
+                pass
+
             data = json.loads(response.choices[0].message.content)
             return data.get("themes", "")
         except Exception:

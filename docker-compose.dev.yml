@@ -92,6 +92,8 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/0
       # Environment marker
       ENVIRONMENT: development
+      # Simulation API secret (for full-stack simulation mode)
+      SIMULATION_API_SECRET: '${SIMULATION_API_SECRET:-}'
       # Which companion to load (matches instances/<name>/)
       COMPANION_ID: '${COMPANION_ID:-kai}'
     volumes:

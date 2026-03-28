@@ -1232,3 +1232,54 @@ def get_cost_tracker() -> CostTracker:
                 _cost_tracker_instance = CostTracker()
                 print("--- Cost Tracker initialized ---")
     return _cost_tracker_instance
+
+
+def track_llm_call(chain, call_purpose: str, user_id: str = 'system',
+                   companion_id: str = None, conversation_id: str = None,
+                   message_id: str = None):
+    """Track cost of an LLM call made via a ResilientProviderChain.
+
+    Call this immediately after generate_sync() to record the cost.
+    Works with any provider type (OpenRouter, Fireworks, OpenAI, Anthropic).
+
+    Args:
+        chain: ResilientProviderChain instance (has get_last_usage/get_last_provider_type)
+        call_purpose: e.g. 'fact_extraction', 'curiosity', 'episode_tracking', etc.
+        user_id: email or identifier for the user/companion
+        companion_id: optional companion identifier
+        conversation_id: optional conversation identifier
+        message_id: optional message identifier
+    """
+    try:
+        usage = chain.get_last_usage()
+        if not usage:
+            return
+        prompt_tokens = usage.get('input_tokens', 0)
+        completion_tokens = usage.get('output_tokens', 0)
+        if prompt_tokens == 0 and completion_tokens == 0:
+            return
+
+        tracker = get_cost_tracker()
+        provider_type = chain.get_last_provider_type()
+        model = chain.get_model_name()
+
+        kwargs = dict(
+            user_id=user_id,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            model=model,
+            call_purpose=call_purpose,
+            companion_id=companion_id,
+            conversation_id=conversation_id,
+            message_id=message_id,
+        )
+
+        if provider_type == 'openrouter':
+            tracker.track_openrouter_call(**kwargs)
+        elif provider_type == 'fireworks':
+            tracker.track_fireworks_call(**kwargs)
+        elif provider_type in ('openai', 'anthropic'):
+            kwargs['service_type'] = call_purpose
+            tracker.track_openai_call(**kwargs)
+    except Exception:
+        pass  # Never let cost tracking break the actual task

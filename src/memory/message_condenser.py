@@ -132,6 +132,17 @@ class MessageCondenser:
 
             condensed = response.choices[0].message.content.strip()
 
+            try:
+                from src.services.cost_tracker import get_cost_tracker
+                usage = response.usage
+                if usage:
+                    get_cost_tracker().track_openai_call(
+                        user_id='system', prompt_tokens=usage.prompt_tokens or 0,
+                        completion_tokens=usage.completion_tokens or 0,
+                        model='gpt-4o-mini', service_type='message_condensing', call_purpose='message_condensing')
+            except Exception:
+                pass
+
             # Post-process: force single paragraph. GPT-4o-mini sometimes ignores
             # the "no line breaks" instruction, especially for roleplay content.
             import re

@@ -115,7 +115,7 @@ class OutcomeTracker:
             return None
 
         try:
-            from src.llm.provider_factory import generate_sync
+            from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
 
             msgs_text = "\n".join([
                 f"{m.get('sender', 'unknown')}: {m.get('text', '')[:200]}"
@@ -138,11 +138,15 @@ How did {user_name} respond?
 
 Respond with ONLY one word: good, neutral, or poor"""
 
+            _chain = get_resilient_provider_chain()
             response = generate_sync(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
-                max_tokens=10
+                max_tokens=10,
+                chain=_chain
             )
+            from src.services.cost_tracker import track_llm_call
+            track_llm_call(_chain, call_purpose='outcome_assessment')
 
             if response:
                 quality = response.strip().lower()

@@ -167,11 +167,16 @@ Consider:
 - Were there any awkward moments or mismatches?
 - What made the connection strong or weak?"""
 
+            from src.llm.provider_factory import get_resilient_provider_chain
+            chain = get_resilient_provider_chain()
             response = generate_sync(
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=500,
-                temperature=0.3
+                temperature=0.3,
+                chain=chain
             )
+            from src.services.cost_tracker import track_llm_call
+            track_llm_call(chain, call_purpose='episode_learning')
 
             if not response:
                 logger.warning(f"No response from LLM for episode {episode['episode_id']}")

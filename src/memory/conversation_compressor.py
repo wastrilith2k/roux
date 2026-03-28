@@ -162,6 +162,9 @@ def compress_messages(
             chain=chain,
         )
 
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(chain, call_purpose='conversation_compression')
+
         if summary and len(summary.strip()) > 20:
             logger.info(
                 f"Compressed {message_count} messages into summary "

@@ -101,6 +101,8 @@ NOTES: ..."""
             max_tokens=150,
             chain=chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(chain, call_purpose='interaction_outcome', user_id=user_email)
 
         # --- Parse structured LLM response ---
         action_type = 'general'

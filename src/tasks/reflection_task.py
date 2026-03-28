@@ -277,6 +277,8 @@ Respond with ONLY valid JSON (no markdown, no backticks):
             max_tokens=800,
             chain=chain
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(chain, call_purpose='reflection')
 
         # Parse JSON response
         response_text = response.strip()

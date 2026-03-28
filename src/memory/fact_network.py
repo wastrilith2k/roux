@@ -646,7 +646,7 @@ class FactNetwork:
         More accurate but slower than heuristics.
         """
         try:
-            from src.llm.provider_factory import generate_sync
+            from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
 
             # Format candidates for prompt
             candidate_text = "\n".join([
@@ -683,11 +683,16 @@ Example output:
 LINK: 42 explains 0.8 ADHD explains behavioral issues
 LINK: 37 same_event 0.9 Both about January crisis"""
 
+            _chain = get_resilient_provider_chain()
             response = generate_sync(
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=500,
-                temperature=0.2
+                temperature=0.2,
+                chain=_chain
             )
+
+            from src.services.cost_tracker import track_llm_call
+            track_llm_call(_chain, call_purpose='fact_network')
 
             if not response:
                 return self._detect_links_heuristic(new_fact_id, new_subject, new_object, candidates)

@@ -156,7 +156,8 @@ class ToolRouter:
                 ]
 
                 # Synthesize into a natural finding
-                from src.llm.provider_factory import generate_sync
+                from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
+                _chain = get_resilient_provider_chain()
                 synthesis = generate_sync(
                     messages=[{"role": "user", "content": f"""The companion researched: {topic}
 
@@ -169,8 +170,11 @@ Synthesize into a brief, interesting insight (under 100 words).
 Something she might say "I was looking into X and found out..."
 Be specific based on the actual results."""}],
                     temperature=0.7,
-                    max_tokens=150
+                    max_tokens=150,
+                    chain=_chain
                 )
+                from src.services.cost_tracker import track_llm_call
+                track_llm_call(_chain, call_purpose='tool_synthesis')
 
                 return ToolResult(
                     success=True,
@@ -199,13 +203,17 @@ Be specific based on the actual results."""}],
         instruction = params.get('instruction', f'Prepare thoughts about: {topic}')
 
         try:
-            from src.llm.provider_factory import generate_sync
+            from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
 
+            _chain = get_resilient_provider_chain()
             response = generate_sync(
                 messages=[{"role": "user", "content": instruction}],
                 temperature=0.7,
-                max_tokens=300
+                max_tokens=300,
+                chain=_chain
             )
+            from src.services.cost_tracker import track_llm_call
+            track_llm_call(_chain, call_purpose='tool_routing')
 
             if response:
                 return ToolResult(
