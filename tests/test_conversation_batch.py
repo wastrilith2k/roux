@@ -214,15 +214,20 @@ class TestBatchInteractionOutcome:
 
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
         mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
         mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        mock_db = MagicMock()
+        mock_db._get_connection.return_value = mock_conn
 
         with patch.dict('os.environ', {'COMPANION_OUTCOME_TRACKING_ENABLED': 'true'}), \
              patch('src.config.persona_config.get_persona_config', return_value=mock_pc), \
              patch('src.llm.provider_factory.generate_sync', return_value="ACTION_TYPE: general\nTOPIC: chat\nENGAGEMENT: engaged\nCONTINUED: yes\nRESONANCE: 0.5\nNOTES: Good conversation") as mock_gen, \
              patch('src.llm.provider_factory.get_resilient_provider_chain', return_value=MagicMock()), \
              patch('src.services.cost_tracker.track_llm_call'), \
-             patch('psycopg2.connect', return_value=mock_conn):
+             patch('src.database.db.get_db', return_value=mock_db):
 
             from src.tasks.conversation_batch_task import _batch_interaction_outcome
 
@@ -234,6 +239,56 @@ class TestBatchInteractionOutcome:
             assert result['status'] == 'success'
             # Exactly one LLM call for the entire conversation
             assert mock_gen.call_count == 1
+
+    def test_uses_schema_aware_connection(self):
+        """Regression: _batch_interaction_outcome must use get_db()._get_connection(user_email=...)
+        for per-user schema routing, NOT raw psycopg2.connect(). See issue #102."""
+        mock_pc = MagicMock()
+        mock_pc.primary_user_name = 'James'
+        mock_pc.companion_short_name = 'Roux'
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        mock_db = MagicMock()
+        mock_db._get_connection.return_value = mock_conn
+
+        with patch.dict('os.environ', {'COMPANION_OUTCOME_TRACKING_ENABLED': 'true'}), \
+             patch('src.config.persona_config.get_persona_config', return_value=mock_pc), \
+             patch('src.llm.provider_factory.generate_sync', return_value="ACTION_TYPE: general\nTOPIC: chat\nENGAGEMENT: engaged\nCONTINUED: yes\nRESONANCE: 0.5\nNOTES: Good conversation"), \
+             patch('src.llm.provider_factory.get_resilient_provider_chain', return_value=MagicMock()), \
+             patch('src.services.cost_tracker.track_llm_call'), \
+             patch('src.database.db.get_db', return_value=mock_db):
+
+            from src.tasks.conversation_batch_task import _batch_interaction_outcome
+
+            user_msgs = [(1, "Hello"), (3, "I'm good")]
+            companion_msgs = [(2, "Hi!"), (4, "Great to hear")]
+
+            result = _batch_interaction_outcome('user@example.com', user_msgs, companion_msgs)
+
+            assert result['status'] == 'success'
+
+            # CRITICAL: Must use get_db()._get_connection with user_email for schema routing
+            mock_db._get_connection.assert_called_once_with(user_email='user@example.com')
+
+            # Verify the INSERT was executed via the schema-aware connection
+            mock_cursor.execute.assert_called_once()
+            sql = mock_cursor.execute.call_args.args[0]
+            assert 'INSERT INTO' in sql
+            assert 'interaction_outcomes' in sql.lower()
+
+    def test_no_raw_psycopg2_in_batch_outcome(self):
+        """Source-level check: _batch_interaction_outcome must NOT use psycopg2.connect()."""
+        import inspect
+        from src.tasks.conversation_batch_task import _batch_interaction_outcome
+        source = inspect.getsource(_batch_interaction_outcome)
+        assert 'psycopg2.connect' not in source, \
+            "_batch_interaction_outcome must use get_db()._get_connection(), not raw psycopg2.connect()"
 
 
 # ---------------------------------------------------------------------------

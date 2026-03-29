@@ -20,8 +20,6 @@ HOW:  Each message calls schedule_conversation_batch(), which:
 import os
 import time
 import logging
-from typing import Optional
-
 from src.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -539,21 +537,15 @@ NOTES: ..."""
             engagement = 'engaged'
 
         # Store result — use the last companion and user message IDs
-        import psycopg2
-        conn = psycopg2.connect(
-            host=os.environ.get('POSTGRES_HOST', 'postgres'),
-            port=os.environ.get('POSTGRES_PORT', '5432'),
-            dbname=os.environ.get('POSTGRES_DB', 'companion'),
-            user=os.environ.get('POSTGRES_USER', 'companion'),
-            password=os.environ.get('POSTGRES_PASSWORD', '')
-        )
+        from src.database.db import get_db
 
         last_companion_id = companion_messages[-1][0]
         last_user_id = user_messages[-1][0]
         companion_text = "\n".join(text[:200] for _, text in companion_messages)[:1000]
         user_text = "\n".join(text[:200] for _, text in user_messages)[:1000]
 
-        try:
+        db = get_db()
+        with db._get_connection(user_email=user_email) as conn:
             with conn.cursor() as cursor:
                 cursor.execute(f"""
                     INSERT INTO {T.INTERACTION_OUTCOMES} (
@@ -568,9 +560,6 @@ NOTES: ..."""
                     action_type, topic, engagement,
                     continued, resonance, notes
                 ))
-                conn.commit()
-        finally:
-            conn.close()
 
         logger.info(
             f"Batch outcome tracked: action={action_type}, engagement={engagement}, "
