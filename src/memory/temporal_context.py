@@ -61,7 +61,7 @@ def get_recent_significant_events(
 
         cutoff = datetime.now(PST) - timedelta(days=days_back)
 
-        with db._get_connection() as conn:
+        with db._get_connection(user_email) as conn:
             from psycopg2.extras import RealDictCursor
             cursor = conn.cursor(cursor_factory=RealDictCursor)
 
@@ -138,7 +138,7 @@ def get_recent_notable_messages(
             'act-on', 'leantaas', 'snapsheet', 'cavallo',
         ]
 
-        with db._get_connection() as conn:
+        with db._get_connection(user_email) as conn:
             from psycopg2.extras import RealDictCursor
             cursor = conn.cursor(cursor_factory=RealDictCursor)
 

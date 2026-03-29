@@ -195,12 +195,18 @@ class SynthesizedBiographyStore:
 
     def __init__(self):
         self._conn = None
+        self._current_email = None
 
-    def _get_connection(self):
-        """Get database connection."""
+    def _get_connection(self, user_email: str = None):
+        """Get database connection with correct schema search path."""
         import psycopg2
 
-        if self._conn is None or self._conn.closed:
+        # Reconnect if closed or if user changed (need different schema)
+        needs_new = (self._conn is None or self._conn.closed or
+                     (user_email and user_email != self._current_email))
+        if needs_new:
+            if self._conn and not self._conn.closed:
+                self._conn.close()
             self._conn = psycopg2.connect(
                 host=os.environ.get('POSTGRES_HOST', 'postgres'),
                 port=os.environ.get('POSTGRES_PORT', '5432'),
@@ -208,6 +214,10 @@ class SynthesizedBiographyStore:
                 user=os.environ.get('POSTGRES_USER', 'companion'),
                 password=os.environ.get('POSTGRES_PASSWORD', '')
             )
+            if user_email:
+                from src.database.schema_manager import set_search_path
+                set_search_path(self._conn, user_email)
+                self._current_email = user_email
         return self._conn
 
     def store_paragraph(
@@ -221,7 +231,7 @@ class SynthesizedBiographyStore:
         user_email: str = None
     ) -> Optional[int]:
         """Store or update a synthesized paragraph."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             with conn.cursor() as cursor:
@@ -259,7 +269,7 @@ class SynthesizedBiographyStore:
         user_email: str = None
     ) -> List[Dict[str, Any]]:
         """Get all paragraphs about a subject, with temporal decay applied."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             from psycopg2.extras import RealDictCursor
@@ -310,7 +320,7 @@ class SynthesizedBiographyStore:
         limit: int = 20
     ) -> List[Dict[str, Any]]:
         """Get all paragraphs with temporal decay applied."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             from psycopg2.extras import RealDictCursor
@@ -718,7 +728,7 @@ def refresh_all_biographies(user_email: str = None):
     fact_store = get_fact_store()
 
     try:
-        conn = fact_store._get_connection()
+        conn = fact_store._get_connection(user_email)
         with conn.cursor() as cursor:
             cursor.execute(f"""
                 SELECT DISTINCT subject FROM {T.FACTS}
