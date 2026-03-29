@@ -764,23 +764,8 @@ class SimulationRunner:
                 except Exception as e:
                     logger.debug(f"    Relationship dynamics failed: {e}")
 
-                # 8. Event synthesis (LLM call)
-                try:
-                    from src.tasks.event_synthesis_task import detect_and_synthesize_events
-                    time.sleep(2)
-                    detect_and_synthesize_events(email_a, user_msg, companion_msg, user_msg_id)
-                    task_count += 1
-                except Exception as e:
-                    logger.debug(f"    Event synthesis failed: {e}")
-
-                # 9. Episode tracking (LLM call)
-                try:
-                    from src.tasks.episode_tracking_task import process_message_episode
-                    time.sleep(2)
-                    process_message_episode(email_a, user_msg, companion_msg, user_msg_id, companion_msg_id)
-                    task_count += 1
-                except Exception as e:
-                    logger.debug(f"    Episode tracking failed: {e}")
+                # 8-9. Event synthesis + Episode tracking are now batched per-conversation
+                # (see issue #106). Skipped in per-message simulation loop.
 
                 # 10. Graphiti extraction (knowledge graph)
                 try:

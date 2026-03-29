@@ -317,19 +317,14 @@ class AlwaysOnService:
         except Exception as e:
             logger.warning(f"Could not queue relationship extraction: {e}")
 
-        # Event synthesis
+        # Conversation-level batch tasks (episode tracking, event synthesis,
+        # interaction outcome) — debounced to fire once per conversation.
+        # See issue #106.
         try:
-            from src.tasks.event_synthesis_task import detect_and_synthesize_events
-            detect_and_synthesize_events.delay(email, user_message, companion_response, user_msg_id)
+            from src.tasks.conversation_batch_task import schedule_conversation_batch
+            schedule_conversation_batch(email)
         except Exception as e:
-            logger.warning(f"Could not queue event synthesis: {e}")
-
-        # Episode tracking
-        try:
-            from src.tasks.episode_tracking_task import process_message_episode
-            process_message_episode.delay(email, user_message, companion_response, user_msg_id, companion_msg_id)
-        except Exception as e:
-            logger.warning(f"Could not queue episode tracking: {e}")
+            logger.warning(f"Could not schedule conversation batch: {e}")
 
     # =========================================================================
     # MAIN LOOP - Dynamic intervals with dual cadence

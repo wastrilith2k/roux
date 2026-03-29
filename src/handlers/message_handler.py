@@ -293,36 +293,15 @@ class MessageProcessor:
                 except Exception as e:
                     logger.warning(f"Could not queue relationship extraction: {e}")
 
-                # Event synthesis - detect and synthesize crisis/career/milestone/relationship events
+                # Conversation-level batch tasks (episode tracking, event synthesis,
+                # interaction outcome) — debounced to fire once per conversation
+                # instead of per-message. See issue #106.
                 try:
-                    from src.tasks.event_synthesis_task import detect_and_synthesize_events
-                    detect_and_synthesize_events.delay(email, message, response_text, user_msg_id)
-                    logger.info("📅 Event synthesis task queued")
+                    from src.tasks.conversation_batch_task import schedule_conversation_batch
+                    schedule_conversation_batch(email)
+                    logger.info("📦 Conversation batch tasks scheduled (debounced)")
                 except Exception as e:
-                    logger.warning(f"Could not queue event synthesis: {e}")
-
-                # Episode tracking - manage conversation episodes
-                try:
-                    from src.tasks.episode_tracking_task import process_message_episode
-                    # Get companion's message ID (first one if multiple)
-                    companion_msg_id = companion_messages_saved[0][0] if companion_messages_saved else None
-                    process_message_episode.delay(email, message, response_text, user_msg_id, companion_msg_id)
-                    logger.info("📖 Episode tracking task queued")
-                except Exception as e:
-                    logger.warning(f"Could not queue episode tracking: {e}")
-
-                # Interaction outcome tracking - analyze how the user responds to the companion
-                try:
-                    from src.tasks.interaction_outcome_task import analyze_interaction_outcome
-                    previous_companion = self._get_previous_companion_message(email)
-                    if previous_companion:
-                        # Get the companion message ID for the PREVIOUS message (before this exchange)
-                        analyze_interaction_outcome.delay(
-                            email, previous_companion, message, None, user_msg_id
-                        )
-                        logger.info("📊 Interaction outcome task queued")
-                except Exception as e:
-                    logger.warning(f"Could not queue interaction outcome: {e}")
+                    logger.warning(f"Could not schedule conversation batch: {e}")
 
                 # Biography refresh when context window is filling up
                 # Ensures important info from messages is preserved before they age out
