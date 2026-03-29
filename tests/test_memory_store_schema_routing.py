@@ -495,3 +495,92 @@ class TestSpreadingActivationSchemaRouting:
                     mock_network.spreading_activation.assert_called_once()
                     call_kwargs = mock_network.spreading_activation.call_args[1]
                     assert call_kwargs.get('user_email') == TEST_EMAIL
+
+
+# ---------------------------------------------------------------------------
+# FactStore._create_fact_links → FactNetwork.detect_links_for_new_fact
+# ---------------------------------------------------------------------------
+
+class TestCreateFactLinksSchemaRouting:
+    """_create_fact_links must pass user_email to detect_links_for_new_fact."""
+
+    def test_create_fact_links_passes_user_email(self):
+        """Regression: _create_fact_links must forward user_email so the
+        background thread queries the correct per-user schema (issue #107)."""
+        from src.memory.fact_store import FactStore
+
+        store = FactStore()
+        mock_network = MagicMock()
+
+        with patch('src.memory.fact_network.get_fact_network', return_value=mock_network):
+            # Call _create_fact_links with user_email and wait for the thread
+            import threading
+            original_thread_init = threading.Thread.__init__
+
+            captured_target = {}
+
+            def capture_thread(self_thread, *args, **kwargs):
+                original_thread_init(self_thread, *args, **kwargs)
+                captured_target['target'] = kwargs.get('target') or (args[0] if args else None)
+
+            with patch.object(threading.Thread, '__init__', capture_thread):
+                with patch.object(threading.Thread, 'start'):
+                    store._create_fact_links(1, "James", "coffee", user_email=TEST_EMAIL)
+
+            # Execute the captured target function directly (simulates what the thread runs)
+            if captured_target.get('target'):
+                captured_target['target']()
+
+            # Verify detect_links_for_new_fact was called with user_email
+            mock_network.detect_links_for_new_fact.assert_called_once()
+            call_kwargs = mock_network.detect_links_for_new_fact.call_args[1]
+            assert call_kwargs.get('user_email') == TEST_EMAIL
+
+    def test_create_fact_links_without_user_email(self):
+        """_create_fact_links without user_email passes None through."""
+        from src.memory.fact_store import FactStore
+
+        store = FactStore()
+        mock_network = MagicMock()
+
+        with patch('src.memory.fact_network.get_fact_network', return_value=mock_network):
+            import threading
+            captured_target = {}
+
+            original_thread_init = threading.Thread.__init__
+
+            def capture_thread(self_thread, *args, **kwargs):
+                original_thread_init(self_thread, *args, **kwargs)
+                captured_target['target'] = kwargs.get('target') or (args[0] if args else None)
+
+            with patch.object(threading.Thread, '__init__', capture_thread):
+                with patch.object(threading.Thread, 'start'):
+                    store._create_fact_links(1, "James", "coffee")
+
+            if captured_target.get('target'):
+                captured_target['target']()
+
+            mock_network.detect_links_for_new_fact.assert_called_once()
+            call_kwargs = mock_network.detect_links_for_new_fact.call_args[1]
+            assert call_kwargs.get('user_email') is None
+
+    def test_store_fact_passes_user_email_to_create_fact_links(self):
+        """store_fact must forward user_email to _create_fact_links."""
+        from src.memory.fact_store import FactStore
+
+        store = FactStore()
+        mock_conn = _mock_psycopg2_connect()
+        # Make store_fact succeed: cursor.fetchone returns a fact_id
+        mock_conn.cursor.return_value.fetchone.return_value = (42,)
+
+        with patch.object(store, '_get_connection', return_value=mock_conn):
+            with patch.object(store, 'is_duplicate', return_value=False):
+                with patch.object(store, 'handle_contradictions', return_value=(0, [])):
+                    with patch.object(store, '_create_fact_links') as mock_cfl:
+                        store.store_fact(
+                            subject="James", predicate="likes", obj="coffee",
+                            user_email=TEST_EMAIL
+                        )
+                        mock_cfl.assert_called_once_with(
+                            42, "James", "coffee", user_email=TEST_EMAIL
+                        )

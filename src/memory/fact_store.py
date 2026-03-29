@@ -135,7 +135,7 @@ class FactStore:
                 logger.info(f"Stored fact {fact_id}: {subject} - {predicate} - {obj[:50]}...")
 
                 # Wire into fact network (create links to related facts)
-                self._create_fact_links(fact_id, subject, obj)
+                self._create_fact_links(fact_id, subject, obj, user_email=user_email)
 
                 return fact_id
 
@@ -733,7 +733,7 @@ class FactStore:
             logger.debug(f"Could not get embedding: {e}")
             return None
 
-    def _create_fact_links(self, fact_id: int, subject: str, obj: str) -> None:
+    def _create_fact_links(self, fact_id: int, subject: str, obj: str, user_email: str = None) -> None:
         """
         Wire a new fact into the fact network.
 
@@ -757,7 +757,8 @@ class FactStore:
                         new_fact_id=fact_id,
                         new_fact_subject=subject,
                         new_fact_object=obj,
-                        use_llm=use_llm
+                        use_llm=use_llm,
+                        user_email=user_email
                     )
                 except Exception as e:
                     logger.debug(f"Fact link creation failed (non-critical): {e}")
