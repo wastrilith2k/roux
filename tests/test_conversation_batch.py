@@ -362,3 +362,23 @@ class TestBatchEpisodeTracking:
             assert mock_store.add_message_to_episode.call_count == 4
             linked_ids = [c.args[1] for c in mock_store.add_message_to_episode.call_args_list]
             assert linked_ids == [1, 2, 3, 4]
+
+
+# ---------------------------------------------------------------------------
+# Celery task registration
+# ---------------------------------------------------------------------------
+
+class TestCeleryTaskRegistration:
+    """Regression: conversation_batch_task must be in celery_app include list."""
+
+    def test_conversation_batch_task_registered_in_celery_include(self):
+        """The task module must be in celery_app.conf.include so workers discover it.
+
+        Previous attempt (attempt 2) failed because this registration was missing,
+        causing apply_async() to silently enqueue to the broker with no worker to
+        execute it.
+        """
+        from src.celery_app import celery_app
+        include_list = celery_app.conf.include
+        assert 'src.tasks.conversation_batch_task' in include_list, \
+            "conversation_batch_task not in celery_app include list — workers will never execute it"

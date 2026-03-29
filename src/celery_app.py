@@ -101,6 +101,7 @@ celery_app.conf.update(
         'src.tasks.memory_gap_analysis_task',  # Memory gap detection → curiosity (daily)
         'src.tasks.entity_profile_fact_validator',  # Validate facts against entity profiles (daily)
         'src.tasks.interaction_outcome_task',  # Per-message interaction outcome tracking
+        'src.tasks.conversation_batch_task',  # Debounced per-conversation batch (episode, event, outcome)
         'src.tasks.weekly_reflection_task',  # Weekly pattern analysis reflection
         'src.tasks.monthly_reflection_task',  # Monthly relationship evolution reflection
         'src.tasks.calendar_schedule_task',  # Daily calendar schedule generation
