@@ -145,10 +145,15 @@ class RelationshipStore:
 
     def __init__(self):
         self._conn = None
+        self._current_email = None
 
-    def _get_connection(self):
-        """Get database connection."""
-        if self._conn is None or self._conn.closed:
+    def _get_connection(self, user_email: str = None):
+        """Get database connection with correct schema search path."""
+        needs_new = (self._conn is None or self._conn.closed or
+                     (user_email and user_email != self._current_email))
+        if needs_new:
+            if self._conn and not self._conn.closed:
+                self._conn.close()
             self._conn = psycopg2.connect(
                 host=os.environ.get('POSTGRES_HOST', 'postgres'),
                 port=os.environ.get('POSTGRES_PORT', '5432'),
@@ -156,6 +161,10 @@ class RelationshipStore:
                 user=os.environ.get('POSTGRES_USER', 'companion'),
                 password=os.environ.get('POSTGRES_PASSWORD', '')
             )
+            if user_email:
+                from src.database.schema_manager import set_search_path
+                set_search_path(self._conn, user_email)
+                self._current_email = user_email
         return self._conn
 
     def store_relationship(
@@ -184,7 +193,7 @@ class RelationshipStore:
 
         Returns relationship ID or None if failed.
         """
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         # Normalize entity names
         source_entity = source_entity.strip().title()
@@ -326,7 +335,7 @@ class RelationshipStore:
         user_email: str = None
     ) -> List[Dict[str, Any]]:
         """Get all relationships involving an entity."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         entity = entity.strip().title()
 
         try:
@@ -369,7 +378,7 @@ class RelationshipStore:
         user_email: str = None
     ) -> List[Dict[str, Any]]:
         """Get all relationships between two specific entities."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         entity1 = entity1.strip().title()
         entity2 = entity2.strip().title()
 
@@ -393,10 +402,11 @@ class RelationshipStore:
     def end_relationship(
         self,
         relationship_id: int,
-        reason: str = None
+        reason: str = None,
+        user_email: str = None
     ) -> bool:
         """Mark a relationship as ended (set valid_until)."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             with conn.cursor() as cursor:
@@ -464,9 +474,9 @@ class RelationshipStore:
 
         return "\n".join(lines)
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self, user_email: str = None) -> Dict[str, Any]:
         """Get relationship store statistics."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:

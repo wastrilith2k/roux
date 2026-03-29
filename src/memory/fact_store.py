@@ -903,6 +903,7 @@ class FactStore:
                 min_activation=min_activation,
                 max_results=limit,
                 relationship_bridge=relationship_bridge,
+                user_email=user_email,
             )
 
             if activated_facts:

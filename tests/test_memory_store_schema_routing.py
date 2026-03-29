@@ -270,3 +270,228 @@ class TestTemporalContextSchemaRouting:
             get_recent_notable_messages(user_email=TEST_EMAIL)
 
             mock_db._get_connection.assert_called_once_with(TEST_EMAIL)
+
+
+# ---------------------------------------------------------------------------
+# RelationshipStore
+# ---------------------------------------------------------------------------
+
+class TestRelationshipStoreSchemaRouting:
+    """RelationshipStore._get_connection must call set_search_path when user_email is provided."""
+
+    def _make_store(self):
+        from src.memory.relationship_store import RelationshipStore
+        return RelationshipStore()
+
+    def test_get_connection_calls_set_search_path(self):
+        store = self._make_store()
+        mock_conn = _mock_psycopg2_connect()
+
+        with patch('psycopg2.connect', return_value=mock_conn):
+            with patch('src.database.schema_manager.set_search_path') as mock_ssp:
+                store._get_connection(user_email=TEST_EMAIL)
+                mock_ssp.assert_called_once_with(mock_conn, TEST_EMAIL)
+
+    def test_get_connection_without_email_skips_set_search_path(self):
+        store = self._make_store()
+        mock_conn = _mock_psycopg2_connect()
+
+        with patch('psycopg2.connect', return_value=mock_conn):
+            with patch('src.database.schema_manager.set_search_path') as mock_ssp:
+                store._get_connection()
+                mock_ssp.assert_not_called()
+
+    def test_get_connection_reuses_conn_for_same_user(self):
+        store = self._make_store()
+        mock_conn = _mock_psycopg2_connect()
+
+        with patch('psycopg2.connect', return_value=mock_conn) as mock_connect:
+            with patch('src.database.schema_manager.set_search_path'):
+                store._get_connection(user_email=TEST_EMAIL)
+                store._get_connection(user_email=TEST_EMAIL)
+                assert mock_connect.call_count == 1
+
+    def test_get_connection_reconnects_for_different_user(self):
+        store = self._make_store()
+        mock_conn1 = _mock_psycopg2_connect()
+        mock_conn2 = _mock_psycopg2_connect()
+
+        with patch('psycopg2.connect', side_effect=[mock_conn1, mock_conn2]) as mock_connect:
+            with patch('src.database.schema_manager.set_search_path') as mock_ssp:
+                store._get_connection(user_email=TEST_EMAIL)
+                store._get_connection(user_email="other@example.com")
+
+                assert mock_connect.call_count == 2
+                assert mock_ssp.call_count == 2
+                mock_ssp.assert_any_call(mock_conn1, TEST_EMAIL)
+                mock_ssp.assert_any_call(mock_conn2, "other@example.com")
+
+    def test_store_relationship_passes_user_email(self):
+        store = self._make_store()
+
+        with patch.object(store, '_get_connection', return_value=_mock_psycopg2_connect()) as mock_gc:
+            from src.memory.relationship_store import RelationshipType
+            store.store_relationship(
+                source_entity="James", relationship_type=RelationshipType.PARENT_OF,
+                target_entity="Jesse", user_email=TEST_EMAIL
+            )
+            mock_gc.assert_called_with(TEST_EMAIL)
+
+    def test_get_relationships_for_entity_passes_user_email(self):
+        store = self._make_store()
+
+        with patch.object(store, '_get_connection', return_value=_mock_psycopg2_connect()) as mock_gc:
+            store.get_relationships_for_entity("James", user_email=TEST_EMAIL)
+            mock_gc.assert_called_with(TEST_EMAIL)
+
+    def test_get_relationship_between_passes_user_email(self):
+        store = self._make_store()
+
+        with patch.object(store, '_get_connection', return_value=_mock_psycopg2_connect()) as mock_gc:
+            store.get_relationship_between("James", "Jesse", user_email=TEST_EMAIL)
+            mock_gc.assert_called_with(TEST_EMAIL)
+
+
+# ---------------------------------------------------------------------------
+# CompanionJournal
+# ---------------------------------------------------------------------------
+
+class TestCompanionJournalSchemaRouting:
+    """CompanionJournal._get_connection must call set_search_path using self.user_email."""
+
+    def _make_journal(self, user_email=TEST_EMAIL):
+        from src.memory.companion_journal import CompanionJournal
+        return CompanionJournal(user_email=user_email)
+
+    def test_get_connection_calls_set_search_path(self):
+        journal = self._make_journal()
+        mock_conn = _mock_psycopg2_connect()
+
+        with patch('psycopg2.connect', return_value=mock_conn):
+            with patch('src.database.schema_manager.set_search_path') as mock_ssp:
+                journal._get_connection()
+                mock_ssp.assert_called_once_with(mock_conn, TEST_EMAIL)
+
+    def test_get_connection_without_email_skips_set_search_path(self):
+        journal = self._make_journal(user_email=None)
+        mock_conn = _mock_psycopg2_connect()
+
+        with patch('psycopg2.connect', return_value=mock_conn):
+            with patch('src.database.schema_manager.set_search_path') as mock_ssp:
+                journal._get_connection()
+                mock_ssp.assert_not_called()
+
+    def test_get_connection_reuses_conn_for_same_user(self):
+        journal = self._make_journal()
+        mock_conn = _mock_psycopg2_connect()
+
+        with patch('psycopg2.connect', return_value=mock_conn) as mock_connect:
+            with patch('src.database.schema_manager.set_search_path'):
+                journal._get_connection()
+                journal._get_connection()
+                assert mock_connect.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# FactApprovalService
+# ---------------------------------------------------------------------------
+
+class TestFactApprovalSchemaRouting:
+    """FactApprovalService._get_connection must call set_search_path when user_email is provided."""
+
+    def _make_service(self):
+        from src.memory.fact_approval import FactApprovalService
+        return FactApprovalService()
+
+    def test_get_connection_calls_set_search_path(self):
+        service = self._make_service()
+        mock_conn = _mock_psycopg2_connect()
+
+        with patch('psycopg2.connect', return_value=mock_conn):
+            with patch('src.database.schema_manager.set_search_path') as mock_ssp:
+                service._get_connection(user_email=TEST_EMAIL)
+                mock_ssp.assert_called_once_with(mock_conn, TEST_EMAIL)
+
+    def test_get_connection_without_email_skips_set_search_path(self):
+        service = self._make_service()
+        mock_conn = _mock_psycopg2_connect()
+
+        with patch('psycopg2.connect', return_value=mock_conn):
+            with patch('src.database.schema_manager.set_search_path') as mock_ssp:
+                service._get_connection()
+                mock_ssp.assert_not_called()
+
+    def test_get_connection_reuses_conn_for_same_user(self):
+        service = self._make_service()
+        mock_conn = _mock_psycopg2_connect()
+
+        with patch('psycopg2.connect', return_value=mock_conn) as mock_connect:
+            with patch('src.database.schema_manager.set_search_path'):
+                service._get_connection(user_email=TEST_EMAIL)
+                service._get_connection(user_email=TEST_EMAIL)
+                assert mock_connect.call_count == 1
+
+    def test_get_connection_reconnects_for_different_user(self):
+        service = self._make_service()
+        mock_conn1 = _mock_psycopg2_connect()
+        mock_conn2 = _mock_psycopg2_connect()
+
+        with patch('psycopg2.connect', side_effect=[mock_conn1, mock_conn2]) as mock_connect:
+            with patch('src.database.schema_manager.set_search_path') as mock_ssp:
+                service._get_connection(user_email=TEST_EMAIL)
+                service._get_connection(user_email="other@example.com")
+
+                assert mock_connect.call_count == 2
+                assert mock_ssp.call_count == 2
+
+    def test_add_pending_fact_passes_user_email(self):
+        from src.memory.fact_approval import FactSensitivity
+        service = self._make_service()
+
+        with patch.object(service, '_get_connection', return_value=_mock_psycopg2_connect()) as mock_gc:
+            service.add_pending_fact(
+                fact={"subject": "James", "fact": "likes coffee"},
+                sensitivity=FactSensitivity.NONE,
+                reason="",
+                user_email=TEST_EMAIL
+            )
+            mock_gc.assert_called_with(TEST_EMAIL)
+
+    def test_get_pending_facts_passes_user_email(self):
+        service = self._make_service()
+
+        with patch.object(service, '_get_connection', return_value=_mock_psycopg2_connect()) as mock_gc:
+            service.get_pending_facts(user_email=TEST_EMAIL)
+            mock_gc.assert_called_with(TEST_EMAIL)
+
+
+# ---------------------------------------------------------------------------
+# FactStore.search_with_spreading_activation (cross-method consistency)
+# ---------------------------------------------------------------------------
+
+class TestSpreadingActivationSchemaRouting:
+    """spreading_activation must receive user_email from search_with_spreading_activation."""
+
+    def test_spreading_activation_receives_user_email(self):
+        """search_with_spreading_activation must pass user_email to network.spreading_activation."""
+        from src.memory.fact_store import FactStore
+
+        store = FactStore()
+        mock_conn = _mock_psycopg2_connect()
+
+        # Mock seed facts return
+        seed_facts = [{'id': 1, 'fact': 'test', 'score': 0.9}]
+        mock_network = MagicMock()
+        mock_network.spreading_activation.return_value = [{'id': 1, 'activation': 1.0}]
+
+        with patch.object(store, '_get_connection', return_value=mock_conn):
+            with patch.object(store, 'search_facts_hybrid', return_value=seed_facts):
+                with patch('src.memory.fact_network.get_fact_network', return_value=mock_network):
+                    store.search_with_spreading_activation(
+                        "test query", user_email=TEST_EMAIL
+                    )
+
+                    # Verify user_email was passed to spreading_activation
+                    mock_network.spreading_activation.assert_called_once()
+                    call_kwargs = mock_network.spreading_activation.call_args[1]
+                    assert call_kwargs.get('user_email') == TEST_EMAIL
