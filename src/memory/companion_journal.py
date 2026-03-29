@@ -43,12 +43,18 @@ class CompanionJournal:
             user_email = get_persona_config().primary_user_email
         self.user_email = user_email
         self._conn = None
+        self._current_email = None
 
     def _get_connection(self):
-        """Get database connection."""
+        """Get database connection with correct schema search path."""
         import psycopg2
 
-        if self._conn is None or self._conn.closed:
+        user_email = self.user_email
+        needs_new = (self._conn is None or self._conn.closed or
+                     (user_email and user_email != self._current_email))
+        if needs_new:
+            if self._conn and not self._conn.closed:
+                self._conn.close()
             self._conn = psycopg2.connect(
                 host=os.environ.get('POSTGRES_HOST', 'postgres'),
                 port=os.environ.get('POSTGRES_PORT', '5432'),
@@ -56,6 +62,10 @@ class CompanionJournal:
                 user=os.environ.get('POSTGRES_USER', 'companion'),
                 password=os.environ.get('POSTGRES_PASSWORD', '')
             )
+            if user_email:
+                from src.database.schema_manager import set_search_path
+                set_search_path(self._conn, user_email)
+                self._current_email = user_email
         return self._conn
 
     def store_reflection(

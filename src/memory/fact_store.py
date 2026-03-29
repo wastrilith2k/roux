@@ -45,15 +45,14 @@ class FactStore:
 
     def __init__(self):
         self._conn = None
+        self._current_email = None
 
-    def _get_connection(self):
+    def _get_connection(self, user_email: str = None):
         """
-        Get database connection, recovering from poisoned transaction state.
+        Get database connection with correct schema search path.
 
-        PostgreSQL connections become "poisoned" (TRANSACTION_STATUS_INERROR)
-        after a failed query within an uncommitted transaction. We detect
-        this and issue a rollback to restore the connection to a usable state
-        rather than creating a new connection.
+        Recovers from poisoned transaction state (TRANSACTION_STATUS_INERROR)
+        and reconnects when the user changes (different schema needed).
         """
         if self._conn is not None and not self._conn.closed:
             try:
@@ -62,7 +61,12 @@ class FactStore:
                     self._conn.rollback()
             except Exception:
                 self._conn = None
-        if self._conn is None or self._conn.closed:
+        # Reconnect if closed or if user changed (need different schema)
+        needs_new = (self._conn is None or self._conn.closed or
+                     (user_email and user_email != self._current_email))
+        if needs_new:
+            if self._conn and not self._conn.closed:
+                self._conn.close()
             self._conn = psycopg2.connect(
                 host=os.environ.get('POSTGRES_HOST', 'postgres'),
                 port=os.environ.get('POSTGRES_PORT', '5432'),
@@ -70,6 +74,10 @@ class FactStore:
                 user=os.environ.get('POSTGRES_USER', 'companion'),
                 password=os.environ.get('POSTGRES_PASSWORD', '')
             )
+            if user_email:
+                from src.database.schema_manager import set_search_path
+                set_search_path(self._conn, user_email)
+                self._current_email = user_email
         return self._conn
 
     def store_fact(
@@ -92,17 +100,17 @@ class FactStore:
         Returns:
             Fact ID if stored, None if deduplicated or error
         """
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             # Check for semantic duplicates
-            if self.is_duplicate(subject, predicate, obj):
+            if self.is_duplicate(subject, predicate, obj, user_email=user_email):
                 # Reinforce existing fact instead
-                self.reinforce_fact(subject, predicate, obj)
+                self.reinforce_fact(subject, predicate, obj, user_email=user_email)
                 return None
 
             # Check for contradictions and archive old facts
-            archived_count, detected_contradictions = self.handle_contradictions(subject, predicate, obj, embedding)
+            archived_count, detected_contradictions = self.handle_contradictions(subject, predicate, obj, embedding, user_email=user_email)
             if detected_contradictions:
                 logger.info(f"Detected {len(detected_contradictions)} contradiction(s) for {subject}")
 
@@ -127,7 +135,7 @@ class FactStore:
                 logger.info(f"Stored fact {fact_id}: {subject} - {predicate} - {obj[:50]}...")
 
                 # Wire into fact network (create links to related facts)
-                self._create_fact_links(fact_id, subject, obj)
+                self._create_fact_links(fact_id, subject, obj, user_email=user_email)
 
                 return fact_id
 
@@ -145,7 +153,8 @@ class FactStore:
         subject: str,
         predicate: str,
         obj: str,
-        threshold: float = 0.85
+        threshold: float = 0.85,
+        user_email: str = None
     ) -> bool:
         """
         Check if a semantically similar fact already exists.
@@ -160,8 +169,6 @@ class FactStore:
         If a duplicate is found, the caller should call reinforce_fact()
         instead of inserting.
         """
-        conn = self._get_connection()
-
         # Hand-curated semantic equivalence classes for common repeated facts.
         # Each group maps variant phrasings to a canonical pattern name so
         # that "loves tea" and "prefers tea" are recognized as duplicates.
@@ -179,6 +186,7 @@ class FactStore:
                         return pattern_name
             return None
 
+        conn = self._get_connection(user_email)
         new_pattern = get_pattern(obj)
         obj_lower = obj.lower().strip()
 
@@ -221,9 +229,9 @@ class FactStore:
             conn.rollback()
             return False
 
-    def reinforce_fact(self, subject: str, predicate: str, obj: str) -> None:
+    def reinforce_fact(self, subject: str, predicate: str, obj: str, user_email: str = None) -> None:
         """Reinforce an existing fact by incrementing mention count."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             with conn.cursor() as cursor:
@@ -263,7 +271,8 @@ class FactStore:
         subject: str,
         predicate: str,
         new_obj: str,
-        embedding: List[float] = None
+        embedding: List[float] = None,
+        user_email: str = None
     ) -> Tuple[int, List[Dict[str, Any]]]:
         """
         Detect and archive facts that the new fact contradicts.
@@ -284,7 +293,7 @@ class FactStore:
         Returns:
             Tuple of (archived_count, detected_contradictions)
         """
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         archived = 0
         contradictions = []
 
@@ -357,7 +366,7 @@ class FactStore:
 
             # Store detected contradictions for later surfacing in context
             if contradictions:
-                self._store_detected_contradictions(subject, contradictions)
+                self._store_detected_contradictions(subject, contradictions, user_email=user_email)
 
         except Exception as e:
             logger.error(f"Contradiction handling failed: {e}")
@@ -381,9 +390,9 @@ class FactStore:
 
         return dot_product / (norm1 * norm2)
 
-    def _store_detected_contradictions(self, subject: str, contradictions: List[Dict]) -> None:
+    def _store_detected_contradictions(self, subject: str, contradictions: List[Dict], user_email: str = None) -> None:
         """Store detected contradictions for later surfacing in context."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             with conn.cursor() as cursor:
@@ -405,9 +414,9 @@ class FactStore:
             logger.debug(f"Could not store contradiction (table may not exist): {e}")
             conn.rollback()
 
-    def get_unsurfaced_contradictions(self, subject: str = None, limit: int = 5) -> List[Dict]:
+    def get_unsurfaced_contradictions(self, subject: str = None, limit: int = 5, user_email: str = None) -> List[Dict]:
         """Get contradictions that haven't been surfaced to the LLM yet."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -432,9 +441,9 @@ class FactStore:
             conn.rollback()
             return []
 
-    def mark_contradiction_surfaced(self, contradiction_id: int) -> None:
+    def mark_contradiction_surfaced(self, contradiction_id: int, user_email: str = None) -> None:
         """Mark a contradiction as surfaced (shown to LLM)."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             with conn.cursor() as cursor:
@@ -452,10 +461,11 @@ class FactStore:
         self,
         subject: str,
         include_archived: bool = False,
-        limit: int = 50
+        limit: int = 50,
+        user_email: str = None
     ) -> List[Dict[str, Any]]:
         """Get all facts about a subject, enriched with effective confidence."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -494,10 +504,11 @@ class FactStore:
     def get_important_facts(
         self,
         min_importance: int = 7,
-        limit: int = 100
+        limit: int = 100,
+        user_email: str = None
     ) -> List[Dict[str, Any]]:
         """Get high-importance facts across all subjects."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -519,7 +530,8 @@ class FactStore:
     def get_facts_for_entities(
         self,
         entities: List[str],
-        limit: int = 10
+        limit: int = 10,
+        user_email: str = None
     ) -> List[Dict[str, Any]]:
         """
         Get top facts about a list of entities.
@@ -538,7 +550,7 @@ class FactStore:
         if not entities:
             return []
 
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         results = []
 
         try:
@@ -564,10 +576,11 @@ class FactStore:
     def search_facts(
         self,
         query: str,
-        limit: int = 20
+        limit: int = 20,
+        user_email: str = None
     ) -> List[Dict[str, Any]]:
         """Search facts by text match, enriched with effective confidence."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -609,7 +622,8 @@ class FactStore:
         limit: int = 20,
         vector_weight: float = 0.6,
         text_weight: float = 0.4,
-        min_score: float = 0.1
+        min_score: float = 0.1,
+        user_email: str = None
     ) -> List[Dict[str, Any]]:
         """
         Hybrid search combining BM25 full-text and pgvector cosine similarity.
@@ -634,7 +648,7 @@ class FactStore:
         Returns:
             List of facts with hybrid_score field
         """
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             # Get embedding for query (if embeddings are available)
@@ -708,7 +722,7 @@ class FactStore:
             logger.warning(f"Hybrid search failed, falling back to simple search: {e}")
             conn.rollback()
             # Fall back to simple ILIKE search
-            return self.search_facts(query, limit)
+            return self.search_facts(query, limit, user_email=user_email)
 
     def _get_embedding(self, text: str) -> Optional[List[float]]:
         """Get embedding for text (if embedding service available)."""
@@ -719,7 +733,7 @@ class FactStore:
             logger.debug(f"Could not get embedding: {e}")
             return None
 
-    def _create_fact_links(self, fact_id: int, subject: str, obj: str) -> None:
+    def _create_fact_links(self, fact_id: int, subject: str, obj: str, user_email: str = None) -> None:
         """
         Wire a new fact into the fact network.
 
@@ -743,7 +757,8 @@ class FactStore:
                         new_fact_id=fact_id,
                         new_fact_subject=subject,
                         new_fact_object=obj,
-                        use_llm=use_llm
+                        use_llm=use_llm,
+                        user_email=user_email
                     )
                 except Exception as e:
                     logger.debug(f"Fact link creation failed (non-critical): {e}")
@@ -755,7 +770,7 @@ class FactStore:
         except Exception as e:
             logger.debug(f"Could not start fact link thread: {e}")
 
-    def ensure_search_vectors(self) -> int:
+    def ensure_search_vectors(self, user_email: str = None) -> int:
         """
         Ensure all facts have search_vector populated.
 
@@ -764,7 +779,7 @@ class FactStore:
         Returns:
             Number of facts updated
         """
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             with conn.cursor() as cursor:
@@ -790,9 +805,9 @@ class FactStore:
             conn.rollback()
             return 0
 
-    def update_importance(self, fact_id: int, importance: int) -> bool:
+    def update_importance(self, fact_id: int, importance: int, user_email: str = None) -> bool:
         """Update the importance score for a fact."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             with conn.cursor() as cursor:
@@ -809,9 +824,9 @@ class FactStore:
             conn.rollback()
             return False
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self, user_email: str = None) -> Dict[str, Any]:
         """Get fact store statistics."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -842,7 +857,8 @@ class FactStore:
         limit: int = 20,
         activation_depth: int = 2,
         min_activation: float = 0.25,
-        relationship_bridge: bool = True
+        relationship_bridge: bool = True,
+        user_email: str = None
     ) -> List[Dict[str, Any]]:
         """
         Search facts with spreading activation through the fact network.
@@ -870,11 +886,11 @@ class FactStore:
         """
         try:
             # Step 1: Get seed facts via hybrid search
-            seed_facts = self.search_facts_hybrid(query, limit=10, min_score=0.15)
+            seed_facts = self.search_facts_hybrid(query, limit=10, min_score=0.15, user_email=user_email)
 
             if not seed_facts:
                 # Fall back to simple search
-                return self.search_facts(query, limit)
+                return self.search_facts(query, limit, user_email=user_email)
 
             seed_ids = [f['id'] for f in seed_facts]
 
@@ -888,6 +904,7 @@ class FactStore:
                 min_activation=min_activation,
                 max_results=limit,
                 relationship_bridge=relationship_bridge,
+                user_email=user_email,
             )
 
             if activated_facts:
@@ -902,7 +919,7 @@ class FactStore:
 
         except Exception as e:
             logger.warning(f"Spreading activation search failed: {e}")
-            return self.search_facts_hybrid(query, limit)
+            return self.search_facts_hybrid(query, limit, user_email=user_email)
 
 
 # Singleton instance

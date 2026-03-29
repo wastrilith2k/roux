@@ -77,10 +77,16 @@ class FactNetwork:
 
     def __init__(self):
         self._conn = None
+        self._current_email = None
 
-    def _get_connection(self):
-        """Get database connection."""
-        if self._conn is None or self._conn.closed:
+    def _get_connection(self, user_email: str = None):
+        """Get database connection with correct schema search path."""
+        # Reconnect if closed or if user changed (need different schema)
+        needs_new = (self._conn is None or self._conn.closed or
+                     (user_email and user_email != self._current_email))
+        if needs_new:
+            if self._conn and not self._conn.closed:
+                self._conn.close()
             self._conn = psycopg2.connect(
                 host=os.environ.get('POSTGRES_HOST', 'postgres'),
                 port=os.environ.get('POSTGRES_PORT', '5432'),
@@ -88,6 +94,10 @@ class FactNetwork:
                 user=os.environ.get('POSTGRES_USER', 'companion'),
                 password=os.environ.get('POSTGRES_PASSWORD', '')
             )
+            if user_email:
+                from src.database.schema_manager import set_search_path
+                set_search_path(self._conn, user_email)
+                self._current_email = user_email
         return self._conn
 
     def create_link(
@@ -96,7 +106,8 @@ class FactNetwork:
         target_fact_id: int,
         link_type: str,
         strength: float = 0.5,
-        context: str = ""
+        context: str = "",
+        user_email: str = None
     ) -> bool:
         """
         Create a link between two facts.
@@ -106,7 +117,7 @@ class FactNetwork:
         if source_fact_id == target_fact_id:
             return False
 
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         try:
             with conn.cursor() as cursor:
                 cursor.execute(f"""
@@ -132,7 +143,8 @@ class FactNetwork:
         fact_id: int,
         link_types: List[str] = None,
         min_strength: float = 0.3,
-        direction: str = "both"  # "outgoing", "incoming", "both"
+        direction: str = "both",  # "outgoing", "incoming", "both"
+        user_email: str = None
     ) -> List[Dict[str, Any]]:
         """
         Get facts linked to a given fact.
@@ -146,7 +158,7 @@ class FactNetwork:
         Returns:
             List of linked facts with link metadata
         """
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         results = []
 
         try:
@@ -209,7 +221,8 @@ class FactNetwork:
         decay_factor: float = 0.6,
         max_results: int = 20,
         relationship_bridge: bool = True,
-        bridge_decay: float = 0.5
+        bridge_decay: float = 0.5,
+        user_email: str = None
     ) -> List[Dict[str, Any]]:
         """
         Spreading activation retrieval -- brain-like associative recall.
@@ -275,7 +288,7 @@ class FactNetwork:
         # Pre-load subjects for seed facts
         if relationship_store:
             try:
-                conn = self._get_connection()
+                conn = self._get_connection(user_email)
                 with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                     cursor.execute(f"""
                         SELECT id, subject FROM {T.FACTS}
@@ -336,7 +349,7 @@ class FactNetwork:
                 break
 
         # Fetch full fact details for activated facts
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         results = []
 
         try:
@@ -471,7 +484,8 @@ class FactNetwork:
         new_fact_subject: str,
         new_fact_object: str,
         recent_fact_ids: List[int] = None,
-        use_llm: bool = True
+        use_llm: bool = True,
+        user_email: str = None
     ) -> List[FactLink]:
         """
         Detect links between a new fact and existing facts.
@@ -488,7 +502,7 @@ class FactNetwork:
         Returns:
             List of created links
         """
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         created_links = []
 
         try:
@@ -728,9 +742,9 @@ LINK: 37 same_event 0.9 Both about January crisis"""
             logger.warning(f"LLM link detection failed: {e}")
             return self._detect_links_heuristic(new_fact_id, new_subject, new_object, candidates)
 
-    def get_network_stats(self) -> Dict[str, Any]:
+    def get_network_stats(self, user_email: str = None) -> Dict[str, Any]:
         """Get statistics about the fact network."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:

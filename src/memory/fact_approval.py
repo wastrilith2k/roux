@@ -83,10 +83,15 @@ class FactApprovalService:
 
     def __init__(self):
         self._conn = None
+        self._current_email = None
 
-    def _get_connection(self):
-        """Get database connection."""
-        if self._conn is None or self._conn.closed:
+    def _get_connection(self, user_email: str = None):
+        """Get database connection with correct schema search path."""
+        needs_new = (self._conn is None or self._conn.closed or
+                     (user_email and user_email != self._current_email))
+        if needs_new:
+            if self._conn and not self._conn.closed:
+                self._conn.close()
             self._conn = psycopg2.connect(
                 host=os.environ.get('POSTGRES_HOST', 'postgres'),
                 port=os.environ.get('POSTGRES_PORT', '5432'),
@@ -94,6 +99,10 @@ class FactApprovalService:
                 user=os.environ.get('POSTGRES_USER', 'companion'),
                 password=os.environ.get('POSTGRES_PASSWORD', '')
             )
+            if user_email:
+                from src.database.schema_manager import set_search_path
+                set_search_path(self._conn, user_email)
+                self._current_email = user_email
         return self._conn
 
     def detect_sensitivity(self, fact: Dict[str, Any]) -> tuple[FactSensitivity, str]:
@@ -131,7 +140,7 @@ class FactApprovalService:
         source_message: str = None
     ) -> Optional[int]:
         """Add a fact to the pending approval queue."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         try:
             with conn.cursor() as cursor:
                 cursor.execute(f"""
@@ -166,7 +175,7 @@ class FactApprovalService:
 
     def get_pending_facts(self, user_email: str = None, limit: int = 10) -> List[Dict]:
         """Get pending facts awaiting approval."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 if user_email:
@@ -188,9 +197,9 @@ class FactApprovalService:
             logger.error(f"Error getting pending facts: {e}")
             return []
 
-    def approve_fact(self, fact_id: int, reviewed_by: str = None) -> bool:
+    def approve_fact(self, fact_id: int, reviewed_by: str = None, user_email: str = None) -> bool:
         """Approve a pending fact and move to permanent storage."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         try:
             # Get the pending fact
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -241,9 +250,9 @@ class FactApprovalService:
             conn.rollback()
             return False
 
-    def reject_fact(self, fact_id: int, reviewed_by: str = None, reason: str = None) -> bool:
+    def reject_fact(self, fact_id: int, reviewed_by: str = None, reason: str = None, user_email: str = None) -> bool:
         """Reject a pending fact."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         try:
             with conn.cursor() as cursor:
                 cursor.execute(f"""
@@ -269,10 +278,11 @@ class FactApprovalService:
         self,
         fact_id: int,
         new_fact_text: str,
-        reviewed_by: str = None
+        reviewed_by: str = None,
+        user_email: str = None
     ) -> bool:
         """Edit a fact's text and approve it."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         try:
             # Get the pending fact
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -399,9 +409,9 @@ Return ONLY valid JSON:"""
                 'confidence': 0.0
             }
 
-    def store_llm_review(self, fact_id: int, review: Dict[str, Any]) -> bool:
+    def store_llm_review(self, fact_id: int, review: Dict[str, Any], user_email: str = None) -> bool:
         """Store LLM review results on a pending fact."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         try:
             with conn.cursor() as cursor:
                 cursor.execute(f"""
