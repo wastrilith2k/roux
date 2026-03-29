@@ -26,7 +26,7 @@ MODEL_COSTS = {
     "claude-opus-4-20250514": {"input": 15.00, "output": 75.00},
     "claude-3-5-haiku-20241022": {"input": 0.80, "output": 4.00},
     # Fireworks (approximate)
-    "kimi-k2p5-instruct": {"input": 0.22, "output": 0.88},
+    "kimi-k2p5": {"input": 0.22, "output": 0.88},
     "deepseek-v3": {"input": 0.56, "output": 1.68},
     "llama-v3p1-70b-instruct": {"input": 0.20, "output": 0.20},
 }

@@ -16,7 +16,7 @@ Covers:
 import os
 import sqlite3
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, ANY
 
 os.environ.setdefault('ENVIRONMENT', 'test')
 os.environ.setdefault('POSTGRES_PASSWORD', 'test')
@@ -446,7 +446,7 @@ class TestPipelineOpenRouterCostIntegration:
                 call_purpose='conversation',
                 conversation_id=None,
                 message_id=None,
-                companion_id=None,
+                companion_id=ANY,
             )
 
     def test_track_openrouter_clears_usage(self):

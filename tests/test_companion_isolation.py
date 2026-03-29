@@ -12,9 +12,29 @@ from zoneinfo import ZoneInfo
 
 PST = ZoneInfo('America/Los_Angeles')
 
+def _can_connect_to_db():
+    """Actually try to connect and verify messages table exists in public schema."""
+    try:
+        import psycopg2
+        conn = psycopg2.connect(
+            host=os.getenv('POSTGRES_HOST', 'localhost'),
+            port=os.getenv('POSTGRES_PORT', '5432'),
+            dbname=os.getenv('POSTGRES_DB', 'companion_test'),
+            user=os.getenv('POSTGRES_USER', 'companion'),
+            password=os.getenv('POSTGRES_PASSWORD', ''),
+            connect_timeout=3,
+        )
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='messages'")
+        has_table = cursor.fetchone() is not None
+        conn.close()
+        return has_table
+    except Exception:
+        return False
+
 requires_db = pytest.mark.skipif(
-    not os.getenv('POSTGRES_HOST'),
-    reason="No database available (set POSTGRES_HOST to run)"
+    not _can_connect_to_db(),
+    reason="No database available (cannot connect to PostgreSQL)"
 )
 
 

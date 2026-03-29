@@ -84,13 +84,16 @@ class SimulationEventEmitter:
             pass
 
 
+_log_handlers = [logging.StreamHandler()]
+try:
+    os.makedirs('logs', exist_ok=True)
+    _log_handlers.append(logging.FileHandler('logs/simulation.log', mode='a'))
+except OSError:
+    pass  # No writable logs dir (e.g., in test runner)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('logs/simulation.log', mode='a'),
-    ]
+    handlers=_log_handlers,
 )
 logger = logging.getLogger(__name__)
 

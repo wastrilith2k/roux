@@ -9,7 +9,7 @@ WHAT: The central decision engine for proactive messaging.  For each check cycle
 
       Decision flow inside should_reach_out():
         Hard guards  ->  Natural Partner Triggers  ->  High-urgency curiosity
-        ->  Double-text threshold  ->  LLM decision (kimi-k2p5-instruct)
+        ->  Double-text threshold  ->  LLM decision (kimi-k2p5)
 
 WHY:  A companion that only responds on command feels hollow.  This engine makes
       her initiate naturally -- not on timers, but based on genuine internal

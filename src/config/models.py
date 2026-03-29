@@ -15,7 +15,7 @@ import os
 # Primary conversation model (env-overridable for zero-downtime swaps)
 FIREWORKS_DEFAULT_MODEL = os.getenv(
     "FIREWORKS_MODEL",
-    "accounts/fireworks/models/kimi-k2p5-instruct",
+    "accounts/fireworks/models/kimi-k2p5",
 )
 
 # Fallback conversation model (used when primary fails)

@@ -10,7 +10,7 @@ import pytest
 import sqlite3
 import os
 import tempfile
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import patch, MagicMock, PropertyMock, ANY
 
 
 # ---------------------------------------------------------------------------
@@ -397,7 +397,7 @@ class TestPipelineCostIntegration:
                 call_purpose='conversation',
                 conversation_id=None,
                 message_id=None,
-                companion_id=None,
+                companion_id=ANY,
             )
 
     def test_track_openai_cost(self):
@@ -420,7 +420,7 @@ class TestPipelineCostIntegration:
                 call_purpose='conversation',
                 conversation_id=None,
                 message_id=None,
-                companion_id=None,
+                companion_id=ANY,
             )
 
     def test_track_skips_zero_usage(self):

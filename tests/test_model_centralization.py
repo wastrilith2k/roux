@@ -25,7 +25,7 @@ os.environ.setdefault('POSTGRES_PORT', '5432')
 os.environ.setdefault('POSTGRES_USER', 'test')
 
 DEPRECATED_MODEL = "kimi-k2-instruct-0905"
-NEW_MODEL = "kimi-k2p5-instruct"
+NEW_MODEL = "kimi-k2p5"
 NEW_MODEL_FULL = f"accounts/fireworks/models/{NEW_MODEL}"
 
 

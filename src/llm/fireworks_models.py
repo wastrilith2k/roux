@@ -20,7 +20,7 @@ FAST_MODELS = [
 
 # Medium model for autonomy, reasoning, interjection decisions
 MEDIUM_MODELS = [
-    "accounts/fireworks/models/kimi-k2p5-instruct",
+    "accounts/fireworks/models/kimi-k2p5",
 ]
 
 # Large model for main conversation (configured via env vars, not here)
