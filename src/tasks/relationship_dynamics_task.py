@@ -116,4 +116,4 @@ def analyze_relationship_dynamics(self, email: str, user_message: str, companion
 
     except Exception as e:
         logger.error(f"Relationship dynamics analysis failed: {e}")
-        raise
+        return {'status': 'error', 'error': str(e)}

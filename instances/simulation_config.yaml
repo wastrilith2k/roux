@@ -1,10 +1,10 @@
 # Simulation configuration — shared settings for simulate_relationship.py
 # Everything here can be tuned without touching code.
 
-# Models to rotate between conversations (OpenRouter free tier)
-# Sticking with Nemotron 120B — other free models rate-limit too aggressively on Venice
+# Models to rotate between conversations (OpenRouter paid — production models)
 models:
-  - nvidia/nemotron-3-super-120b-a12b:free
+  - moonshotai/kimi-k2
+  - deepseek/deepseek-chat-v3-0324
 
 # Conversation opener directions — one is picked randomly for each new conversation
 opener_seeds:

@@ -64,11 +64,11 @@ services:
     environment:
       # LLM Configuration
       FIREWORKS_API_KEY: '${FIREWORKS_API_KEY}'
-      FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2p5-instruct'
+      FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2p5'
       ANTHROPIC_API_KEY: '${ANTHROPIC_API_KEY}'
       OPENAI_API_KEY: '${OPENAI_API_KEY}'
       OPENROUTER_API_KEY: '${OPENROUTER_API_KEY}'
-      OPENROUTER_MODEL: '${OPENROUTER_MODEL:-nousresearch/hermes-3-llama-3.1-405b:free}'
+      OPENROUTER_MODEL: '${OPENROUTER_MODEL:-moonshotai/kimi-k2}'
       OPENROUTER_TOOL_MODEL: '${OPENROUTER_TOOL_MODEL:-openrouter/hunter-alpha}'
       # Neo4j Configuration
       NEO4J_GRAPHITI_URI: bolt://neo4j:7687
@@ -136,10 +136,10 @@ services:
       # LLM Configuration
       ANTHROPIC_API_KEY: '${ANTHROPIC_API_KEY}'
       FIREWORKS_API_KEY: '${FIREWORKS_API_KEY}'
-      FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2p5-instruct'
+      FIREWORKS_MODEL: 'accounts/fireworks/models/kimi-k2p5'
       OPENAI_API_KEY: '${OPENAI_API_KEY}'
       OPENROUTER_API_KEY: '${OPENROUTER_API_KEY}'
-      OPENROUTER_MODEL: '${OPENROUTER_MODEL:-nousresearch/hermes-3-llama-3.1-405b:free}'
+      OPENROUTER_MODEL: '${OPENROUTER_MODEL:-moonshotai/kimi-k2}'
       OPENROUTER_TOOL_MODEL: '${OPENROUTER_TOOL_MODEL:-openrouter/hunter-alpha}'
       # Neo4j Configuration
       NEO4J_GRAPHITI_URI: bolt://neo4j:7687
