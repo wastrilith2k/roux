@@ -102,10 +102,16 @@ class EpisodeStore:
 
     def __init__(self):
         self._conn = None
+        self._current_email = None
 
-    def _get_connection(self):
+    def _get_connection(self, user_email: str = None):
         import psycopg2
-        if self._conn is None or self._conn.closed:
+        # Reconnect if closed or if user changed (need different schema)
+        needs_new = (self._conn is None or self._conn.closed or
+                     (user_email and user_email != self._current_email))
+        if needs_new:
+            if self._conn and not self._conn.closed:
+                self._conn.close()
             self._conn = psycopg2.connect(
                 host=os.environ.get('POSTGRES_HOST', 'postgres'),
                 port=os.environ.get('POSTGRES_PORT', '5432'),
@@ -113,11 +119,15 @@ class EpisodeStore:
                 user=os.environ.get('POSTGRES_USER', 'companion'),
                 password=os.environ.get('POSTGRES_PASSWORD', '')
             )
+            if user_email:
+                from src.database.schema_manager import set_search_path
+                set_search_path(self._conn, user_email)
+                self._current_email = user_email
         return self._conn
 
     def get_current_episode(self, user_email: str) -> Optional[Episode]:
         """Get the current ongoing episode for a user."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(f"""
@@ -142,7 +152,7 @@ class EpisodeStore:
         emotional_state: str = ""
     ) -> Optional[Episode]:
         """Create a new episode."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(f"""
@@ -264,7 +274,7 @@ class EpisodeStore:
         limit: int = 10
     ) -> List[Episode]:
         """Get recent episodes for a user."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         try:
             cutoff = datetime.now(PST) - timedelta(days=days_back)
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -307,7 +317,7 @@ class EpisodeStore:
 
     def get_time_since_last_message(self, user_email: str) -> Optional[timedelta]:
         """Get time since the user's last message."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
         try:
             with conn.cursor() as cursor:
                 cursor.execute(f"""

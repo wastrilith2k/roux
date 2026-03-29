@@ -228,31 +228,19 @@ If no extractable facts, return: {{"facts": []}}
 Return ONLY valid JSON:"""
 
     try:
-        from openai import OpenAI
+        from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
 
-        client = OpenAI(
-            base_url="https://api.fireworks.ai/inference/v1",
-            api_key=os.environ.get('FIREWORKS_API_KEY')
-        )
-
-        response = client.chat.completions.create(
-            model=FIREWORKS_MODEL,
+        chain = get_resilient_provider_chain()
+        response = generate_sync(
+            messages=[{"role": "user", "content": prompt}],
             max_tokens=2048,
             temperature=0.0,
-            messages=[{"role": "user", "content": prompt}]
+            chain=chain
         )
-        try:
-            from src.services.cost_tracker import get_cost_tracker
-            usage = response.usage
-            if usage:
-                get_cost_tracker().track_fireworks_call(
-                    user_id='system', prompt_tokens=usage.prompt_tokens or 0,
-                    completion_tokens=usage.completion_tokens or 0,
-                    model=FIREWORKS_MODEL, call_purpose='fact_extraction')
-        except Exception:
-            pass
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(chain, call_purpose='fact_extraction')
 
-        content = response.choices[0].message.content.strip()
+        content = response.strip() if response else ''
 
         # Handle thinking tags
         if '<think>' in content:

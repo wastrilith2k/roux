@@ -469,12 +469,17 @@ class SynthesizedEventStore:
 
     def __init__(self):
         self._conn = None
+        self._current_email = None
 
-    def _get_connection(self):
-        """Get database connection."""
+    def _get_connection(self, user_email: str = None):
+        """Get database connection with correct schema search path."""
         import psycopg2
 
-        if self._conn is None or self._conn.closed:
+        needs_new = (self._conn is None or self._conn.closed or
+                     (user_email and user_email != self._current_email))
+        if needs_new:
+            if self._conn and not self._conn.closed:
+                self._conn.close()
             self._conn = psycopg2.connect(
                 host=os.environ.get('POSTGRES_HOST', 'postgres'),
                 port=os.environ.get('POSTGRES_PORT', '5432'),
@@ -482,11 +487,15 @@ class SynthesizedEventStore:
                 user=os.environ.get('POSTGRES_USER', 'companion'),
                 password=os.environ.get('POSTGRES_PASSWORD', '')
             )
+            if user_email:
+                from src.database.schema_manager import set_search_path
+                set_search_path(self._conn, user_email)
+                self._current_email = user_email
         return self._conn
 
     def store_event(self, event: SynthesizedEvent) -> Optional[int]:
         """Store or update a synthesized event."""
-        conn = self._get_connection()
+        conn = self._get_connection(event.user_email if hasattr(event, 'user_email') else None)
 
         try:
             from psycopg2.extras import Json
@@ -546,7 +555,7 @@ class SynthesizedEventStore:
         max_events: int = 10
     ) -> List[SynthesizedEvent]:
         """Get recent synthesized events."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             from psycopg2.extras import RealDictCursor
@@ -607,7 +616,7 @@ class SynthesizedEventStore:
         user_email: str
     ) -> Optional[SynthesizedEvent]:
         """Get a specific event by title."""
-        conn = self._get_connection()
+        conn = self._get_connection(user_email)
 
         try:
             from psycopg2.extras import RealDictCursor
