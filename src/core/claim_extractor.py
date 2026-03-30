@@ -26,7 +26,6 @@ from typing import List, Optional
 logger = logging.getLogger(__name__)
 
 # Model config - use centralized definitions with fallbacks
-from src.llm.fireworks_models import FAST_MODELS, call_fireworks
 
 
 @dataclass
@@ -48,17 +47,7 @@ class ClaimExtractor:
     """
 
     def __init__(self):
-        self._client = None
-
-    def _get_client(self):
-        """Get Fireworks client."""
-        if self._client is None:
-            from openai import OpenAI
-            self._client = OpenAI(
-                base_url="https://api.fireworks.ai/inference/v1",
-                api_key=os.getenv('FIREWORKS_API_KEY')
-            )
-        return self._client
+        pass
 
     def extract(self, response: str) -> List[Claim]:
         """
@@ -101,8 +90,7 @@ class ClaimExtractor:
             return []
 
     def _extract_with_llm(self, response: str) -> List[Claim]:
-        """Use Haiku to extract claims."""
-        client = self._get_client()
+        """Use LLM to extract claims via OpenRouter."""
 
         prompt = f"""Analyze this message and extract any factual claims being made.
 
@@ -152,15 +140,24 @@ Only include claims that could be TRUE or FALSE. Skip:
 
 If no verifiable claims, return: []"""
 
-        text = call_fireworks(
-            client,
+        from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
+        chain = get_resilient_provider_chain()
+        text = generate_sync(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=500,
-            call_purpose='claim_extraction',
+            temperature=0.0,
+            chain=chain,
         )
+        from src.services.cost_tracker import track_llm_call
+        track_llm_call(chain, call_purpose='claim_extraction')
 
         if not text:
             return []
+
+        text = text.strip()
+        # Strip thinking tags
+        if '<think>' in text and '</think>' in text:
+            text = text.split('</think>')[-1].strip()
 
         # Handle markdown code blocks
         if text.startswith('```'):
