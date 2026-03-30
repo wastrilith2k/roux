@@ -388,11 +388,8 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
             self._clear_addressed_thoughts(user_email, user_message)
 
             # Step 1.5: Memory validation (detect memory queries, retrieve verified records)
-            # Skip for fast path — simple messages don't need memory validation
-            if use_fast_path:
-                memory_context = MemoryContext(is_memory_query=False)
-                logger.debug("Fast path: skipping memory validation")
-            elif profiler:
+            # Always run — even simple messages may reference facts worth validating
+            if profiler:
                 with profiler.stage("memory_validation"):
                     memory_context = self.memory_agent.validate(user_message, user_email)
             else:
@@ -575,10 +572,7 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                 self._track_llm_cost(user_email, model)
 
                 # Step 4: Post-generation validation
-                # Fast path skips validation — simple messages rarely have contradiction risk
-                if use_fast_path:
-                    break
-
+                # Always validate — catches confabulation even in simple exchanges
                 validation = self.message_validator.validate(response, user_message)
 
                 if validation.contradictions_found > 0:

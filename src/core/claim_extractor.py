@@ -156,6 +156,7 @@ If no verifiable claims, return: []"""
             client,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=500,
+            call_purpose='claim_extraction',
         )
 
         if not text:

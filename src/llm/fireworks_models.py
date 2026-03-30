@@ -32,6 +32,7 @@ def call_fireworks(
     models: list = None,
     max_tokens: int = 500,
     temperature: float = 0.1,
+    call_purpose: str = 'fireworks_task',
 ) -> Optional[str]:
     """
     Call Fireworks with automatic model fallback.
@@ -61,6 +62,20 @@ def call_fireworks(
                 max_tokens=max_tokens,
                 temperature=temperature,
             )
+            # Track cost
+            try:
+                from src.services.cost_tracker import get_cost_tracker
+                usage = response.usage
+                if usage:
+                    get_cost_tracker().track_fireworks_call(
+                        user_id='system',
+                        prompt_tokens=usage.prompt_tokens or 0,
+                        completion_tokens=usage.completion_tokens or 0,
+                        model=model,
+                        call_purpose=call_purpose,
+                    )
+            except Exception:
+                pass
             text = response.choices[0].message.content.strip()
             # Strip Qwen <think> tags
             if '<think>' in text and '</think>' in text:
