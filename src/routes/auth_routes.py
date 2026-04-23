@@ -6,7 +6,11 @@ Supports both Firebase (primary) and legacy password-based auth (deprecated).
 """
 
 import os
+import re
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Add src/ subdirectories to Python path for imports
 src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -54,11 +58,21 @@ def login():
 
     if result:
         print(f"✅ Login successful for user: {email}")
+        companion_id = None
+        try:
+            from src.database.ownership import get_user_companions
+            from src.database.db import get_db
+            companions = get_user_companions(get_db(), email)
+            companion_id = companions[0]['companion_id'] if companions else None
+        except Exception as exc:
+            logger.warning(f"Could not look up companion for {email}: {exc}", exc_info=True)
+
         return jsonify({
             'success': True,
             'user_id': result['user_id'],
             'email': result['email'],
-            'session_token': result['session_token']
+            'session_token': result['session_token'],
+            'companion_id': companion_id,
         })
     else:
         print(f"❌ Login failed for user: {email}")
@@ -67,7 +81,7 @@ def login():
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
-    """Handle user registration with SQLite auth."""
+    """Handle user registration — creates account and provisions companion."""
     data = request.json
     email = data.get('email', '').strip()
     password = data.get('password', '')
@@ -78,19 +92,33 @@ def register():
     if len(password) < 6:
         return jsonify({'error': 'Password must be at least 6 characters'}), 400
 
-    # Use simple_auth to create user
-    if create_user(email, password):
-        # Now authenticate to get session token
-        result = authenticate_user(email, password)
-        print(f"✅ Registration successful for user: {email}")
-        return jsonify({
-            'success': True,
-            'user_id': result['user_id'],
-            'email': result['email'],
-            'session_token': result['session_token']
-        })
-    else:
+    if not create_user(email, password):
         return jsonify({'error': 'Email already exists'}), 400
+
+    result = authenticate_user(email, password)
+    if not result:
+        logger.error(f"authenticate_user returned None after successful create_user for {email}")
+        return jsonify({'error': 'Registration failed — please try again'}), 500
+
+    # Derive companion_id from email prefix (alice@example.com → "alice")
+    companion_id = re.sub(r'[^a-z0-9_]', '_', email.split('@')[0].lower()).strip('_') or 'companion'
+
+    try:
+        from src.database.ownership import provision_new_companion
+        from src.database.db import get_db
+        provision_new_companion(get_db(), user_email=email, companion_id=companion_id)
+    except Exception as exc:
+        logger.warning(f"Companion provisioning failed for {email}: {exc}", exc_info=True)
+        # Don't block registration — user can still log in
+
+    logger.info(f"Registration successful for user: {email}")
+    return jsonify({
+        'success': True,
+        'user_id': result['user_id'],
+        'email': result['email'],
+        'session_token': result['session_token'],
+        'companion_id': companion_id,
+    })
 
 
 @auth_bp.route('/logout', methods=['POST'])

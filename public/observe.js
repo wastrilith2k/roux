@@ -11,6 +11,7 @@
     let activeFilters = new Set();  // Empty = show all, or set of companion_ids
     let companions = [];           // List of companion IDs from API
     let connected = false;
+    let messageOffset = 0;         // Offset for paginated message loading
 
     // Color palette for dynamic characters
     const COLORS = ['#58a6ff', '#bc8cff', '#56d364', '#f0883e', '#f778ba', '#79c0ff', '#ffa657', '#ff7b72'];
@@ -106,6 +107,7 @@
                 buildCharacterSelector();
                 buildStatePanels();
                 buildTabToggles();
+                populateCompanionSelect();
                 loadAllMessages();
                 startPolling();
             })
@@ -115,9 +117,28 @@
                 buildCharacterSelector();
                 buildStatePanels();
                 buildTabToggles();
+                populateCompanionSelect();
                 loadAllMessages();
                 startPolling();
             });
+    }
+
+    function populateCompanionSelect() {
+        var sel = document.getElementById('companion-select');
+        if (!sel) return;
+        // Keep the default "All" option and add one per companion
+        sel.innerHTML = '<option value="">All</option>';
+        companions.forEach(function (cid) {
+            var opt = document.createElement('option');
+            opt.value = cid;
+            opt.textContent = capitalize(cid);
+            sel.appendChild(opt);
+        });
+        sel.addEventListener('change', function () {
+            messageOffset = 0;
+            feed.innerHTML = '';
+            loadAllMessages();
+        });
     }
 
     // -----------------------------------------------------------------------
@@ -226,12 +247,14 @@
             activeFilters.add(cid);
         }
         updateSelectorVisuals();
+        messageOffset = 0;
         loadAllMessages();
     }
 
     window.showAllCharacters = function () {
         activeFilters.clear();
         updateSelectorVisuals();
+        messageOffset = 0;
         loadAllMessages();
     };
 
@@ -300,15 +323,26 @@
         feed.appendChild(el);
     }
 
-    function loadAllMessages() {
-        feed.innerHTML = '';
-        var url = '/api/observe/messages?limit=200';
-        if (activeFilters.size) {
+    function loadAllMessages(append) {
+        var LIMIT = 100;
+        if (!append) {
+            feed.innerHTML = '';
+            messageOffset = 0;
+        }
+        var url = '/api/observe/messages?limit=' + LIMIT + '&offset=' + messageOffset;
+
+        // Companion-select takes priority over button-filter when set
+        var sel = document.getElementById('companion-select');
+        var selectVal = sel ? sel.value : '';
+        if (selectVal) {
+            url += '&companion_id=' + encodeURIComponent(selectVal);
+        } else if (activeFilters.size) {
             // Pass each selected companion as a separate param
             activeFilters.forEach(function (cid) {
-                url += '&companion_id=' + cid;
+                url += '&companion_id=' + encodeURIComponent(cid);
             });
         }
+
         fetch(url)
             .then(function (r) { return r.json(); })
             .then(function (msgs) {
@@ -329,10 +363,26 @@
                         timestamp: m.timestamp,
                     });
                 });
-                autoScroll();
+                messageOffset += msgs.length;
+                // Show Load More only if a full page was returned (more may exist)
+                var loadMoreBtn = document.getElementById('btn-load-more');
+                if (loadMoreBtn) {
+                    loadMoreBtn.style.display = msgs.length >= LIMIT ? '' : 'none';
+                }
+                if (!append) autoScroll();
             })
             .catch(function () { /* silent */ });
     }
+
+    // Wire up Load More button
+    (function () {
+        var btn = document.getElementById('btn-load-more');
+        if (btn) {
+            btn.addEventListener('click', function () {
+                loadAllMessages(true);
+            });
+        }
+    }());
 
     function autoScroll() {
         feed.scrollTop = feed.scrollHeight;

@@ -8,6 +8,10 @@
 </head>
 <body>
 
+<div id="demo-banner" style="background:#1a1a2e;color:#e0c97f;padding:8px 16px;text-align:center;font-size:13px;position:sticky;top:0;z-index:100;">
+  Read-only demo — recorded simulation between AI companions. No live interaction.
+</div>
+
 <div class="header">
     <h1>Companion Observation Dashboard</h1>
     <div class="status">
@@ -35,7 +39,16 @@
 
     <!-- Center: Conversation feed -->
     <div class="feed-container">
+        <div id="companion-controls" style="padding:8px 16px;">
+            <label for="companion-select">Companion: </label>
+            <select id="companion-select">
+                <option value="">All</option>
+            </select>
+        </div>
         <div class="feed" id="feed"></div>
+        <div style="text-align:center;padding:8px;">
+            <button id="btn-load-more" style="display:none;background:#1f2937;color:#8b949e;border:1px solid #30363d;padding:6px 16px;border-radius:4px;cursor:pointer;">Load more</button>
+        </div>
     </div>
 
     <!-- Bottom tabs -->
