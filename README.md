@@ -1,8 +1,10 @@
 # Companion Framework
 
-An autonomous AI companion framework that creates persistent, evolving relationships between AI characters. Each companion has its own personality, memories, opinions, goals, and internal state (mood, energy, needs). They remember past conversations, form opinions, develop curiosities, and reach out proactively when they have something to say.
+A full-stack framework for building AI companions with genuine memory and autonomous behavior. Drop in a persona, connect an LLM, and get a character that remembers everything, forms its own opinions, evolves over time, and reaches out proactively when it has something to say.
 
-The framework supports both human-to-companion interaction (via web chat, CLI, or Telegram) and companion-to-companion simulation for testing and development.
+**Not a chatbot wrapper.** Each companion runs a 9-stage conversation pipeline, 30+ background tasks, and a multi-layered memory system (episodic, semantic, knowledge graph, confidence-decaying facts). Designed to be deployed for real users with per-user data isolation from the ground up.
+
+Supports human-to-companion interaction (web chat, CLI, Telegram) and companion-to-companion simulation for testing relationship dynamics at scale.
 
 ## Architecture
 
@@ -38,7 +40,7 @@ OpenRouter -> Fireworks (DeepSeek) -> OpenAI -> Anthropic
 ### 1. Clone and configure
 
 ```bash
-git clone <repo-url> companion-framework
+git clone https://github.com/wastrilith2k/roux companion-framework
 cd companion-framework
 cp .env.example .env
 ```
@@ -626,7 +628,7 @@ pytest tests/ -v          # Verbose output
 pytest tests/test_pipeline.py  # Specific test file
 ```
 
-Note: 3 tests require PostgreSQL and will error without a running database. All other tests are pure unit tests.
+1000+ tests. The majority are pure unit tests and run without any infrastructure. A small number of integration tests require a running PostgreSQL instance.
 
 ## Environment Variables Reference
 
@@ -646,4 +648,4 @@ See `.env.example` for the complete list. Key variables:
 
 ## License
 
-[Add your license here]
+MIT

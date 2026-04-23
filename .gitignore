@@ -38,6 +38,12 @@ logs/
 # Backups
 backups/
 
+# Internal AI dev scaffolding (implementation plans, task tracking)
+docs/superpowers/
+
+# Personal notes
+questions_to_ask.txt
+
 # IDE
 .idea/
 .vscode/
