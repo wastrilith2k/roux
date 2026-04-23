@@ -96,60 +96,51 @@ def observe_status():
 
 @observe_bp.route('/messages')
 def observe_messages():
-    """Recent messages — supports filtering by multiple companion_ids."""
-    companion_ids = request.args.getlist('companion_id')  # Supports multiple
+    """Recent messages — per-companion schema routing."""
+    companion_ids = request.args.getlist('companion_id')
     since = request.args.get('since')
     limit = min(int(request.args.get('limit', 100)), 500)
 
+    if not companion_ids:
+        companion_ids = [_default_companion_id()]
+
+    db = _get_db()
+    all_messages = []
+
     try:
-        db = _get_db()
-        if since and companion_ids:
-            placeholders = ','.join(['%s'] * len(companion_ids))
-            result = db.execute(
-                f"""SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
-                   FROM {T.MESSAGES}
-                   WHERE companion_id IN ({placeholders}) AND timestamp > %s
-                   ORDER BY timestamp DESC LIMIT %s""",
-                tuple(companion_ids) + (since, limit)
-            )
-        elif since:
-            result = db.execute(
-                f"""SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
-                   FROM {T.MESSAGES}
-                   WHERE timestamp > %s
-                   ORDER BY timestamp DESC LIMIT %s""",
-                (since, limit)
-            )
-        elif companion_ids:
-            placeholders = ','.join(['%s'] * len(companion_ids))
-            result = db.execute(
-                f"""SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
-                   FROM {T.MESSAGES}
-                   WHERE companion_id IN ({placeholders})
-                   ORDER BY timestamp DESC LIMIT %s""",
-                tuple(companion_ids) + (limit,)
-            )
-        else:
-            result = db.execute(
-                f"""SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
-                   FROM {T.MESSAGES}
-                   ORDER BY timestamp DESC LIMIT %s""",
-                (limit,)
-            )
-        rows = result.fetchall() or []
-        messages = []
-        for r in rows:
-            messages.append({
-                'speaker': r.get('sender_name', ''),
-                'content': r.get('message_text', ''),
-                'timestamp': r['timestamp'].isoformat() if r.get('timestamp') else None,
-                'companion_id': r.get('companion_id', ''),
-                'sentiment': r.get('sentiment_score'),
-            })
-        return jsonify(list(reversed(messages)))
+        for cid in companion_ids:
+            email = _companion_email(cid)
+            if since:
+                result = db.execute(
+                    f"""SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
+                       FROM {T.MESSAGES} WHERE timestamp > %s
+                       ORDER BY timestamp DESC LIMIT %s""",
+                    (since, limit),
+                    user_email=email,
+                )
+            else:
+                result = db.execute(
+                    f"""SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
+                       FROM {T.MESSAGES}
+                       ORDER BY timestamp DESC LIMIT %s""",
+                    (limit,),
+                    user_email=email,
+                )
+            rows = result.fetchall() or []
+            for r in rows:
+                all_messages.append({
+                    'speaker': r.get('sender_name', ''),
+                    'content': r.get('message_text', ''),
+                    'timestamp': r['timestamp'].isoformat() if r.get('timestamp') else None,
+                    'companion_id': r.get('companion_id', cid),
+                    'sentiment': r.get('sentiment_score'),
+                })
     except Exception as e:
         logger.error(f"observe_messages error: {e}")
         return jsonify([])
+
+    all_messages.sort(key=lambda m: m['timestamp'] or '')
+    return jsonify(all_messages)
 
 
 @observe_bp.route('/state', methods=['POST'])
@@ -205,6 +196,7 @@ def update_state():
 def observe_state():
     """Internal state + user_state for a companion."""
     companion_id = request.args.get('companion_id', _default_companion_id())
+    email = _companion_email(companion_id)
 
     try:
         db = _get_db()
@@ -215,7 +207,8 @@ def observe_state():
                FROM {T.USER_STATE}
                WHERE companion_id = %s
                LIMIT 1""",
-            (companion_id,)
+            (companion_id,),
+            user_email=email,
         )
         row = result.fetchone()
         if not row:
@@ -263,7 +256,8 @@ def observe_facts():
                FROM {T.FACTS}
                WHERE user_email = %s AND archived_at IS NULL
                ORDER BY updated_at DESC LIMIT %s""",
-            (email, limit)
+            (email, limit),
+            user_email=email,
         )
         rows = result.fetchall() or []
         facts = []
@@ -288,6 +282,7 @@ def observe_facts():
 def observe_opinions():
     """Opinions for a companion."""
     companion_id = request.args.get('companion_id', _default_companion_id())
+    email = _companion_email(companion_id)
 
     try:
         db = _get_db()
@@ -297,7 +292,8 @@ def observe_opinions():
                FROM {T.COMPANION_OPINIONS}
                WHERE companion_id = %s
                ORDER BY updated_at DESC""",
-            (companion_id,)
+            (companion_id,),
+            user_email=email,
         )
         rows = result.fetchall() or []
         opinions = []
@@ -329,7 +325,8 @@ def observe_curiosity():
         state_key = f'proactive_curiosity_{companion_id}'
         result = db.execute(
             f"SELECT value FROM {T.STATE} WHERE key = %s",
-            (state_key,)
+            (state_key,),
+            user_email=email,
         )
         row = result.fetchone()
         if row and row.get('value'):
@@ -358,7 +355,8 @@ def observe_goals():
                FROM {T.COMPANION_GOALS}
                WHERE user_email = %s AND status = 'active'
                ORDER BY created_at DESC""",
-            (email,)
+            (email,),
+            user_email=email,
         )
         rows = result.fetchall() or []
         goals = []
@@ -394,7 +392,8 @@ def observe_episodes():
                FROM {T.EPISODES}
                WHERE user_email = %s
                ORDER BY started_at DESC LIMIT %s""",
-            (email, limit)
+            (email, limit),
+            user_email=email,
         )
         rows = result.fetchall() or []
         episodes = []
@@ -428,7 +427,8 @@ def observe_relationship():
                FROM {T.RELATIONSHIP_EVAL}
                WHERE user_email = %s
                ORDER BY evaluated_at DESC LIMIT 1""",
-            (email,)
+            (email,),
+            user_email=email,
         )
         row = result.fetchone()
         if row:
