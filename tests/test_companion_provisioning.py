@@ -1,5 +1,40 @@
 import pytest
+import os
 from unittest.mock import MagicMock, patch
+
+
+@pytest.fixture
+def client():
+    os.environ.setdefault("SECRET_KEY", "test-secret")
+    os.environ.setdefault("DATABASE_URL", "postgresql://localhost/test")
+    from flask import Flask
+    from src.routes.auth_routes import auth_bp
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    app.config["SECRET_KEY"] = "test-secret"
+    app.register_blueprint(auth_bp)
+    return app.test_client()
+
+
+def test_register_provisions_companion(client):
+    """POST /api/auth/register creates user AND companion schema."""
+    with patch("src.routes.auth_routes.provision_new_companion") as mock_provision, \
+         patch("src.routes.auth_routes.create_user", return_value=True), \
+         patch("src.routes.auth_routes.authenticate_user", return_value={
+             "user_id": 1, "email": "alice@example.com", "session_token": "tok"
+         }):
+        resp = client.post("/api/auth/register", json={
+            "email": "alice@example.com",
+            "password": "password123",
+        })
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["companion_id"] == "alice"
+        mock_provision.assert_called_once()
+        call_kwargs = mock_provision.call_args
+        # companion_id derived from email prefix
+        assert call_kwargs[1]["user_email"] == "alice@example.com"
+        assert call_kwargs[1]["companion_id"] == "alice"
 
 
 def make_mock_db():
