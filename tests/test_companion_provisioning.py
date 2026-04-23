@@ -114,8 +114,6 @@ def test_provision_new_companion_closes_connection_on_error():
 
 def test_login_returns_companion_id(client):
     """POST /api/auth/login returns companion_id for the user."""
-    from src.database import tables as T
-
     with patch("src.routes.auth_routes.authenticate_user", return_value={
         "user_id": 1, "email": "alice@example.com", "session_token": "tok"
     }), patch("src.database.ownership.get_user_companions", return_value=[
