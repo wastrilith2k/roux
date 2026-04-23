@@ -240,6 +240,28 @@ def test_update_state_uses_companion_schema(client):
         f"Expected kai@companion.local in db.execute calls. Got: {captured}"
 
 
+def test_observe_messages_supports_offset(client):
+    """observe_messages accepts an offset parameter."""
+    captured_params = []
+
+    def capturing_execute(query, params=None, user_email=None):
+        if params:
+            captured_params.extend(params)
+        r = MagicMock()
+        r.fetchall.return_value = []
+        return r
+
+    with patch('src.routes.observe_routes._get_db') as mock_db:
+        db = MagicMock()
+        db.execute.side_effect = capturing_execute
+        mock_db.return_value = db
+
+        resp = client.get('/api/observe/messages?companion_id=kai&limit=10&offset=20')
+        assert resp.status_code == 200
+
+    assert 20 in captured_params, f"Expected offset=20 in query params. Got: {captured_params}"
+
+
 def test_observe_messages_returns_sorted_by_timestamp(client):
     """Messages from multiple companions are merged and sorted ascending."""
     kai_msg = {'sender_name': 'Kai', 'message_text': 'Hello', 'timestamp': None, 'companion_id': 'kai', 'sentiment_score': None}

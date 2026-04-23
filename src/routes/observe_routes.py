@@ -100,6 +100,7 @@ def observe_messages():
     companion_ids = request.args.getlist('companion_id')
     since = request.args.get('since')
     limit = min(int(request.args.get('limit', 100)), 500)
+    offset = int(request.args.get('offset', 0))
 
     if not companion_ids:
         companion_ids = [_default_companion_id()]
@@ -114,16 +115,16 @@ def observe_messages():
                 result = db.execute(
                     f"""SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
                        FROM {T.MESSAGES} WHERE timestamp > %s
-                       ORDER BY timestamp DESC LIMIT %s""",
-                    (since, limit),
+                       ORDER BY timestamp DESC LIMIT %s OFFSET %s""",
+                    (since, limit, offset),
                     user_email=email,
                 )
             else:
                 result = db.execute(
                     f"""SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
                        FROM {T.MESSAGES}
-                       ORDER BY timestamp DESC LIMIT %s""",
-                    (limit,),
+                       ORDER BY timestamp DESC LIMIT %s OFFSET %s""",
+                    (limit, offset),
                     user_email=email,
                 )
             rows = result.fetchall() or []
