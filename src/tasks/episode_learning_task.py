@@ -35,6 +35,14 @@ from src.database import tables as T
 
 logger = logging.getLogger(__name__)
 
+# Strategy tip extraction (runs after episode learning)
+try:
+    from src.memory.strategy_tip_extractor import StrategyTipExtractor
+    from src.memory.strategy_tips import StrategyTipStore
+except ImportError:
+    StrategyTipExtractor = None
+    StrategyTipStore = None
+
 PST = ZoneInfo('America/Los_Angeles')
 
 # --- Configuration ---
@@ -460,6 +468,11 @@ def run_episode_learning():
 
     analyzed = 0
     failed = 0
+    tips_extracted = 0
+
+    # Initialize tip extractor once for the batch
+    tip_extractor = StrategyTipExtractor() if StrategyTipExtractor is not None else None
+    tip_store = StrategyTipStore() if StrategyTipStore is not None else None
 
     for episode in episodes:
         episode_id = str(episode['episode_id'])
@@ -479,6 +492,17 @@ def run_episode_learning():
             if extractor.save_episode_lesson(lesson):
                 analyzed += 1
                 logger.info(f"Analyzed episode {episode_id}: {lesson.topic} (satisfaction={lesson.satisfaction:.2f})")
+
+                # Extract strategy tips for this episode
+                if tip_extractor is not None:
+                    try:
+                        new_tips = tip_extractor.extract_tips(episode_id, messages, lesson)
+                        if new_tips:
+                            for tip in new_tips:
+                                tip_store.save_tip(tip)
+                            tips_extracted += len(new_tips)
+                    except Exception as e:
+                        logger.warning(f"Strategy tip extraction failed for {episode_id} (non-fatal): {e}")
             else:
                 failed += 1
         else:
@@ -488,7 +512,8 @@ def run_episode_learning():
     result = {
         "analyzed": analyzed,
         "failed": failed,
-        "total": len(episodes)
+        "total": len(episodes),
+        "tips_extracted": tips_extracted,
     }
 
     logger.info(f"Episode learning complete: {result}")

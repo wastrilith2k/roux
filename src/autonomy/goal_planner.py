@@ -129,6 +129,11 @@ class GoalPlanner:
                 user=os.environ.get('POSTGRES_USER', 'companion'),
                 password=os.environ.get('POSTGRES_PASSWORD', '')
             )
+            try:
+                from src.database.schema_manager import set_search_path
+                set_search_path(self._conn, self.user_email)
+            except Exception:
+                pass
         return self._conn
 
     def _get_fireworks_client(self):

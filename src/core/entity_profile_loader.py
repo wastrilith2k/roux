@@ -93,6 +93,9 @@ class EntityProfileLoader:
         """
         Extract relevant entity names from context and return their profiles.
         Used to inject only relevant profiles into prompts.
+
+        Entities not mentioned in context are marked as _summary_only so
+        format_profiles_for_prompt() can render them compactly.
         """
         relevant = {}
 
@@ -109,20 +112,28 @@ class EntityProfileLoader:
         _pc = get_persona_config()
         ordered_relevant = {}
 
-        # Companion first (their identity is primary)
+        # Companion first (their identity is primary) — always full
         companion_key = _pc.companion_entity_profile
         if companion_key in self.profiles:
             ordered_relevant[companion_key] = self.profiles[companion_key]
 
-        # Primary user second
+        # Primary user second — always full
         user_key = _pc.primary_user_entity_profile
         if user_key in self.profiles:
             ordered_relevant[user_key] = self.profiles[user_key]
 
-        # Then any other mentioned entities
-        for entity_name, profile in relevant.items():
-            if entity_name not in ordered_relevant:
+        # Then any other mentioned entities — full if mentioned, summary if not
+        for entity_name, profile in self.profiles.items():
+            if entity_name in (companion_key, user_key):
+                continue
+            if entity_name in relevant:
+                # Mentioned in context: full profile
                 ordered_relevant[entity_name] = profile
+            else:
+                # Not mentioned: summary only to save tokens
+                summary_profile = dict(profile)
+                summary_profile['_summary_only'] = True
+                ordered_relevant[entity_name] = summary_profile
 
         return ordered_relevant
 
@@ -148,13 +159,17 @@ class EntityProfileLoader:
         """
         formatted = "# CRITICAL ENTITY PROFILES (Source of Truth)\n\n"
 
-        # Apply context filtering if message provided
+        # Separate full profiles from summary-only ones
+        full_profiles = {k: v for k, v in profiles.items() if not v.get('_summary_only')}
+        summary_profiles = {k: v for k, v in profiles.items() if v.get('_summary_only')}
+
+        # Apply context filtering if message provided (only for full profiles)
         if user_message:
             try:
                 from src.core.entity_profile_context_filter import get_entity_profile_context_filter
                 context_filter = get_entity_profile_context_filter()
 
-                for entity_name, profile in profiles.items():
+                for entity_name, profile in full_profiles.items():
                     filtered_profile = context_filter.get_filtered_profile(
                         entity_name=entity_name,
                         user_message=user_message,
@@ -165,16 +180,30 @@ class EntityProfileLoader:
                     formatted += self._format_profile_section(filtered_profile)
                     formatted += "\n"
 
+                # Compact display for non-mentioned entities
+                if summary_profiles:
+                    formatted += "## OTHER ENTITIES (not relevant to current message — summary only)\n"
+                    for entity_name, profile in summary_profiles.items():
+                        formatted += self._format_compact_summary(entity_name, profile)
+                    formatted += "\n"
+
                 return formatted
 
             except Exception as e:
                 logger.warning(f"Context filtering failed, using full profiles: {e}")
                 # Fall through to unfiltered formatting
 
-        # Unfiltered formatting (original behavior)
-        for entity_name, profile in profiles.items():
+        # Unfiltered formatting
+        for entity_name, profile in full_profiles.items():
             formatted += f"## {entity_name.upper()}\n"
             formatted += self._format_profile_section(profile)
+            formatted += "\n"
+
+        # Compact display for non-mentioned entities
+        if summary_profiles:
+            formatted += "## OTHER ENTITIES (summary only)\n"
+            for entity_name, profile in summary_profiles.items():
+                formatted += self._format_compact_summary(entity_name, profile)
             formatted += "\n"
 
         return formatted
@@ -210,6 +239,77 @@ class EntityProfileLoader:
                 lines.append(f"{prefix}{key}: {value}")
 
         return "\n".join(lines)
+
+    def _format_compact_summary(self, entity_name: str, profile: Dict) -> str:
+        """
+        Format a non-mentioned entity as a compact 1-2 line summary.
+        Used to save tokens for entities not relevant to the current message.
+        """
+        from src.config.persona_config import get_persona_config
+        _pc = get_persona_config()
+
+        name = profile.get('name', entity_name.title())
+        relationship = profile.get('relationship', '')
+        role = profile.get('role', '')
+        desc = profile.get('description', '')
+        age = profile.get('age', '')
+
+        parts = [name]
+        if age:
+            parts.append(f"age {age}")
+        if relationship:
+            parts.append(relationship)
+        elif role:
+            parts.append(role)
+        if desc:
+            # Truncate description to first sentence
+            first_sentence = desc.split('.')[0] if '.' in desc else desc[:80]
+            parts.append(first_sentence)
+
+        return f"- {' | '.join(parts)}\n"
+
+    def get_key_facts_snippet(self, entity_name: str) -> str:
+        """
+        Return a compact key-facts string for use in LLM calls outside the
+        main pipeline (e.g., schedule generation, tool prompts).
+
+        Extracts preferences, hobbies, and key facts from the profile.
+        """
+        profile = self.get_profile(entity_name)
+        if not profile:
+            return ""
+
+        facts = []
+
+        # Preferences / likes
+        prefs = profile.get('preferences', profile.get('likes', {}))
+        if isinstance(prefs, dict):
+            for category, items in prefs.items():
+                if isinstance(items, list):
+                    facts.append(f"{category}: {', '.join(str(i) for i in items[:3])}")
+                elif isinstance(items, str):
+                    facts.append(f"{category}: {items}")
+        elif isinstance(prefs, list):
+            facts.extend(str(p) for p in prefs[:5])
+
+        # Hobbies
+        hobbies = profile.get('hobbies', profile.get('interests', []))
+        if isinstance(hobbies, list) and hobbies:
+            facts.append(f"hobbies: {', '.join(str(h) for h in hobbies[:5])}")
+
+        # Work / employment
+        employment = profile.get('employment', {})
+        if isinstance(employment, dict):
+            employer = employment.get('current_employer', '')
+            role = employment.get('role', employment.get('title', ''))
+            if employer:
+                facts.append(f"works at {employer}" + (f" as {role}" if role else ""))
+
+        if not facts:
+            return ""
+
+        name = profile.get('name', entity_name.title())
+        return f"{name} key facts: " + "; ".join(facts)
 
     def validate_against_profile(self, entity_name: str, statement: str) -> List[str]:
         """

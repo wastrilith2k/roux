@@ -110,6 +110,8 @@ celery_app.conf.update(
         'src.tasks.goal_signal_task',  # Signal-based goal formation
         'src.tasks.embedding_pruning_task',  # pgvector embedding lifecycle (weekly)
         'src.tasks.graphiti_pruning_task',  # Neo4j episode/edge lifecycle (monthly)
+        'src.tasks.episodic_consolidation_task',  # Episodic-to-semantic consolidation (daily)
+        'src.tasks.sleep_time_consolidation_task',  # Sleep-time memory maintenance (every 3h)
     ]
 )
 
@@ -258,6 +260,18 @@ celery_app.conf.beat_schedule = {
         'task': 'tasks.graphiti_pruning.prune_old_episodes',
         'schedule': crontab(hour=5, minute=0, day_of_month=1),  # 1st of month 5:00 AM Pacific
         'kwargs': {'dry_run': False},
+
+    },
+    # Episodic-to-semantic consolidation - recurring episodes → semantic facts
+    'daily-episodic-consolidation': {
+        'task': 'src.tasks.episodic_consolidation_task.consolidate_episodes',
+        'schedule': crontab(hour=2, minute=0),  # 2:00 AM Pacific daily
+
+    },
+    # Sleep-time memory maintenance - merge, promote, detect stale facts
+    'sleep-time-consolidation': {
+        'task': 'src.tasks.sleep_time_consolidation_task.consolidate',
+        'schedule': crontab(minute=0, hour='*/3'),  # Every 3 hours
 
     },
 }

@@ -422,6 +422,8 @@ def get_graphiti_context_with_importance(query: str, limit: int = 10, group_id: 
             })
 
         scored_facts.sort(key=lambda x: x['score'], reverse=True)
+        # Filter out low-scoring facts — prevents irrelevant noise
+        scored_facts = [f for f in scored_facts if f['score'] >= 0.35]
 
         # --- Format top results with temporal + importance annotations ---
         from src.config.persona_config import get_persona_config

@@ -104,6 +104,13 @@ class RelationshipEvaluator:
                 user=os.environ.get('POSTGRES_USER', 'companion'),
                 password=os.environ.get('POSTGRES_PASSWORD', '')
             )
+            try:
+                from src.database.schema_manager import set_search_path
+                from src.config.persona_config import get_persona_config
+                email = get_persona_config().primary_user_email
+                set_search_path(self._conn, email)
+            except Exception:
+                pass
         return self._conn
 
     def _get_client(self):

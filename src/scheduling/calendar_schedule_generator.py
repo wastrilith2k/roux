@@ -583,9 +583,22 @@ def _generate_events_via_llm(
                 f"  - {p.get('name', 'task')}: {p.get('description', '')}\n"
             )
 
-    prompt = f"""Generate the companion's daily schedule as calendar events.
+    from src.config.persona_config import get_persona_config
+    _pc = get_persona_config()
+    companion_name = _pc.companion_short_name
 
-The companion is a person who works in tech.
+    # Inject user key facts so hobby/interest choices feel grounded
+    try:
+        from src.core.entity_profile_loader import get_entity_profile_loader
+        user_facts = get_entity_profile_loader().get_key_facts_snippet(
+            _pc.primary_user_entity_profile
+        )
+    except Exception:
+        user_facts = ""
+
+    prompt = f"""Generate {companion_name}'s daily schedule as calendar events.
+
+{companion_name} is a person who works in tech.
 Generate a realistic daily schedule based on the skeleton below.
 
 SCHEDULE SKELETON:
@@ -594,6 +607,8 @@ SCHEDULE SKELETON:
 NARRATIVE CONTEXT (what's been happening recently):
 {narrative_context or 'No recent context available.'}
 
+{f"USER CONTEXT (for personalized activities): {user_facts}" if user_facts else ""}
+
 Generate 8-12 calendar events for the day. Each event should be SPECIFIC and feel like a real person's schedule:
 
 Rules:
@@ -601,7 +616,7 @@ Rules:
 - Include personal time (morning routine, meals, exercise, hobbies, wind-down)
 - If workday: include work blocks with specific tasks (not just "working")
 - Include meals (breakfast, lunch, dinner)
-- Add 1-2 personal/hobby activities
+- Add 1-2 personal/hobby activities that reflect {companion_name}'s own interests (not just {_pc.primary_user_name}'s hobbies)
 - Make descriptions feel natural and specific, not generic
 - Events should NOT overlap
 - Use the meeting times from the skeleton if provided

@@ -31,6 +31,7 @@ from typing import Optional, List, Any
 logger = logging.getLogger(__name__)
 
 COMPANION_INNER_MONOLOGUE_ENABLED = os.environ.get('COMPANION_INNER_MONOLOGUE_ENABLED', 'true').lower() == 'true'
+COMPANION_DUAL_PROCESS_ENABLED = os.environ.get('COMPANION_DUAL_PROCESS_ENABLED', 'false').lower() == 'true'
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +45,8 @@ class InnerMonologue:
     response_strategy: str         # How the companion plans to respond
     curiosities_to_weave: List[str] = field(default_factory=list)  # Topics to naturally include
     processing_time_ms: int = 0
+    gut_reaction: str = ""         # System 1: fast gut reaction (dual-process)
+    gut_reaction_time_ms: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +140,20 @@ STRATEGY: ...
 WEAVE: ... (or "nothing" if nothing fits)
 REACTION: ..."""
 
+            # System 1 (gut reaction) — launched in parallel if dual-process enabled
+            gut_result = [None]
+            gut_start = [0]
+            t1 = None
+            if COMPANION_DUAL_PROCESS_ENABLED:
+                import threading
+                gut_start[0] = time.time()
+                def run_system1():
+                    gut_result[0] = self._generate_gut_reaction(
+                        user_message, user_name, companion_name, recent_turns
+                    )
+                t1 = threading.Thread(target=run_system1, daemon=True)
+                t1.start()
+
             chain = get_resilient_provider_chain()
             response = generate_sync(
                 messages=[
@@ -148,6 +165,15 @@ REACTION: ..."""
                 chain=chain,
                 timeout=5
             )
+
+            # Collect System 1 result (should be done by now)
+            gut_reaction = ""
+            gut_reaction_ms = 0
+            if t1 is not None:
+                t1.join(timeout=0.1)  # Don't block long — System 2 took ~5s
+                if gut_result[0]:
+                    gut_reaction = gut_result[0]
+                    gut_reaction_ms = int((time.time() - gut_start[0]) * 1000)
 
             # Parse the structured response into fields
             emotional_read = ""
@@ -176,7 +202,9 @@ REACTION: ..."""
                 emotional_read=emotional_read,
                 response_strategy=strategy,
                 curiosities_to_weave=weave,
-                processing_time_ms=processing_time
+                processing_time_ms=processing_time,
+                gut_reaction=gut_reaction,
+                gut_reaction_time_ms=gut_reaction_ms
             )
 
             logger.info(f"Inner monologue generated ({processing_time}ms): read={emotional_read[:60]}...")
@@ -186,6 +214,42 @@ REACTION: ..."""
             processing_time = int((time.time() - start) * 1000)
             logger.warning(f"Inner monologue failed ({processing_time}ms): {e}")
             return None
+
+    def _generate_gut_reaction(
+        self,
+        user_message: str,
+        user_name: str,
+        companion_name: str,
+        recent_turns: str
+    ) -> str:
+        """
+        System 1: fast, instinctive gut reaction to the user's message.
+
+        2-second timeout, temp=0.7 — this is the companion's unfiltered
+        immediate response before deliberate reasoning kicks in.
+        """
+        try:
+            from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
+
+            prompt = f"""You are {companion_name}. {user_name} just said: "{user_message}"
+
+What's your instant gut reaction — before you think about it? One sentence, raw and honest.
+Don't explain or justify. Just: what do you FEEL in the first second?"""
+
+            chain = get_resilient_provider_chain()
+            reaction = generate_sync(
+                messages=[
+                    {"role": "system", "content": f"You are {companion_name}. React instinctively."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=60,
+                chain=chain,
+                timeout=2
+            )
+            return reaction.strip()
+        except Exception:
+            return ""
 
 
 # ---------------------------------------------------------------------------

@@ -246,16 +246,27 @@ class CalendarScheduleService:
 
         now = now_pacific_naive()
         current_time = now.strftime('%H:%M')
+        hour = now.hour
         events = self.get_today_events()
 
+        # Late-night energy awareness
+        if hour >= 22 or hour < 6:
+            late_night = "It's late — you're tired and winding down. You're not starting anything new. Rest mode."
+        elif hour >= 21:
+            late_night = "Getting late. You're winding down — relaxing, reading, couch."
+        else:
+            late_night = ""
+
         if not events:
-            return ""
+            return late_night
 
         current = self.get_current_activity()
         upcoming = self.get_upcoming_events(hours=2)
         completed = self.get_completed_events()
 
         parts = []
+        if late_night:
+            parts.append(late_night)
 
         # What you've done so far today (first-person awareness)
         if completed:

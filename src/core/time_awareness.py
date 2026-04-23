@@ -247,6 +247,14 @@ class TimeAwareness:
         completed/in-progress/upcoming awareness), then falls back to
         the structural skeleton.
         """
+        # Late-night energy awareness
+        hour = now.hour
+        late_night_note = ""
+        if hour >= 22 or hour < 6:
+            late_night_note = "It's late — you're tired and winding down. You're not starting anything new. Rest mode."
+        elif hour >= 21:
+            late_night_note = "Getting late. You're winding down — relaxing, reading, couch."
+
         # Try the rich calendar schedule service first
         try:
             from src.scheduling.calendar_schedule_service import (
@@ -256,6 +264,8 @@ class TimeAwareness:
                 cal_service = get_calendar_schedule_service()
                 behavior_context = cal_service.format_schedule_behavior_context()
                 if behavior_context:
+                    if late_night_note:
+                        behavior_context = late_night_note + " " + behavior_context
                     return f"[YOUR SCHEDULE TODAY]\n{behavior_context}"
         except Exception as e:
             logger.debug(f"Calendar schedule service unavailable: {e}")
@@ -276,6 +286,8 @@ class TimeAwareness:
                 return "You're sleeping right now."
 
             parts = []
+            if late_night_note:
+                parts.append(late_night_note)
             if details:
                 parts.append(f"You're currently: {details}")
             else:
