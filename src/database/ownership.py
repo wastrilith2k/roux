@@ -6,8 +6,6 @@ This table lives in the public schema since it's shared across all user schemas.
 """
 import logging
 from src.database import tables as T
-from src.database.connection import get_connection
-from src.database.schema_manager import ensure_user_schema
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +79,9 @@ def provision_new_companion(db, user_email: str, companion_id: str) -> str:
 
     Returns the companion_id.
     """
+    from src.database.schema_manager import ensure_user_schema
+    from src.database.connection import get_connection
+
     c_email = companion_email_for(companion_id)
 
     # Create the companion's schema (all user-scoped tables)
