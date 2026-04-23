@@ -19,8 +19,6 @@ sys.path.insert(0, src_dir)
 
 from flask import Blueprint, request, jsonify, session
 from src.database.simple_auth import authenticate_user, create_user, logout_user, token_required, change_password
-from src.database.ownership import provision_new_companion
-from src.database.db import get_db
 from src.auth.auth_provider import (
     auth_token_required,
     auth_token_optional,
@@ -88,14 +86,19 @@ def register():
         return jsonify({'error': 'Email already exists'}), 400
 
     result = authenticate_user(email, password)
+    if not result:
+        logger.error(f"authenticate_user returned None after successful create_user for {email}")
+        return jsonify({'error': 'Registration failed — please try again'}), 500
 
     # Derive companion_id from email prefix (alice@example.com → "alice")
     companion_id = re.sub(r'[^a-z0-9_]', '_', email.split('@')[0].lower()).strip('_') or 'companion'
 
     try:
+        from src.database.ownership import provision_new_companion
+        from src.database.db import get_db
         provision_new_companion(get_db(), user_email=email, companion_id=companion_id)
     except Exception as exc:
-        logger.warning(f"Companion provisioning failed for {email}: {exc}")
+        logger.warning(f"Companion provisioning failed for {email}: {exc}", exc_info=True)
         # Don't block registration — user can still log in
 
     logger.info(f"Registration successful for user: {email}")

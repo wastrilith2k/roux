@@ -18,7 +18,8 @@ def client():
 
 def test_register_provisions_companion(client):
     """POST /api/auth/register creates user AND companion schema."""
-    with patch("src.routes.auth_routes.provision_new_companion") as mock_provision, \
+    with patch("src.database.ownership.provision_new_companion") as mock_provision, \
+         patch("src.database.db.get_db"), \
          patch("src.routes.auth_routes.create_user", return_value=True), \
          patch("src.routes.auth_routes.authenticate_user", return_value={
              "user_id": 1, "email": "alice@example.com", "session_token": "tok"
