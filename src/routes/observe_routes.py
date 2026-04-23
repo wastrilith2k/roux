@@ -180,9 +180,11 @@ def update_state():
             return jsonify({'error': 'No valid fields to update'}), 400
 
         params.append(companion_id)
+        email = _companion_email(companion_id)
         db.execute(
             f"UPDATE {T.USER_STATE} SET {', '.join(updates)} WHERE companion_id = %s",
-            tuple(params)
+            tuple(params),
+            user_email=email,
         )
 
         logger.info(f"State updated for {companion_id}: {list(data.keys())}")

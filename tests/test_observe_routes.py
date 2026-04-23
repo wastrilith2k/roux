@@ -214,6 +214,32 @@ def test_observe_curiosity_uses_companion_schema(client):
         f"Expected kai@companion.local. Got: {captured}"
 
 
+def test_update_state_uses_companion_schema(client):
+    """POST /api/observe/state must route UPDATE to the companion's schema."""
+    captured = []
+
+    def capturing_execute(query, params=None, user_email=None):
+        captured.append(user_email)
+        r = MagicMock()
+        r.fetchall.return_value = []
+        r.fetchone.return_value = None
+        return r
+
+    with patch('src.routes.observe_routes._get_db') as mock_db:
+        db = MagicMock()
+        db.execute.side_effect = capturing_execute
+        mock_db.return_value = db
+
+        resp = client.post('/api/observe/state', json={
+            'companion_id': 'kai',
+            'closeness_score': 7,
+        })
+        assert resp.status_code == 200
+
+    assert 'kai@companion.local' in captured, \
+        f"Expected kai@companion.local in db.execute calls. Got: {captured}"
+
+
 def test_observe_messages_returns_sorted_by_timestamp(client):
     """Messages from multiple companions are merged and sorted ascending."""
     kai_msg = {'sender_name': 'Kai', 'message_text': 'Hello', 'timestamp': None, 'companion_id': 'kai', 'sentiment_score': None}
