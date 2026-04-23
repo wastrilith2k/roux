@@ -6,6 +6,8 @@ This table lives in the public schema since it's shared across all user schemas.
 """
 import logging
 from src.database import tables as T
+from src.database.connection import get_connection
+from src.database.schema_manager import ensure_user_schema
 
 logger = logging.getLogger(__name__)
 
@@ -65,3 +67,31 @@ def revoke_companion(db, email: str, companion_id: str):
         (email, companion_id)
     )
     logger.info(f"Revoked companion '{companion_id}' from user '{email}'")
+
+
+def companion_email_for(companion_id: str) -> str:
+    """Canonical email for a companion's data schema."""
+    return f"{companion_id}@companion.local"
+
+
+def provision_new_companion(db, user_email: str, companion_id: str) -> str:
+    """Create schema + ownership record for a new user's companion.
+
+    Called once on registration. Idempotent — safe to retry.
+
+    Returns the companion_id.
+    """
+    c_email = companion_email_for(companion_id)
+
+    # Create the companion's schema (all user-scoped tables)
+    conn = get_connection()
+    try:
+        ensure_user_schema(conn, c_email)
+    finally:
+        conn.close()
+
+    # Record ownership
+    assign_companion(db, user_email, companion_id, display_name=companion_id.capitalize())
+
+    logger.info(f"Provisioned companion '{companion_id}' for user '{user_email}'")
+    return companion_id
