@@ -110,3 +110,36 @@ def test_provision_new_companion_closes_connection_on_error():
             provision_new_companion(db, user_email="dave@example.com", companion_id="dave")
 
         mock_conn.close.assert_called_once()
+
+
+def test_login_returns_companion_id(client):
+    """POST /api/auth/login returns companion_id for the user."""
+    from src.database import tables as T
+
+    with patch("src.routes.auth_routes.authenticate_user", return_value={
+        "user_id": 1, "email": "alice@example.com", "session_token": "tok"
+    }), patch("src.database.ownership.get_user_companions", return_value=[
+        {"companion_id": "alice", "display_name": "Alice", "created_at": None}
+    ]) as mock_companions:
+        resp = client.post("/api/auth/login", json={
+            "email": "alice@example.com",
+            "password": "password123",
+        })
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["companion_id"] == "alice"
+        mock_companions.assert_called_once()
+
+
+def test_login_returns_null_companion_id_when_none(client):
+    """POST /api/auth/login returns companion_id=None when user has no companions."""
+    with patch("src.routes.auth_routes.authenticate_user", return_value={
+        "user_id": 1, "email": "new@example.com", "session_token": "tok"
+    }), patch("src.database.ownership.get_user_companions", return_value=[]):
+        resp = client.post("/api/auth/login", json={
+            "email": "new@example.com",
+            "password": "password123",
+        })
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data.get("companion_id") is None

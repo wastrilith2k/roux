@@ -58,11 +58,21 @@ def login():
 
     if result:
         print(f"✅ Login successful for user: {email}")
+        companion_id = None
+        try:
+            from src.database.ownership import get_user_companions
+            from src.database.db import get_db
+            companions = get_user_companions(get_db(), email)
+            companion_id = companions[0]['companion_id'] if companions else None
+        except Exception as exc:
+            logger.warning(f"Could not look up companion for {email}: {exc}", exc_info=True)
+
         return jsonify({
             'success': True,
             'user_id': result['user_id'],
             'email': result['email'],
-            'session_token': result['session_token']
+            'session_token': result['session_token'],
+            'companion_id': companion_id,
         })
     else:
         print(f"❌ Login failed for user: {email}")
