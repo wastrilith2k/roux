@@ -46,7 +46,8 @@ def _get_default_user_email():
 def generate_daily_summary(
     self,
     user_email: str = _get_default_user_email(),
-    target_date: Optional[str] = None
+    target_date: Optional[str] = None,
+    companion_id: str = None
 ):
     """
     Generate daily summary for the previous day (or specified date).
@@ -103,7 +104,8 @@ def generate_daily_summary(
             date=summary_date,
             messages=messages,
             facts=facts,
-            episodes=episodes
+            episodes=episodes,
+            companion_id=companion_id
         )
 
         if not summary_content:
@@ -150,7 +152,7 @@ def _get_messages_for_date(user_email: str, date) -> List[Dict[str, Any]]:
 
     try:
         db = get_db()
-        with db._get_connection() as conn:
+        with db._get_connection(user_email=user_email) as conn:
             with conn.cursor() as cursor:
                 cursor.execute(f"""
                     SELECT id, sender_name, message_text, timestamp, sentiment_score
@@ -182,7 +184,7 @@ def _get_facts_for_date(user_email: str, date) -> List[Dict[str, Any]]:
 
     try:
         db = get_db()
-        with db._get_connection() as conn:
+        with db._get_connection(user_email=user_email) as conn:
             with conn.cursor() as cursor:
                 cursor.execute(f"""
                     SELECT id, subject, predicate, object, importance, confidence
@@ -216,10 +218,10 @@ def _get_episodes_for_date(user_email: str, date) -> List[Dict[str, Any]]:
 
     try:
         db = get_db()
-        with db._get_connection() as conn:
+        with db._get_connection(user_email=user_email) as conn:
             with conn.cursor() as cursor:
                 cursor.execute(f"""
-                    SELECT episode_id, topic, trigger, emotional_state, resolution, message_count
+                    SELECT episode_id, topic, trigger, emotional_state, resolution
                     FROM {T.EPISODES}
                     WHERE user_email = %s
                     AND DATE(started_at AT TIME ZONE 'America/Los_Angeles') = %s
@@ -234,7 +236,7 @@ def _get_episodes_for_date(user_email: str, date) -> List[Dict[str, Any]]:
                         'trigger': row[2],
                         'emotional_state': row[3],
                         'resolution': row[4],
-                        'message_count': row[5]
+                        'message_count': 0
                     }
                     for row in rows
                 ]
@@ -247,12 +249,13 @@ def _synthesize_daily_summary(
     date,
     messages: List[Dict],
     facts: List[Dict],
-    episodes: List[Dict]
+    episodes: List[Dict],
+    companion_id: str = None
 ) -> str:
     """Use LLM to create coherent daily summary."""
     from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
     from src.config.persona_config import get_persona_config
-    _pc = get_persona_config()
+    _pc = get_persona_config(companion_id=companion_id) if companion_id else get_persona_config()
     user_name = _pc.primary_user_name
     u_subject = _pc.user_pronoun_subject
     c_possessive = _pc.companion_pronoun_possessive
@@ -379,7 +382,7 @@ def _store_daily_summary_db(
 
     try:
         db = get_db()
-        with db._get_connection() as conn:
+        with db._get_connection(user_email=user_email) as conn:
             with conn.cursor() as cursor:
                 # Upsert summary
                 cursor.execute(f"""
@@ -422,7 +425,7 @@ def get_yesterday_summary(user_email: str = _get_default_user_email()) -> Option
 
     try:
         db = get_db()
-        with db._get_connection() as conn:
+        with db._get_connection(user_email=user_email) as conn:
             with conn.cursor() as cursor:
                 cursor.execute(f"""
                     SELECT content FROM {T.DAILY_SUMMARIES}

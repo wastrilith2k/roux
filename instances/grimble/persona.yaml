@@ -23,3 +23,6 @@ prompts:
 
 voice:
   edge_tts_fallback: "en-US-GuyNeural"
+
+simulation:
+  model: "moonshotai/kimi-k2"

@@ -202,7 +202,7 @@ def _store_weekly_journal(user_email: str, reflection: Dict) -> None:
 
     try:
         db = get_db()
-        with db._get_connection() as conn:
+        with db._get_connection(user_email=user_email) as conn:
             with conn.cursor() as cursor:
                 from src.utils.timezone_utils import now_pacific_naive
                 today = now_pacific_naive().date()
@@ -230,7 +230,7 @@ def get_recent_weekly_reflection(user_email: str = _get_default_user_email()) ->
 
     try:
         db = get_db()
-        with db._get_connection() as conn:
+        with db._get_connection(user_email=user_email) as conn:
             with conn.cursor() as cursor:
                 cursor.execute(f"""
                     SELECT entry_date, content, insights

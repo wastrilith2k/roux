@@ -79,9 +79,10 @@ class CuriosityThread:
 class ProactiveCuriosity:
     """Manages the companion's curiosity about topics the user mentions"""
 
-    def __init__(self, state_key: str = 'proactive_curiosity'):
+    def __init__(self, state_key: str = 'proactive_curiosity', user_email: str = None):
         """Initialize proactive curiosity system"""
         self.state_key = state_key
+        self.user_email = user_email
         self.db = get_db()
         self.curiosity_threads: List[CuriosityThread] = []
 
@@ -410,14 +411,14 @@ Return ONLY a JSON array of strings, e.g.: ["question 1", "question 2"]"""
         }
 
         try:
-            self.db.set_state_value(self.state_key, json.dumps(state))
+            self.db.set_state_value(self.state_key, json.dumps(state), user_email=self.user_email)
         except Exception as e:
             print(f"⚠️  Failed to save proactive curiosity state: {e}")
 
     def _load_state(self):
         """Load persisted curiosity state from database"""
         try:
-            state_json = self.db.get_state_value(self.state_key)
+            state_json = self.db.get_state_value(self.state_key, user_email=self.user_email)
             if state_json:
                 state = json.loads(state_json)
                 self.curiosity_threads = [
@@ -458,15 +459,16 @@ Return ONLY a JSON array of strings, e.g.: ["question 1", "question 2"]"""
             print(f"⚠️  Failed to load proactive curiosity state: {e}")
 
 
-# Singleton instance (used by agent.py)
-_proactive_curiosity_instance = None
+# Per-user singleton registry
+_proactive_curiosity_instances: dict = {}
 
-def get_proactive_curiosity() -> ProactiveCuriosity:
-    """Get the global ProactiveCuriosity instance (singleton)"""
-    global _proactive_curiosity_instance
-    if _proactive_curiosity_instance is None:
-        _proactive_curiosity_instance = ProactiveCuriosity()
-    return _proactive_curiosity_instance
+def get_proactive_curiosity(user_email: str = None) -> ProactiveCuriosity:
+    """Get (or create) a ProactiveCuriosity instance for the given user."""
+    global _proactive_curiosity_instances
+    key = user_email or '__default__'
+    if key not in _proactive_curiosity_instances:
+        _proactive_curiosity_instances[key] = ProactiveCuriosity(user_email=user_email)
+    return _proactive_curiosity_instances[key]
 
 
 # Example usage and testing

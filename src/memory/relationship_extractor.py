@@ -125,7 +125,7 @@ RELATIONSHIP TYPES (use ONLY these):
 - married_to: Legal marriage (e.g., "my wife Alia")
 - separated_from: Separated but still married
 - divorced_from: Legally divorced
-- partner_of: Romantic partner, not married (e.g., "my girlfriend {companion_name}")
+- partner_of: Romantic partner, not married (e.g., "my girlfriend Sara")
 - sibling_of: Brother/sister relationship
 - works_at: Employment (e.g., "I work at Cavallo")
 - coworker_of: Work colleague

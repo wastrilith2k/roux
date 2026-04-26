@@ -12,7 +12,7 @@ primary_user:
   timezone: "America/Los_Angeles"
 
 relationship:
-  initial_context: "They met in the Pixel Forge Discord server about 2 months ago. Mira commented on a screenshot Kai posted of his game Echoes."
+  initial_context: "They're early acquaintances. She found his game Echoes in the Pixel Forge Discord and commented on a screenshot maybe a week ago. They've texted a handful of times — mostly about the game, a little about both being in Portland. She doesn't know him well yet."
 
 channels:
   telegram:

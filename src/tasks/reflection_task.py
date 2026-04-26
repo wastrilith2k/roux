@@ -43,7 +43,8 @@ def _get_default_user_email():
 def reflect_on_day(
     self,
     user_email: str = _get_default_user_email(),
-    target_date: Optional[str] = None
+    target_date: Optional[str] = None,
+    companion_id: str = None
 ):
     """
     Reflect on yesterday's (or specified date's) conversation.
@@ -99,7 +100,7 @@ def reflect_on_day(
         recent_reflections = get_recent_reflections(user_email, days=7)
 
         # 2. Run LLM reflection
-        reflection = _generate_reflection(reflection_date, summary, outcome_patterns, recent_reflections)
+        reflection = _generate_reflection(reflection_date, summary, outcome_patterns, recent_reflections, companion_id=companion_id)
 
         if not reflection:
             logger.error("Reflection generation failed")
@@ -169,7 +170,7 @@ def _get_daily_summary(user_email: str, date) -> Optional[str]:
 
     try:
         db = get_db()
-        with db._get_connection() as conn:
+        with db._get_connection(user_email=user_email) as conn:
             with conn.cursor() as cursor:
                 cursor.execute(f"""
                     SELECT content FROM {T.DAILY_SUMMARIES}
@@ -184,12 +185,12 @@ def _get_daily_summary(user_email: str, date) -> Optional[str]:
         return None
 
 
-def _generate_reflection(date, summary: str, outcome_patterns: str = "", recent_reflections: list = None) -> Optional[Dict[str, Any]]:
+def _generate_reflection(date, summary: str, outcome_patterns: str = "", recent_reflections: list = None, companion_id: str = None) -> Optional[Dict[str, Any]]:
     """Use LLM to generate structured reflection from summary."""
     from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
     from src.config.persona_config import get_persona_config
 
-    persona = get_persona_config()
+    persona = get_persona_config(companion_id=companion_id) if companion_id else get_persona_config()
     companion_name = persona.companion_short_name
     user_name = persona.primary_user_name
     c_possessive = persona.companion_pronoun_possessive
@@ -354,7 +355,7 @@ def _store_journal_entry(user_email: str, date, reflection: Dict[str, Any]) -> N
 
     try:
         db = get_db()
-        with db._get_connection() as conn:
+        with db._get_connection(user_email=user_email) as conn:
             with conn.cursor() as cursor:
                 # Store the reflection
                 cursor.execute(f"""
@@ -443,7 +444,7 @@ def get_recent_reflections(user_email: str = _get_default_user_email(), days: in
 
     try:
         db = get_db()
-        with db._get_connection() as conn:
+        with db._get_connection(user_email=user_email) as conn:
             with conn.cursor() as cursor:
                 cursor.execute(f"""
                     SELECT entry_date, content, insights

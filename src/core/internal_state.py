@@ -312,7 +312,7 @@ class InternalStateManager:
     def get_state(self, user_email: str) -> CompanionInternalState:
         """Load current internal state from database."""
         try:
-            with self.db._get_connection() as conn:
+            with self.db._get_connection(user_email=user_email) as conn:
                 from psycopg2.extras import RealDictCursor
                 cursor = conn.cursor(cursor_factory=RealDictCursor)
                 cursor.execute(
@@ -334,7 +334,7 @@ class InternalStateManager:
         try:
             state.last_updated = now_pacific_naive().isoformat()
 
-            with self.db._get_connection() as conn:
+            with self.db._get_connection(user_email=user_email) as conn:
                 cursor = conn.cursor()
                 cursor.execute(f'''
                     UPDATE {T.USER_STATE}

@@ -316,9 +316,11 @@ async def add_conversation_episode(
 def run_async(coro):
     """
     Bridge async -> sync for Celery workers.
-    Creates a fresh event loop each time because Celery workers may reuse
-    threads where the previous loop was closed, causing "Event loop is closed" errors.
+    Creates a fresh event loop and resets the Graphiti singleton so its Neo4j
+    driver is recreated within the new loop (avoids "Future attached to a
+    different loop" errors when tasks share a process with multiple loops).
     """
+    reset_graphiti()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:

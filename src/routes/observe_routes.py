@@ -60,17 +60,45 @@ def _companion_email(companion_id: str) -> str:
 # REST endpoints (all GET, no auth)
 # ---------------------------------------------------------------------------
 
+def _get_all_user_schemas(db) -> list:
+    """Return all user_* schema names via a raw connection to avoid %% escaping issues."""
+    try:
+        from src.database.connection import get_connection
+        conn = get_connection()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT schema_name FROM information_schema.schemata "
+                "WHERE schema_name LIKE 'user\\_%%' ESCAPE '\\' ORDER BY schema_name"
+            )
+            return [r[0] for r in cur.fetchall()]
+    except Exception as e:
+        logger.error(f"_get_all_user_schemas error: {e}")
+        return []
+
+
 @observe_bp.route('/companions')
 def observe_companions():
-    """List all companions that have messages in the database."""
+    """List all companions that have messages across any user_* schema.
+
+    The simulation stores messages in the LISTENER's schema, so a companion's
+    sent messages are spread across peer schemas. We scan all user_* schemas
+    and collect distinct sender_name values to find active companions.
+    """
     try:
-        db = _get_db()
-        result = db.execute(
-            f"SELECT DISTINCT companion_id FROM {T.MESSAGES} ORDER BY companion_id"
-        )
-        rows = result.fetchall() or []
-        companions = [r['companion_id'] for r in rows if r.get('companion_id')]
-        return jsonify(companions)
+        from src.database.connection import get_connection
+        conn = get_connection()
+        schemas = _get_all_user_schemas(None)
+        speakers = set()
+        with conn.cursor() as cur:
+            for schema in schemas:
+                try:
+                    cur.execute(f"SELECT DISTINCT sender_name FROM {schema}.messages WHERE sender_name IS NOT NULL")
+                    for row in cur.fetchall():
+                        if row[0]:
+                            speakers.add(row[0].lower())
+                except Exception:
+                    pass
+        return jsonify(sorted(speakers))
     except Exception as e:
         logger.error(f"observe_companions error: {e}")
         return jsonify([])
@@ -96,52 +124,71 @@ def observe_status():
 
 @observe_bp.route('/messages')
 def observe_messages():
-    """Recent messages — per-companion schema routing."""
-    companion_ids = request.args.getlist('companion_id')
+    """Messages across all companion schemas, with optional speaker filtering.
+
+    The simulation stores each message in the LISTENER's schema, so filtering
+    by companion must scan all user_* schemas and filter by sender_name rather
+    than routing to a single schema.
+    """
+    companion_ids = [c.lower() for c in request.args.getlist('companion_id')]
     since = request.args.get('since')
     limit = min(int(request.args.get('limit', 100)), 500)
     offset = int(request.args.get('offset', 0))
 
-    if not companion_ids:
-        companion_ids = [_default_companion_id()]
-
-    db = _get_db()
     all_messages = []
+    seen = set()  # Deduplicate across schemas by (sender, timestamp, text[:40])
 
     try:
-        for cid in companion_ids:
-            email = _companion_email(cid)
-            if since:
-                result = db.execute(
-                    f"""SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
-                       FROM {T.MESSAGES} WHERE timestamp > %s
-                       ORDER BY timestamp DESC LIMIT %s OFFSET %s""",
-                    (since, limit, offset),
-                    user_email=email,
-                )
-            else:
-                result = db.execute(
-                    f"""SELECT sender_name, message_text, timestamp, companion_id, sentiment_score
-                       FROM {T.MESSAGES}
-                       ORDER BY timestamp DESC LIMIT %s OFFSET %s""",
-                    (limit, offset),
-                    user_email=email,
-                )
-            rows = result.fetchall() or []
-            for r in rows:
-                all_messages.append({
-                    'speaker': r.get('sender_name', ''),
-                    'content': r.get('message_text', ''),
-                    'timestamp': r['timestamp'].isoformat() if r.get('timestamp') else None,
-                    'companion_id': r.get('companion_id', cid),
-                    'sentiment': r.get('sentiment_score'),
-                })
+        from src.database.connection import get_connection
+        conn = get_connection()
+        schemas = _get_all_user_schemas(None)
+
+        with conn.cursor() as cur:
+            for schema in schemas:
+                try:
+                    if companion_ids:
+                        placeholders = ','.join(['%s'] * len(companion_ids))
+                        query = (
+                            f"SELECT sender_name, message_text, timestamp, sentiment_score "
+                            f"FROM {schema}.messages "
+                            f"WHERE LOWER(sender_name) IN ({placeholders})"
+                        )
+                        params = companion_ids[:]
+                    else:
+                        query = (
+                            f"SELECT sender_name, message_text, timestamp, sentiment_score "
+                            f"FROM {schema}.messages"
+                        )
+                        params = []
+
+                    if since:
+                        query += " AND timestamp > %s" if companion_ids else " WHERE timestamp > %s"
+                        params.append(since)
+
+                    cur.execute(query, params)
+                    for row in cur.fetchall():
+                        key = (row[0], str(row[2]), (row[1] or '')[:40])
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        ts = row[2].isoformat() if row[2] else None
+                        all_messages.append({
+                            'speaker': row[0] or '',
+                            'content': row[1] or '',
+                            'timestamp': ts,
+                            'companion_id': (row[0] or '').lower(),
+                            'sentiment': row[3],
+                        })
+                except Exception:
+                    pass
+
     except Exception as e:
         logger.error(f"observe_messages error: {e}")
         return jsonify([])
 
     all_messages.sort(key=lambda m: m['timestamp'] or '')
-    return jsonify(all_messages)
+    # Apply offset/limit after gathering and sorting
+    return jsonify(all_messages[offset:offset + limit])
 
 
 @observe_bp.route('/state', methods=['POST'])
@@ -203,29 +250,40 @@ def observe_state():
 
     try:
         db = _get_db()
-        # user_state row
+        # user_state row (internal_state column not present in all schema versions)
         result = db.execute(
-            f"""SELECT closeness_score, romance_level, emotion_profile,
-                      internal_state, cooldown_active
+            f"""SELECT closeness_score, romance_level, emotion_profile, cooldown_active
                FROM {T.USER_STATE}
-               WHERE companion_id = %s
+               WHERE email = %s
                LIMIT 1""",
-            (companion_id,),
+            (email,),
             user_email=email,
         )
         row = result.fetchone()
         if not row:
             return jsonify({'companion_id': companion_id, 'state': None})
 
-        internal = {}
-        if row.get('internal_state'):
-            internal = row['internal_state'] if isinstance(row['internal_state'], dict) else json.loads(row['internal_state'])
-
-        # Extract mood/energy from internal state
-        mood = internal.get('mood', {})
-        energy = internal.get('energy', {})
-        scene = internal.get('scene', {})
-        mode = internal.get('conversation_mode', '')
+        # Pull mood/energy/scene from Redis simulation status if available
+        mood = {}
+        energy = {}
+        scene = {}
+        mode = ''
+        try:
+            import redis as _redis
+            r = _redis.Redis(
+                host=os.environ.get('REDIS_HOST', 'redis'),
+                port=int(os.environ.get('REDIS_PORT', 6379)),
+                decode_responses=True,
+            )
+            raw = r.get(f'sim:state:{companion_id}')
+            if raw:
+                s = json.loads(raw)
+                mood = s.get('mood', {})
+                energy = s.get('energy', {})
+                scene = s.get('scene', {})
+                mode = s.get('mode', '')
+        except Exception:
+            pass
 
         return jsonify({
             'companion_id': companion_id,
@@ -237,7 +295,7 @@ def observe_state():
             'energy': energy,
             'scene': scene,
             'mode': mode,
-            'internal_state': internal,
+            'internal_state': None,
         })
     except Exception as e:
         logger.error(f"observe_state error: {e}")
@@ -254,7 +312,7 @@ def observe_facts():
     try:
         db = _get_db()
         result = db.execute(
-            f"""SELECT subject, predicate, object, confidence, importance, category,
+            f"""SELECT subject, predicate, object, confidence, importance,
                       created_at, updated_at
                FROM {T.FACTS}
                WHERE user_email = %s AND archived_at IS NULL
@@ -271,7 +329,7 @@ def observe_facts():
                 'object': r.get('object', ''),
                 'confidence': r.get('confidence'),
                 'importance': r.get('importance'),
-                'category': r.get('category', ''),
+                'category': '',
                 'created_at': r['created_at'].isoformat() if r.get('created_at') else None,
                 'updated_at': r['updated_at'].isoformat() if r.get('updated_at') else None,
             })
@@ -291,11 +349,11 @@ def observe_opinions():
         db = _get_db()
         result = db.execute(
             f"""SELECT topic, opinion, confidence, evidence_count, category,
-                      evidence_summary, created_at, updated_at
+                      evidence_summary, formed_date, last_updated
                FROM {T.COMPANION_OPINIONS}
-               WHERE companion_id = %s
-               ORDER BY updated_at DESC""",
-            (companion_id,),
+               WHERE user_email = %s
+               ORDER BY last_updated DESC""",
+            (email,),
             user_email=email,
         )
         rows = result.fetchall() or []
@@ -308,7 +366,7 @@ def observe_opinions():
                 'evidence_count': r.get('evidence_count', 0),
                 'category': r.get('category', ''),
                 'evidence_summary': r.get('evidence_summary', ''),
-                'created_at': r['created_at'].isoformat() if r.get('created_at') else None,
+                'created_at': r['formed_date'].isoformat() if r.get('formed_date') else None,
             })
         return jsonify(opinions)
     except Exception as e:
@@ -324,8 +382,8 @@ def observe_curiosity():
 
     try:
         db = _get_db()
-        # Curiosity is stored in the state table as JSON
-        state_key = f'proactive_curiosity_{companion_id}'
+        # Curiosity is stored in the companion's schema state table
+        state_key = 'proactive_curiosity'
         result = db.execute(
             f"SELECT value FROM {T.STATE} WHERE key = %s",
             (state_key,),
@@ -390,8 +448,8 @@ def observe_episodes():
     try:
         db = _get_db()
         result = db.execute(
-            f"""SELECT episode_id, started_at, ended_at, summary, significance,
-                      emotional_arc, topics
+            f"""SELECT episode_id, started_at, ended_at, topic,
+                      emotional_state, resolution, trigger
                FROM {T.EPISODES}
                WHERE user_email = %s
                ORDER BY started_at DESC LIMIT %s""",
@@ -405,10 +463,10 @@ def observe_episodes():
                 'episode_id': str(r.get('episode_id', '')),
                 'started_at': r['started_at'].isoformat() if r.get('started_at') else None,
                 'ended_at': r['ended_at'].isoformat() if r.get('ended_at') else None,
-                'summary': r.get('summary', ''),
-                'significance': r.get('significance'),
-                'emotional_arc': r.get('emotional_arc', ''),
-                'topics': r.get('topics', []),
+                'summary': r.get('topic', ''),
+                'significance': None,
+                'emotional_arc': r.get('emotional_state', ''),
+                'topics': [r.get('topic', '')] if r.get('topic') else [],
             })
         return jsonify(episodes)
     except Exception as e:

@@ -83,6 +83,15 @@ class SimulationEventEmitter:
         except Exception:
             pass
 
+    def set_status_key(self, key: str, value: dict):
+        """Set an arbitrary Redis key (used for per-companion state)."""
+        if not self.redis:
+            return
+        try:
+            self.redis.set(key, json.dumps(value))
+        except Exception:
+            pass
+
 
 _log_handlers = [logging.StreamHandler()]
 try:
@@ -292,22 +301,16 @@ class SimulationRunner:
         state['energy'] = max(0.1, round(state['energy'] - depletion, 2))
 
     def _save_all_states(self):
-        """Persist internal states to user_state table."""
-        try:
-            from src.database.db import get_db
-            db = get_db()
-            for cid in self.companions:
-                state = self.states[cid]
-                other = [c for c in self.companions if c != cid][0]
-                email = f"{other}@companion.local"
-                import json as _json
-                db.execute(
-                    "UPDATE user_state SET internal_state = %s WHERE email = %s AND companion_id = %s",
-                    (_json.dumps(state), email, cid),
-                    user_email=email
-                )
-        except Exception as e:
-            logger.warning(f"Failed to save internal states: {e}")
+        """Persist internal states — writes to Redis for dashboard live display.
+
+        The user_state.internal_state column is not present in all schema
+        versions, so we skip that write and use Redis instead. The observe
+        dashboard reads sim:state:<companion_id> keys directly.
+        """
+        import json as _json
+        for cid in self.companions:
+            state = self.states[cid]
+            self.emitter.set_status_key(f'sim:state:{cid}', state)
 
     def _ensure_schema(self):
         """Ensure public and per-user Postgres schemas exist.
@@ -412,6 +415,19 @@ class SimulationRunner:
         except Exception as e:
             logger.error(f"Full-stack API call failed for {speaker}: {e}")
             return f"[generation failed: {e}]"
+
+    def _companion_model_override(self, companion_id: str) -> str:
+        """Return model override for a companion from its persona.yaml, or ''."""
+        try:
+            import yaml as _yaml
+            path = self.project_root / 'instances' / companion_id / 'persona.yaml'
+            if path.exists():
+                with open(path) as f:
+                    data = _yaml.safe_load(f) or {}
+                return data.get('simulation', {}).get('model', '')
+        except Exception:
+            pass
+        return ''
 
     def _track_simulation_cost(self, provider, model: str, companion_id: str):
         """Record token usage and cost from the last provider call."""
@@ -698,7 +714,7 @@ class SimulationRunner:
                 # 1. Fact extraction (LLM call)
                 try:
                     from src.tasks.fact_extraction_task import extract_facts_via_llm, store_facts
-                    import time; time.sleep(2)  # Rate limit for free tier
+                    import time; time.sleep(2)
                     facts = extract_facts_via_llm(user_msg, companion_msg)
                     if facts:
                         stored = store_facts(facts, email_a)
@@ -740,14 +756,7 @@ class SimulationRunner:
                 except Exception as e:
                     logger.debug(f"    Relationship extraction failed: {e}")
 
-                # 5. Scene extraction (LLM call)
-                try:
-                    from src.tasks.scene_extraction_task import extract_scene_state
-                    time.sleep(2)
-                    extract_scene_state(email_a, user_msg, companion_msg, 'simulation')
-                    task_count += 1
-                except Exception as e:
-                    logger.debug(f"    Scene extraction failed: {e}")
+                # 5. Scene extraction — disabled (hallucinates physical co-presence from goodbye texts)
 
                 # 6. Internal state update (LLM call)
                 try:
@@ -934,7 +943,8 @@ class SimulationRunner:
             day_num = getattr(self, '_current_day', 1)
 
             relationship_block = f"""RELATIONSHIP: {rel_context}
-You've been texting regularly for about {day_num} day{'s' if day_num != 1 else ''}. You're still getting to know each other — there's comfort but also boundaries. You don't overshare. You don't make big plans casually. Vulnerability comes in small, earned moments, not all at once."""
+This is a TEXT MESSAGE conversation. You are NOT in the same physical space. You are on your phone, texting. Simulation day {day_num}.
+You're still getting to know each other. You don't overshare. You don't make big plans casually. Vulnerability comes in small, earned moments."""
 
             boundary = f"""IDENTITY RULES: You are {config.companion_short_name}.
 Your profile (what you HAVE and DO NOT HAVE):
@@ -975,13 +985,19 @@ Time: {time_str}
 {f"<tone>{state.get('tone')}</tone>" if state.get('tone') else ""}
 
 <task>
-Reply to {other_name} as {config.companion_short_name}. This is a text message conversation.
-- Write 1-3 sentences max. Be brief and natural.
-- Your mood and energy should subtly influence your tone.
-- Have opinions. Push back sometimes. Tease them. Don't just agree with everything.
-- Do NOT repeat things you already said in this conversation. Read the conversation history above — if you already mentioned a topic, move on or build on it, don't restate it.
-- Output ONLY the message text. No narration, no stage directions, no asterisks.
-{f"- This conversation is wrapping up. Send a natural closing message — sign off, make a joke, say you gotta go, etc. Do NOT ask a new question or introduce a new topic." if exchange and exchange["current"] >= exchange["total"] else ""}
+Reply to {other_name} as {config.companion_short_name}.
+
+FORMAT RULES — these are absolute:
+- You are texting from your phone. You are NOT in the same room.
+- Write 1-3 sentences max. No walls of text.
+- No asterisks. No stage directions. No *actions*. No *gestures*. Just the words you'd actually type.
+- Output ONLY the message text itself — nothing else.
+
+CONTENT RULES:
+- Your mood and energy should subtly color your tone.
+- Have opinions. Push back sometimes. Don't just agree with everything.
+- Do NOT repeat things already said in this conversation. Build on it or move on.
+{f"- This is the last message in this exchange. Sign off naturally — a joke, 'gotta go', 'talk later'. Don't open a new topic." if exchange and exchange["current"] >= exchange["total"] else ""}
 </task>"""
             else:
                 # New conversation: use summary of past conversations, NOT raw messages
@@ -1009,22 +1025,27 @@ Start a NEW text conversation with {other_name} as {config.companion_short_name}
 Direction: {seed}
 {f"Tone: {state.get('tone')}" if state.get('tone') else ""}
 
-Rules:
-- Do NOT rehash the same topics from recent conversations. Bring something FRESH.
+FORMAT RULES — absolute:
+- You are sending a TEXT MESSAGE. You are NOT in the same room as {other_name}.
+- 1-3 sentences max. No walls of text.
+- No asterisks. No *actions*. No stage directions. Just the words you'd actually type.
+- Output ONLY the message text — nothing else.
+
+CONTENT RULES:
+- Don't start with "Hey {other_name}!" — vary your opener. Jump into a thought or question.
+- Don't rehash recent topics. Bring something fresh.
 - If something just happened to you, lead with that.
-- Do NOT start with "Hey {other_name}!" — vary your opener. Jump into a thought, question, or observation.
-- Write 1-3 sentences max. This is texting.
-- Your mood and energy should shape what you say and how you say it.
-- Output ONLY the message text. No narration, no stage directions, no asterisks.
+- Your mood and energy should shape your tone.
 </task>"""
 
             # Rate limit: ~5s between calls to stay under free tier limits
             import time
             time.sleep(5)
 
-            # Use the rotated model for this conversation
+            # Use per-companion model override if configured, else rotated model
             from src.llm.openai_provider import OpenAIProvider
-            model = getattr(self, '_current_model', self.MODEL_ROTATION[0])
+            companion_model = self._companion_model_override(speaker)
+            model = companion_model or getattr(self, '_current_model', self.MODEL_ROTATION[0])
             provider = OpenAIProvider(
                 api_key=os.getenv('OPENROUTER_API_KEY'),
                 model=model,
@@ -1065,9 +1086,21 @@ You communicate via {comm_device}. {comm_style}
             self._track_simulation_cost(provider, model, speaker)
 
             result = response.strip() if isinstance(response, str) else ""
-            # Strip leaked character name prefixes like "Thorne:" or "**Grimble:**"
             if result:
                 import re
+                # Strip reasoning-model chain-of-thought: Nemotron and similar models wrap
+                # their scratchpad in <think>...</think> tags before the actual response.
+                result = re.sub(r'<think>.*?</think>', '', result, flags=re.DOTALL).strip()
+                # Also strip bare "We are starting a new conversation..." preamble that
+                # reasoning models sometimes leak when the system prompt bleeds into output.
+                # The actual message follows a blank line or a transition marker.
+                # Heuristic: if the result is >500 chars and contains "As Grimble:" / "Let's"
+                # style meta-commentary, take only the last non-empty paragraph.
+                if len(result) > 500 and re.search(r'\b(As \w+:|Let me|However,|But note:|Example:|Option \d)', result):
+                    paragraphs = [p.strip() for p in re.split(r'\n{2,}', result) if p.strip()]
+                    if paragraphs:
+                        result = paragraphs[-1]
+                # Strip leaked character name prefixes like "Thorne:" or "**Grimble:**"
                 result = re.sub(r'^\*{0,2}' + re.escape(config.companion_short_name) + r'\*{0,2}\s*[:]\s*', '', result, count=1)
                 result = result.strip().strip('"')
             return result
@@ -1077,16 +1110,18 @@ You communicate via {comm_device}. {comm_style}
             return f"[generation failed: {e}]"
 
     def _store_message(self, speaker: str, listener: str, content: str, conv_id: int = None, role: str = 'assistant'):
-        """Store a message in the database. Speaker is always the sender."""
+        """Store a message in both participants' schemas so each has a complete conversation view."""
         try:
             from src.database.db import get_db
             db = get_db()
-            user_email = getattr(self, '_current_conv_email', f"{listener}@companion.local")
-            db.execute(
-                "INSERT INTO messages (email, sender_name, message_text, timestamp, companion_id, source, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (f"{listener}@companion.local", speaker, content, self.clock.now(), speaker, 'simulation', conv_id),
-                user_email=user_email
-            )
+            ts = self.clock.now()
+            schemas = {f"{speaker}@companion.local", f"{listener}@companion.local"}
+            for email in schemas:
+                db.execute(
+                    "INSERT INTO messages (email, sender_name, message_text, timestamp, companion_id, source, conversation_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (email, speaker, content, ts, speaker, 'simulation', conv_id),
+                    user_email=email
+                )
             logger.debug(f"      [{speaker}] {content[:80]}...")
         except Exception as e:
             logger.error(f"Failed to store message: {e}")
@@ -1134,59 +1169,72 @@ You communicate via {comm_device}. {comm_style}
         except Exception as e:
             logger.warning(f"  [{cid}] Schedule generation skipped: {e}")
 
+    def _sim_email(self, cid: str) -> str:
+        """Canonical email for a companion's schema in simulation context."""
+        return f"{cid}@companion.local"
+
+    def _celery_send(self, task_name: str, cid: str, extra_kwargs: dict = None) -> bool:
+        """Dispatch a named Celery task to the running worker.
+
+        Returns True if dispatched successfully. Errors are logged but not raised
+        so one bad task never blocks the rest of the pipeline.
+        """
+        try:
+            from src.celery_app import celery_app
+            kwargs = {'user_email': self._sim_email(cid)}
+            if extra_kwargs:
+                kwargs.update(extra_kwargs)
+            celery_app.send_task(task_name, kwargs=kwargs)
+            logger.debug(f"  [{cid}] dispatched {task_name}")
+            return True
+        except Exception as e:
+            logger.warning(f"  [{cid}] {task_name} dispatch failed: {e}")
+            return False
+
     def _run_end_of_day(self, cid: str) -> list:
-        """Run all end-of-day autonomous tasks (each fails independently).
-        Returns list of completed task names for dashboard reporting."""
+        """Run all end-of-day autonomous tasks via Celery worker.
+        Returns list of dispatched task names."""
+        sim_date = self.clock.now().strftime('%Y-%m-%d')
         tasks = [
-            ('episode_extraction', self._run_episode_extraction),
-            ('opinion_formation', self._run_opinion_formation),
-            ('curiosity_decay', self._run_curiosity_decay),
-            ('confidence_decay', self._run_confidence_decay),
+            ('episode_extraction',  lambda: self._run_episode_extraction(cid)),
+            ('daily_summary',       lambda: self._run_daily_summary(cid, sim_date)),
+            ('daily_reflection',    lambda: self._celery_send('tasks.reflection_task.reflect_on_day', cid, {'target_date': sim_date, 'companion_id': cid})),
+            ('opinion_formation',   lambda: self._celery_send('tasks.opinion_formation.form_opinions', cid)),
+            ('curiosity_decay',     lambda: self._celery_send('tasks.curiosity_extraction.update_curiosity_urgency', cid)),
         ]
         completed = []
         for name, func in tasks:
             try:
-                func(cid)
-                logger.debug(f"  [{cid}] {name} complete")
-                completed.append(name)
-                self.emitter.emit('sim:task_complete', {
-                    'task_name': name,
-                    'companion_id': cid,
-                    'summary': 'completed',
-                })
+                result = func()
+                if result is not False:
+                    completed.append(name)
+                    self.emitter.emit('sim:task_complete', {'task_name': name, 'companion_id': cid, 'summary': 'dispatched'})
             except Exception as e:
                 logger.warning(f"  [{cid}] {name} failed: {e}")
         return completed
 
     def _run_episode_extraction(self, cid: str):
-        """Extract episodes from today's conversations."""
+        """Extract episodes from today's conversations (runs inline — no Celery needed)."""
         from src.tasks.episode_learning_task import run_episode_learning
         run_episode_learning()
 
-    def _run_opinion_formation(self, cid: str):
-        """Form/update opinions based on interactions.
-        Note: This is a Celery task — skipped when running outside Docker."""
-        raise NotImplementedError("Requires Celery worker (run inside Docker)")
-
-    def _run_curiosity_decay(self, cid: str):
-        """Decay curiosity urgency for unresolved threads.
-        Note: This is a Celery task — skipped when running outside Docker."""
-        raise NotImplementedError("Requires Celery worker (run inside Docker)")
-
-    def _run_confidence_decay(self, cid: str):
-        """Apply confidence decay to stored facts.
-        Note: No standalone decay function available."""
-        raise NotImplementedError("No standalone confidence decay function")
+    def _run_daily_summary(self, cid: str, sim_date: str):
+        """Generate daily summary synchronously so it's ready before reflection is dispatched."""
+        from src.tasks.daily_summary_task import generate_daily_summary
+        email = self._sim_email(cid)
+        ar = generate_daily_summary.apply(kwargs={'user_email': email, 'target_date': sim_date, 'companion_id': cid})
+        result = ar.get(timeout=120) if ar else {}
+        status = result.get('status') if isinstance(result, dict) else 'unknown'
+        logger.info(f"  [{cid}] daily_summary: {status}")
+        return True
 
     def _run_weekly_reflection(self, cid: str):
-        """Run weekly reflection task."""
-        logger.info(f"  [{cid}] Running weekly reflection")
-        raise NotImplementedError("Requires Celery worker (run inside Docker)")
+        self._celery_send('tasks.reflection_task.reflect_on_week', cid)
+        self._celery_send('tasks.relationship_evaluation.evaluate_weekly', cid)
+        self._celery_send('tasks.opinion_formation.decay_weak_opinions', cid)
 
     def _run_monthly_reflection(self, cid: str):
-        """Run monthly reflection task."""
-        logger.info(f"  [{cid}] Running monthly reflection")
-        raise NotImplementedError("Requires Celery worker (run inside Docker)")
+        self._celery_send('tasks.reflection_task.reflect_on_month', cid)
 
     def _run_value_inference(self, cid: str):
         """Run value inference task."""

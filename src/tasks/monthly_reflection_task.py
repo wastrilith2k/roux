@@ -177,7 +177,7 @@ def _get_weekly_reflections(user_email: str, weeks: int = 5) -> List[Dict]:
 
     try:
         db = get_db()
-        with db._get_connection() as conn:
+        with db._get_connection(user_email=user_email) as conn:
             with conn.cursor() as cursor:
                 cursor.execute(f"""
                     SELECT entry_date, content, insights
@@ -205,28 +205,20 @@ def _get_weekly_reflections(user_email: str, weeks: int = 5) -> List[Dict]:
 def _get_opinion_changes(user_email: str) -> str:
     """Get notable opinion changes from the past month."""
     try:
-        import psycopg2
+        from src.database.db import get_db
         from psycopg2.extras import RealDictCursor
 
-        conn = psycopg2.connect(
-            host=os.environ.get('POSTGRES_HOST', 'postgres'),
-            port=os.environ.get('POSTGRES_PORT', '5432'),
-            dbname=os.environ.get('POSTGRES_DB', 'companion'),
-            user=os.environ.get('POSTGRES_USER', 'companion'),
-            password=os.environ.get('POSTGRES_PASSWORD', '')
-        )
-
-        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(f"""
-                SELECT topic, stance, confidence, reasoning
-                FROM {T.COMPANION_OPINIONS}
-                WHERE updated_at >= NOW() - INTERVAL '30 days'
-                ORDER BY updated_at DESC
-                LIMIT 5
-            """)
-            opinions = cursor.fetchall()
-
-        conn.close()
+        db = get_db()
+        with db._get_connection(user_email=user_email) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(f"""
+                    SELECT topic, stance, confidence, reasoning
+                    FROM {T.COMPANION_OPINIONS}
+                    WHERE updated_at >= NOW() - INTERVAL '30 days'
+                    ORDER BY updated_at DESC
+                    LIMIT 5
+                """)
+                opinions = cursor.fetchall()
 
         if opinions:
             lines = ["[RECENT OPINION UPDATES]"]
@@ -242,29 +234,21 @@ def _get_opinion_changes(user_email: str) -> str:
 def _get_goal_progress(user_email: str) -> str:
     """Get goal progress summary for the month."""
     try:
-        import psycopg2
+        from src.database.db import get_db
         from psycopg2.extras import RealDictCursor
 
-        conn = psycopg2.connect(
-            host=os.environ.get('POSTGRES_HOST', 'postgres'),
-            port=os.environ.get('POSTGRES_PORT', '5432'),
-            dbname=os.environ.get('POSTGRES_DB', 'companion'),
-            user=os.environ.get('POSTGRES_USER', 'companion'),
-            password=os.environ.get('POSTGRES_PASSWORD', '')
-        )
-
-        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(f"""
-                SELECT
-                    COUNT(*) FILTER (WHERE status = 'completed' AND updated_at >= NOW() - INTERVAL '30 days') as completed,
-                    COUNT(*) FILTER (WHERE status = 'active') as active,
-                    COUNT(*) FILTER (WHERE status = 'stalled') as stalled
-                FROM {T.COMPANION_GOALS}
-                WHERE user_email = %s
-            """, (user_email,))
-            row = cursor.fetchone()
-
-        conn.close()
+        db = get_db()
+        with db._get_connection(user_email=user_email) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(f"""
+                    SELECT
+                        COUNT(*) FILTER (WHERE status = 'completed' AND updated_at >= NOW() - INTERVAL '30 days') as completed,
+                        COUNT(*) FILTER (WHERE status = 'active') as active,
+                        COUNT(*) FILTER (WHERE status = 'stalled') as stalled
+                    FROM {T.COMPANION_GOALS}
+                    WHERE user_email = %s
+                """, (user_email,))
+                row = cursor.fetchone()
 
         if row and (row['completed'] or row['active'] or row['stalled']):
             return (
@@ -283,7 +267,7 @@ def _store_monthly_journal(user_email: str, reflection: Dict) -> None:
 
     try:
         db = get_db()
-        with db._get_connection() as conn:
+        with db._get_connection(user_email=user_email) as conn:
             with conn.cursor() as cursor:
                 from src.utils.timezone_utils import now_pacific_naive
                 today = now_pacific_naive().date()

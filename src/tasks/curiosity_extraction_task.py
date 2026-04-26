@@ -68,7 +68,7 @@ def extract_curiosity_from_conversation(
     try:
         from src.core.proactive_curiosity import get_proactive_curiosity
 
-        curiosity = get_proactive_curiosity()
+        curiosity = get_proactive_curiosity(user_email=user_email)
 
         # Step 1: Use keyword-based detection (fast)
         keyword_triggers = curiosity.detect_curiosity_triggers(user_message)
@@ -215,7 +215,7 @@ Return ONLY the JSON array, no other text:"""
     soft_time_limit=30,
     time_limit=60
 )
-def update_curiosity_urgency(self):
+def update_curiosity_urgency(self, user_email: str = None):
     """
     Periodically update urgency levels for all curiosity threads.
 
@@ -225,7 +225,7 @@ def update_curiosity_urgency(self):
     try:
         from src.core.proactive_curiosity import get_proactive_curiosity
 
-        curiosity = get_proactive_curiosity()
+        curiosity = get_proactive_curiosity(user_email=user_email)
 
         # Increase urgency for all active curiosities (simulating time passing)
         curiosity.increase_all_urgency(hours_passed=24)

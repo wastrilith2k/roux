@@ -160,6 +160,7 @@ CREATE TABLE IF NOT EXISTS {s}.{T.USER_STATE} (
     attraction_cue_count INTEGER DEFAULT 0,
     attraction_latent_state BOOLEAN DEFAULT FALSE,
     sms_preference TEXT DEFAULT 'good_morning',
+    internal_state JSONB,
     PRIMARY KEY (email, companion_id)
 );
 """
@@ -226,7 +227,8 @@ CREATE TABLE IF NOT EXISTS {s}.{T.FACTS} (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     mention_count INTEGER DEFAULT 1,
     last_mentioned TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    archived_at TIMESTAMP
+    archived_at TIMESTAMP,
+    archive_reason TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_facts_subject ON {s}.{T.FACTS}(subject);
