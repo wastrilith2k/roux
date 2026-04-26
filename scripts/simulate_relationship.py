@@ -129,7 +129,7 @@ class SimulationRunner:
 
     def __init__(self, companions: list, start_day: int = 0, with_analysis: bool = False,
                  config_path: str = None, full_stack: bool = False,
-                 api_url: str = 'http://localhost:5001', celery_wait: int = 5):
+                 api_url: str = 'http://localhost:5000', celery_wait: int = 5):
         """
         Args:
             companions: list of companion_ids, e.g. ["kai", "mira"]
@@ -367,11 +367,8 @@ class SimulationRunner:
             )
         import requests
         try:
-            resp = requests.get(f'{self.api_url}/api/health', timeout=5)
-            if resp.status_code == 200:
-                logger.info(f"Full-stack mode: API reachable at {self.api_url}")
-            else:
-                logger.warning(f"Full-stack mode: API returned status {resp.status_code}")
+            resp = requests.get(f'{self.api_url}/', timeout=5)
+            logger.info(f"Full-stack mode: API reachable at {self.api_url} (status {resp.status_code})")
         except requests.ConnectionError:
             raise RuntimeError(
                 f"Full-stack mode requires Docker services running. "
@@ -473,16 +470,18 @@ class SimulationRunner:
         self._day_tokens = {'input': 0, 'output': 0}
         self._day_cost = 0.0
 
-    def run_week(self, week_number: int):
+    def run_week(self, week_number: int, from_day: int = None):
         """Run one week (7 days), then stop for review."""
         start_day = (week_number - 1) * 7
         end_day = start_day + 7
+        resume_day = from_day if from_day is not None else start_day
 
         logger.info(f"\n{'='*60}")
-        logger.info(f"WEEK {week_number}: Days {start_day+1} - {end_day}")
+        logger.info(f"WEEK {week_number}: Days {start_day+1} - {end_day}" +
+                    (f" (resuming from day {resume_day+1})" if from_day is not None else ""))
         logger.info(f"{'='*60}")
 
-        for day in range(start_day, end_day):
+        for day in range(resume_day, end_day):
             self._run_day(day)
 
         # Checkpoint
@@ -1447,10 +1446,12 @@ def main():
                         help='Run MessageAnalyzer after each message (doubles LLM calls)')
     parser.add_argument('--full-stack', action='store_true',
                         help='Route messages through the HTTP API for realistic cost/usage data')
-    parser.add_argument('--api-url', type=str, default='http://localhost:5001',
+    parser.add_argument('--api-url', type=str, default='http://localhost:5000',
                         help='Base URL for the HTTP API (default: http://localhost:5001)')
     parser.add_argument('--celery-wait', type=int, default=5,
                         help='Seconds to wait after each conversation for Celery tasks (default: 5)')
+    parser.add_argument('--from-day', type=int, default=None,
+                        help='Resume week from this 0-indexed day offset (overrides week start)')
     args = parser.parse_args()
 
     project_root = find_project_root()
@@ -1463,14 +1464,14 @@ def main():
     if args.rollback:
         rollback_checkpoint(args.rollback, project_root)
     elif args.week:
-        start_day = (args.week - 1) * 7
+        resume_day = args.from_day if args.from_day is not None else (args.week - 1) * 7
         runner = SimulationRunner(
-            companions=args.companions, start_day=start_day,
+            companions=args.companions, start_day=resume_day,
             with_analysis=args.with_analysis, config_path=args.config,
             full_stack=args.full_stack, api_url=args.api_url,
             celery_wait=args.celery_wait,
         )
-        runner.run_week(args.week)
+        runner.run_week(args.week, from_day=args.from_day)
     elif args.summary:
         runner = SimulationRunner(companions=args.companions, config_path=args.config)
         runner.print_week_summary(0)
