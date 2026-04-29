@@ -4,7 +4,7 @@
 
 ---
 
-The autonomy layer transforms the companion from a reactive chatbot into an active agent with its own goals, curiosities, opinions, and outreach behaviors. It comprises 16 modules.
+The autonomy layer transforms the companion from a reactive chatbot into an active agent with its own goals, curiosities, opinions, and outreach behaviors. It comprises 19 modules in `src/autonomy/`, plus 5 supporting modules in `src/core/` (internal state, mood, curiosity, personality evolution, background life).
 
 ## 5.1 Proactive Messaging
 
@@ -205,3 +205,17 @@ All bounded [0, 1]. Positive feedback: +0.02, negative: -0.02, neutral: +0.01.
 ### Background Life (`core/background_life.py`)
 
 Tracks companion activities between conversations. Infers activities from time of day (working hours -> "working on documentation", evening -> "unwinding"). Stored as JSON at `/app/data/companion_activities.json`, pruned after 7 days.
+
+## 5.4 Additional Autonomy Modules
+
+The following modules exist in `src/autonomy/` but are not covered in the sections above:
+
+| Module | Purpose |
+|--------|---------|
+| `goals.py` | CRUD operations for companion goals stored in PostgreSQL. GoalFormation and GoalPlanner delegate persistence here. |
+| `persona_adaptation.py` | Two-level (micro + macro) personality adaptation inspired by AutoPal paper. Micro-level detects user interest signals per-message; macro-level leverages weekly value inference. |
+| `proactive_scoring.py` | 8-heuristic reach-out quality evaluation (relevance, information value, impact, urgency, coherence, originality, balance, timing). Scores 0.0-1.0 determine whether an LLM final-decision call is warranted. |
+| `reflection_engine.py` | Generates daily/weekly reflections from journal entries, identifying emotional arcs, behavioral patterns, and insights. |
+| `relationship_evaluation.py` | Companion's private self-assessment of the relationship state, stored separately from the publicly-visible relationship_dynamics. |
+| `telegram_bridge.py` | Manages the Telegram bot connection, message routing (text, voice, photo), and delivery for proactive messages. |
+| `work_projects.py` | Tracks companion's active personal work projects (documentation, learning goals, side projects) to provide authentic "what have you been up to" context. |

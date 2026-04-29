@@ -6,12 +6,14 @@
 
 **Source**: `src/core/conversation/pipeline.py`
 
-The pipeline is the central nervous system — it orchestrates how user messages flow through the system and produce responses. Every message passes through 9 stages.
+The pipeline is the central nervous system — it orchestrates how user messages flow through the system and produce responses. Every message passes through the following stages.
 
 ## Pipeline Stages
 
 ```
-[1] Context Building          — 20+ parallel data sources via ContextBuilder
+[0] Complexity Classification — Fast/medium/deep path routing via ComplexityClassifier
+[1] Context Building          — lightweight/medium/full parallel sources via ContextBuilder
+[1.1] Schedule Interruption   — Pause/resume companion calendar events if user starts chatting
 [1.4] Clear Addressed Thoughts — Remove queued thoughts the user just addressed
 [1.5] Memory Validation       — Detect memory queries, retrieve verified records
 [1.6+1.7] Message Analysis    — Merged mode detection + inner monologue (1 LLM call)
@@ -26,40 +28,70 @@ The pipeline is the central nervous system — it orchestrates how user messages
 
 ## Stage Details
 
+### Stage 0: Complexity Classification
+
+**Source**: `src/core/conversation/complexity_classifier.py`
+
+**Feature flag**: `FAST_PATH_ENABLED`
+
+Classifies each incoming message into one of four complexity tiers before any expensive work is done:
+
+| Tier | Context Path | Examples |
+|------|-------------|---------|
+| `SIMPLE` | Lightweight (fast path) | Greetings, one-word acknowledgements |
+| `MEDIUM` | Medium (includes on-demand memory search tool) | Conversational questions |
+| `ACTION` | Full + forced tools | Calendar, email, weather requests |
+| Complex (default) | Full (deep path) | Long messages, emotional topics, anything else |
+
+Proactive messages always use the deep path, bypassing classification.
+
 ### Stage 1: Context Building
 
 **Source**: `src/core/conversation/context_builder.py`
 
 Uses a `ThreadPoolExecutor` (6 workers) to fetch 20+ context sources in parallel, reducing wall-clock time from 2-5s (sequential) to 0.5-2s.
 
-**`ConversationContext` dataclass fields** (25+):
+**`ConversationContext` dataclass fields** (31 data fields + 3 metadata: `user_email`, `user_message`, `closeness_score`):
 
 | Field | Source | Description |
 |-------|--------|-------------|
 | `entity_profiles` | YAML files (git-versioned) | Ground truth about known entities |
 | `personality` | `personality.md` + evolved traits | Companion's voice and character |
 | `memories` | pgvector semantic search | Similar past messages |
-| `conversation_history` | PostgreSQL messages | Recent message history |
+| `conversation_history` | PostgreSQL messages | Recent message history (legacy string format) |
+| `conversation_turns` | PostgreSQL messages | Structured user/assistant turns for multi-turn LLM format |
 | `continuity_context` | Episode summaries | What happened recently |
 | `biographies` | Synthesized paragraphs | Theme-grouped knowledge about people |
 | `synthesized_events` | Event narratives | Ongoing life events with timelines |
 | `episode_context` | Episode records | Current/recent conversation episodes |
 | `core_memory` | `COMPANION_MEMORY.md` | Companion's personal narrative |
 | `observations_context` | Compressed observations | Mastra-style conversation compression |
+| `session_summary` | Long-conversation compression | Compressed summary of older messages in long sessions |
 | `reflections_context` | Companion journal | Daily/weekly reflections |
 | `opinions_context` | Opinion store | Companion's formed opinions |
 | `curiosity_context` | Curiosity threads | Topics companion wants to follow up on |
 | `goals_context` | Active goals | Companion's personal goals |
 | `internal_state` | Energy, mood, needs | Companion's subjective inner world |
 | `scene_state` | Scene tracking | Physical location, activity, presence |
+| `presence_mode` | Channel detection | In-person vs texting communication mode |
+| `derived_scene_context` | Signal synthesis | Derived context from real signals (time + schedule + presence) |
 | `values_context` | Inferred values | Companion's hidden values and desires |
+| `activities_context` | Background life | What the companion has been doing |
 | `temporal_context` | Time awareness | Current time, calendar, user schedule |
 | `graphiti_context` | Neo4j knowledge graph | Entity relationships |
 | `relationship_dynamics` | Relationship store | Typed relationships between entities |
 | `relationship_evaluation` | Private self-assessment | Companion's view of the relationship |
-| `fertility_context` | Cycle tracking | If applicable to companion persona |
+| `relationship_insights` | Pattern analysis | Computed insights from relationship patterns |
+| `fertility_context` | Cycle tracking | If applicable to companion persona (LLM-only, hidden from user) |
+| `schedule` | Calendar schedule service | Companion's daily calendar plan with time blocks |
+| `location` | Location context | Current location (if known) |
+| `user_context` | Autopilot schedule | Inferred probable user activity based on time of day |
 
-If any source fails, the pipeline continues with the remaining sources.
+If any source fails, the pipeline continues with the remaining sources. On `SIMPLE` messages (fast path), most enrichment sources are skipped; only entity_profiles, personality, internal_state, and scene_state are fetched.
+
+### Stage 1.1: Schedule Interruption Detection
+
+If the companion has a calendar event currently in progress when the user starts chatting, the pipeline checks whether that activity is multi-taskable (via a fast LLM query). If not, the event is paused and the calendar cache is cleared, so the companion can give full attention to the conversation.
 
 ### Stage 1.5: Memory Validation
 
@@ -132,7 +164,11 @@ Uses a deliberate **attention pattern** optimized for LLM positional bias:
   - Elevated to 0.8 for genuine emotional moments (vulnerability, grief, deep connection)
   - Physical intimacy stays 0.7
 
-If `CODE_EXECUTION_ENABLED`, uses `_call_llm_with_tools()` — an agentic loop (up to 5 iterations) where the LLM can call `execute_code` to use tool modules (web search, browser, Google APIs, etc.).
+Three execution paths exist depending on message complexity and enabled features:
+
+- **Standard** (`_call_llm()`): Direct call with assembled prompt + conversation history
+- **Medium path** (`_call_llm_with_memory_tool()`): Two-pass generation where the LLM can call a `search_memory` tool (up to 2 tool calls) if it needs more context before responding
+- **Tool path** (`_call_llm_with_tools()`): When `CODE_EXECUTION_ENABLED`, uses structured tool reasoning (`tool_reasoning.py`) to decide whether to run `execute_code` before generating the response (up to 5 iterations). Falls back to a legacy agentic GPT-4o-mini routing loop if needed.
 
 ### Stage 4: Post-Generation Validation
 

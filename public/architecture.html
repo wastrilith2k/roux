@@ -243,9 +243,9 @@ const DETAILS = {
     category: "Memory System",
     categoryColor: "#4ade80",
     title: "Memory System",
-    desc: "24-module persistent memory architecture spanning 5 categories. The backbone of companion continuity — every fact, feeling, episode, and goal is stored, decayed, and retrieved here.",
+    desc: "29-module persistent memory architecture spanning 5 categories. The backbone of companion continuity — every fact, feeling, episode, and goal is stored, decayed, and retrieved here.",
     bullets: [
-      "24 modules across 5 major categories",
+      "29 modules across 5 major categories",
       "Hybrid retrieval: BM25 (0.6) + cosine vector (0.4)",
       "Per-user schema isolation: user_kai, user_mira, …",
       "Feeds both anti-confabulation gates",
@@ -505,17 +505,19 @@ const DETAILS = {
   "pipeline": {
     category: "Pipeline",
     categoryColor: "#58a6ff",
-    title: "9-Stage Conversation Pipeline",
-    desc: "The heart of response generation. ConversationPipeline orchestrates every step from raw message to delivered response, including two anti-confabulation gates that bracket LLM generation.",
+    title: "Multi-Stage Conversation Pipeline",
+    desc: "The heart of response generation. ConversationPipeline orchestrates every step from raw message to delivered response. Stage 0 classifies message complexity (SIMPLE / MEDIUM / ACTION / complex) before any work begins; Stage 1.1 checks for calendar interruptions; Stage 3 has three execution paths including an on-demand memory-search tool for MEDIUM messages. Two anti-confabulation gates bracket LLM generation.",
     bullets: [
-      "9 sequential stages + 2 validation gates",
+      "Stage 0: Complexity Classification — SIMPLE / MEDIUM / ACTION / complex path routing",
+      "Stage 1.1: Calendar/schedule interruption detection before full context build",
+      "Stage 3: Three paths — standard, medium (on-demand search_memory tool), full agentic",
       "Gate 1.5 before LLM: validates context being assembled",
       "Gate 4 after LLM: fact-checks the generated response",
-      "Parallelized context fetching in Stage 2 (ThreadPoolExecutor)",
+      "Parallelized context fetching in Stage 1 (ThreadPoolExecutor, 6 workers)",
       "LLM provider chain with automatic failover in Stage 3",
-      "Async Celery dispatch in Stage 7 for all memory writes",
+      "Async Celery dispatch for all per-message memory writes",
     ],
-    tags: ["pipeline", "9-stage", "gates"],
+    tags: ["pipeline", "multi-stage", "gates", "complexity-classification"],
     paths: ["src/core/conversation/pipeline.py"],
   },
   "stage-1": {
@@ -786,13 +788,20 @@ const DETAILS = {
     category: "Autonomy System",
     categoryColor: "#fbbf24",
     title: "Autonomy System",
-    desc: "16-module proactive behavior layer. Runs as background async coroutines per companion. Orchestrates all proactive behavior: reach-out, interjection, goal pursuit, and mood management.",
+    desc: "19+ module proactive behavior layer. Runs as background async coroutines per companion. Orchestrates all proactive behavior: reach-out, interjection, goal pursuit, and mood management.",
     bullets: [
-      "16 modules across 6 subsystems",
+      "19+ modules across 6 subsystems",
       "Per-companion async coroutines (not per-user)",
       "Heartbeat timer: evaluates proactive actions every N seconds",
       "Orchestrates: Reach-Out, Interjection, Goal, Mood, Curiosity Engines",
       "Runs independently of incoming message flow",
+      "goals.py — CRUD persistence for companion goals (PostgreSQL)",
+      "persona_adaptation.py — micro/macro personality adaptation (AutoPal-inspired)",
+      "proactive_scoring.py — 8-heuristic reach-out quality scoring (0.0–1.0)",
+      "reflection_engine.py — daily/weekly reflection generation from journal entries",
+      "relationship_evaluation.py — companion's private self-assessment of the relationship",
+      "telegram_bridge.py — Telegram bot connection, message routing, and proactive delivery",
+      "work_projects.py — companion's active personal work/project context",
     ],
     tags: ["autonomy", "async", "background", "proactive"],
     paths: ["src/autonomy/always_on_service.py"],
@@ -956,16 +965,16 @@ const DETAILS = {
     category: "Celery Task System",
     categoryColor: "#a78bfa",
     title: "Celery Task System",
-    desc: "30+ tasks orchestrated by Celery with Redis as broker and result backend. Three tiers: per-message (inline dispatch), nightly (03:00 crontab), and weekly (Sunday 04:00 crontab).",
+    desc: "40+ tasks orchestrated by Celery with Redis as broker and result backend. Three tiers: per-message (inline dispatch), nightly (APScheduler crontab), and weekly/periodic (goal_planning runs every 6 hours; value inference weekly; monthly reflections).",
     bullets: [
-      "30+ registered tasks in celery_app.py",
+      "40+ registered tasks in 40 task files in src/tasks/",
       "Redis broker + result backend",
       "Per-message: apply_async() from Stage 7 of pipeline",
       "Nightly: crontab(hour=3, minute=0) — per active companion",
       "Weekly: crontab(day_of_week=0, hour=4) — deep analysis",
       "Task isolation: per-user schema routing throughout",
     ],
-    tags: ["Celery", "Redis", "30+ tasks", "Beat"],
+    tags: ["Celery", "Redis", "40+ tasks", "Beat"],
     paths: ["src/celery_app.py", "src/tasks/"],
   },
   "per-message-tasks": {
@@ -974,23 +983,20 @@ const DETAILS = {
     title: "Per-Message Tasks",
     desc: "15 tasks dispatched via apply_async() from pipeline Stage 7 after every conversation turn. Run in background while response is delivered.",
     bullets: [
-      "extract_facts: SPO triple extraction to pgvector",
-      "extract_opinions: stance detection and belief delta",
-      "update_relationship: intimacy, trust, conflict update",
-      "episodic_store: event record with salience scoring",
-      "entity_extraction: NER and entity profile linking",
-      "kg_update: Graphiti Neo4j upsert",
-      "observational_update: behavioral pattern write",
-      "biography_trigger: marks bio stale if threshold met",
-      "curiosity_update: open question scan",
-      "goal_progress: advancement check",
-      "mood_shift: affective state write",
-      "code_execution_cleanup: sandbox teardown",
-      "reach_out_pressure: urgency recalc",
-      "relationship_heat: warmth delta",
-      "graphiti_extraction: episode → knowledge graph",
+      "fact_extraction_task: SPO triple extraction to pgvector",
+      "episode_tracking_task: detect boundaries, link messages, update topic/emotion",
+      "relationship_extraction_task: typed relationships from messages",
+      "correction_task: detect and store user corrections",
+      "graphiti_extraction_task: populate Neo4j knowledge graph",
+      "internal_state_task: update energy, mood, needs",
+      "episodic_embedding_task: generate and store message embedding (pgvector)",
+      "scene_extraction_task: extract physical scene state",
+      "curiosity_extraction_task: extract curiosity triggers",
+      "interaction_outcome_task: track user engagement with companion message",
+      "conversation_batch_task: batched per-conversation tasks (debounced)",
+      "relationship_dynamics_task: update Gottman-informed relationship state",
     ],
-    tags: ["15-tasks", "apply_async", "per-message"],
+    tags: ["12-tasks", "apply_async", "per-message"],
     paths: ["src/celery_app.py", "src/tasks/"],
   },
   "nightly-tasks": {
@@ -1041,8 +1047,11 @@ const DETAILS = {
     desc: "Beat scheduler configuration and worker deployment details.",
     bullets: [
       "Per-message: fired inline via apply_async() after each pipeline run",
-      "Nightly: crontab(hour=3, minute=0) — runs for each active companion",
-      "Weekly: crontab(day_of_week=0, hour=4) — deep analysis window",
+      "Nightly/Daily: APScheduler cron triggers (daily_summary 12:05 AM, reflection 12:30 AM, biography every 24h, etc.)",
+      "goal_planning_task: every 6 hours (6:30 AM, 12:30 PM, 6:30 PM, 12:30 AM)",
+      "goal_signal_task: 9 AM and 9 PM daily",
+      "Weekly: value_inference Wednesday 3:30 AM, weekly_reflection Sunday 3 AM",
+      "Monthly: monthly_reflection 1st of month 4 AM, graphiti_pruning 1st of month 5 AM",
       "Workers: companion-celery-worker (Docker)",
       "Beat: companion-celery-beat (Docker)",
       "Broker: Redis — Result backend: Redis",
@@ -1089,7 +1098,7 @@ const DETAILS = {
     title: "Redis",
     desc: "Multi-purpose in-memory store serving as Celery broker, result backend, session cache, Socket.IO pub/sub channel, and reach-out pressure store.",
     bullets: [
-      "Celery broker: task queue for all 30+ tasks",
+      "Celery broker: task queue for all 40+ tasks",
       "Celery result backend: task result storage",
       "Session cache: active companion session state",
       "Socket.IO pub/sub: real-time message fan-out",
@@ -1748,7 +1757,7 @@ function rightArrow(spineRight, spineCy, satLeft, satCy, color, marker, opts={})
   rightSat(mainG, topY, panH, C.autonomy, 'Mood Engine',
     ['14-mood state machine · event-driven', 'overnight reset · long-running arcs'], 'mood-engine');
   rightSat(mainG, topY + panH + gap, panH, C.autonomy, 'Autonomy System',
-    ['16 modules · always_on_service.py', 'reach-out pressure · background loops'], 'autonomy-system');
+    ['19+ modules · always_on_service.py', 'reach-out pressure · background loops'], 'autonomy-system');
 
   rightArrow(SPINE_X + SPINE_W, s5cy, RIGHT_START_X, topY + panH/2, C.autonomy.stroke, 'arr-amber');
   rightArrow(SPINE_X + SPINE_W, s5cy, RIGHT_START_X, topY + panH + gap + panH/2, C.autonomy.stroke, 'arr-amber');
@@ -1777,7 +1786,7 @@ function rightArrow(spineRight, spineCy, satLeft, satCy, color, marker, opts={})
         .text('Per-Message Tasks (Celery)');
       g.append('text').attr('x', x + w/2).attr('y', topY + 30)
         .attr('text-anchor', 'middle').attr('fill', C.celery.sub).attr('font-size', 9)
-        .text('15 tasks · apply_async() after each pipeline run');
+        .text('12 tasks · apply_async() after each pipeline run');
 
       const tasks = [
         'extract_facts · extract_opinions · update_relationship',

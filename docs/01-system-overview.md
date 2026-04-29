@@ -13,13 +13,13 @@ User Message (WebSocket / Telegram / CLI)
         |
    Message Handler
         |
-   9-Stage Conversation Pipeline
-   (context building, memory retrieval, message analysis,
-    inner monologue, LLM generation, claim validation, response critique)
+   Multi-Stage Conversation Pipeline
+   (complexity classification, context building, memory validation, message analysis,
+    inner monologue, LLM generation, claim validation, response critique, image intent)
         |
    Response + Store to PostgreSQL
         |
-   30+ Celery Background Tasks
+   40 Celery Background Tasks
    (fact extraction, episode learning, opinion formation,
     relationship evaluation, biography synthesis, goal planning, etc.)
 ```
@@ -60,9 +60,9 @@ companion-framework/
     core/                    # Conversation pipeline, internal state, mood, memory retrieval
       conversation/          # Pipeline stages (context builder, analyzer, critic, checkpoint)
       commands/              # Slash command handlers
-    tasks/                   # 30+ Celery background tasks
-    autonomy/                # Proactive reach-out, goals, opinions, reflection, interjection
-    memory/                  # 24 memory modules (facts, episodes, semantic, graph, biographies)
+    tasks/                   # 40 Celery background tasks
+    autonomy/                # Proactive reach-out, goals, opinions, reflection, interjection (19 modules)
+    memory/                  # 29 memory modules (facts, episodes, semantic, graph, biographies)
     integrations/            # Google (Gmail + Calendar), Cloudinary
     scheduling/              # Calendar-aware scheduling, companion schedule
     llm/                     # LLM provider abstraction (Fireworks, OpenAI, Anthropic, DeepSeek)
@@ -88,6 +88,6 @@ companion-framework/
   prompts/core/              # Modular prompt templates (5 files)
   public/                    # Web interfaces (chat + observation dashboard)
   cli/                       # Terminal chat client
-  tests/                     # 13 test files
+  tests/                     # 70+ test files
   migrations/                # Alembic database migrations
 ```

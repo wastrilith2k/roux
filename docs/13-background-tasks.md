@@ -12,7 +12,7 @@
 - **Time limits**: 10m max, 9m soft
 - **Worker prefetch**: 1 task at a time
 - **Auto-restart**: After 50 tasks (memory leak prevention)
-- **Task files**: 34 in `src/tasks/`
+- **Task files**: 40 in `src/tasks/`
 
 ## Task Catalog
 
@@ -26,27 +26,47 @@
 | `correction_task` | Async | Detect and store user corrections |
 | `graphiti_extraction_task` | Async | Populate Neo4j knowledge graph |
 | `internal_state_task` | Async | Update energy, mood, needs |
-| Episodic embedding | Async | Generate and store message embedding |
-| Scene extraction | Async | Extract physical scene state |
+| `episodic_embedding_task` | Async | Generate and store message embedding (pgvector) |
+| `scene_extraction_task` | Async | Extract physical scene state |
+| `curiosity_extraction_task` | Async | Extract curiosity triggers from the conversation |
+| `interaction_outcome_task` | Async | Track how user engaged with companion's message |
+| `conversation_batch_task` | Async (debounced) | Batched per-conversation tasks (episode, event, outcome) |
+| `relationship_dynamics_task` | Async | Update Gottman-informed relationship state |
 
 ### Nightly Tasks
 
 | Task | Schedule | What It Does |
 |------|----------|-------------|
-| `daily_summary_task` | 12:05 AM PT | Synthesize yesterday's messages into journal |
+| `daily_summary_task` | 12:05 AM PT (APScheduler) | Synthesize yesterday's messages into journal |
 | `reflection_task` | 12:30 AM PT | Analyze emotional arc, extract insights |
-| `biography_refresh_task` | Daily | Re-synthesize theme paragraphs from facts |
+| `biography_refresh_task` | Every 24 hours | Re-synthesize biography paragraphs from facts |
+| `episode_learning_task` | 4:00 AM PT | Extract lessons and patterns from recent episodes |
+| `event_consolidation_task` | 3:00 AM PT | Consolidate synthesized events |
+| `episodic_consolidation_task` | 2:00 AM PT | Promote recurring episodes to semantic facts |
+| `memory_gap_analysis_task` | 6:00 AM PT | Detect knowledge gaps, generate curiosity threads |
+| `entity_profile_fact_validator` | 3:30 AM PT | Archive facts that contradict entity profiles |
+| `sleep_time_consolidation_task` | Every 3 hours | Merge, promote, and detect stale facts |
+| `core_memory_task` | On-demand | Refresh `COMPANION_MEMORY.md` narrative |
 
 ### Weekly/Periodic Tasks
 
 | Task | Schedule | What It Does |
 |------|----------|-------------|
-| `goal_planning_task` | Weekly (Sunday) or after emotional days | Form new goals from reflections/signals |
-| `value_inference_task` | Weekly | Extract hidden values from companion messages |
-| `relationship_evaluation_task` | Weekly | Private self-assessment of relationship |
+| `goal_planning_task` | Every 6h (6:30AM, 12:30PM, 6:30PM, 12:30AM) | Decompose unplanned goals into actionable steps |
+| `goal_signal_task` | 9 AM and 9 PM | Form new goals from curiosities, opinions, research findings |
+| `value_inference_task` | Weekly (Wednesday 3:30 AM) + monthly full history | Extract hidden values from companion messages |
+| `weekly_reflection_task` | Sunday 3:00 AM | Analyze patterns across the week |
+| `monthly_reflection_task` | 1st of month, 4:00 AM | Relationship evolution analysis |
+| `relationship_evaluation_task` | Tuesday 2:30 AM | Private self-assessment of relationship |
 | `observation_task` | When thresholds met | Compress conversations (50 msgs or 30K tokens) |
 | `observation_scheduler` | Daily | Consolidate old observations into reflections |
-| `memory_pruning_task` | Periodic | Clean up low-value memories |
+| `memory_pruning_task` | Sunday 5:30 AM | Archive stale low-importance facts |
+| `embedding_pruning_task` | Sunday 6:00 AM | Archive stale pgvector message embeddings |
+| `graphiti_pruning_task` | 1st of month, 5:00 AM | Archive old Neo4j episodes and expired edges |
+| `calendar_schedule_task` | 5:30 AM PT daily | Generate companion's daily calendar plan |
+| `reminder_check_task` | Every 2h (8 AM–8 PM) | Surface due reminders as queued_thoughts |
+| `gmail_check_task` | Every 30 min (8 AM–9 PM) | Surface notable emails as queued_thoughts |
+| `opinion_formation_task` | 1:00 AM PT daily | Form opinions from reflections; Sunday also decays weak ones |
 
 ### On-Demand Tasks
 

@@ -55,7 +55,7 @@ python scripts/seed_database.py --all
 
 ### Test Suite
 
-13 test files + `conftest.py` with ~50+ test methods:
+70+ test files (the 13 listed below are a representative selection):
 
 | Test File | Coverage |
 |-----------|----------|

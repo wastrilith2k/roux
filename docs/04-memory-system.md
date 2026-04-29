@@ -4,7 +4,7 @@
 
 ---
 
-The memory system comprises 24 modules organized into 5 categories. Together they form a comprehensive memory architecture that prevents hallucination, enables rich context retrieval, and maintains temporal awareness.
+The memory system comprises 29 modules organized into 5 categories. Together they form a comprehensive memory architecture that prevents hallucination, enables rich context retrieval, and maintains temporal awareness.
 
 ## 4.1 Core Memory Systems
 
@@ -162,13 +162,19 @@ LLM-scored importance (1-10) via Fireworks Kimi K2:
 | Module | Purpose |
 |--------|---------|
 | `companion_journal.py` | Database storage for daily reflection entries |
+| `conversation_compressor.py` | Compresses long conversation history for context budget |
+| `emotional_memory.py` | Tracks emotional context and tone history |
 | `fact_approval.py` | Approval queue for sensitive facts (medical, legal, relationship) |
-| `graphiti_search.py` | Integration with Graphiti knowledge graph API |
+| `graphiti_search.py` | Integration with Graphiti knowledge graph API (Neo4j) |
 | `fireworks_reranker.py` | Wrapper for Fireworks Qwen3 reranker |
 | `message_condenser.py` | Token-efficient message summarization |
 | `retrieval_agent.py` | Multi-modal retrieval coordinator (facts + semantics + episodes) |
+| `retrieval_feedback.py` | Tracks retrieval quality signals for future ranking improvements |
+| `strategy_tip_extractor.py` | Extracts reusable conversation strategy tips from episodes |
+| `strategy_tips.py` | Storage and retrieval of companion conversation strategy tips |
 | `temporal_context.py` | Time-aware fact/event filtering |
 | `benchmark_evaluator.py` | Memory quality evaluation |
+| `benchmark_questions_data.py` | Static test questions for memory benchmark runs |
 
 ## Memory Data Flow
 

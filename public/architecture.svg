@@ -38,7 +38,7 @@
      ══════════════════════════════════════════════════════════ -->
 <rect x="10" y="55" width="244" height="868" rx="6" fill="#0a1f0a" stroke="#2ea043" stroke-width="1.5"/>
 <text x="132" y="73" text-anchor="middle" fill="#4ade80" class="hdr">Memory System</text>
-<text x="132" y="86" text-anchor="middle" fill="#6b9e6b" class="sub">24 modules · 5 categories</text>
+<text x="132" y="86" text-anchor="middle" fill="#6b9e6b" class="sub">29 modules · 5 categories</text>
 
 <!-- Core Memory -->
 <rect x="18" y="93" width="228" height="50" rx="3" fill="#112211" stroke="#2ea043" stroke-width="1"/>
@@ -155,7 +155,7 @@
 
 <!-- Pipeline outer box -->
 <rect x="262" y="157" width="238" height="766" rx="5" fill="#0c1a2c" stroke="#388bfd" stroke-width="1.5"/>
-<text x="381" y="174" text-anchor="middle" fill="#58a6ff" class="hdr">9-Stage Pipeline</text>
+<text x="381" y="174" text-anchor="middle" fill="#58a6ff" class="hdr">Multi-Stage Pipeline</text>
 <text x="381" y="186" text-anchor="middle" fill="#4a6a8a" class="tiny">ConversationPipeline · pipeline.py</text>
 
 <!-- Stage 1 -->
@@ -317,7 +317,7 @@
 <!-- Autonomy System box -->
 <rect x="508" y="463" width="238" height="460" rx="5" fill="#1e1200" stroke="#d97706" stroke-width="1.5"/>
 <text x="627" y="481" text-anchor="middle" fill="#fbbf24" class="hdr">Autonomy System</text>
-<text x="627" y="494" text-anchor="middle" fill="#8a6c20" class="sub">16 modules · always_on_service.py</text>
+<text x="627" y="494" text-anchor="middle" fill="#8a6c20" class="sub">19+ modules · always_on_service.py</text>
 
 <!-- Always-On Service -->
 <rect x="516" y="501" width="222" height="52" rx="3" fill="#291a00" stroke="#d97706" stroke-width="1"/>
@@ -465,7 +465,7 @@
      ══════════════════════════════════════════════════════════ -->
 <rect x="982" y="55" width="608" height="868" rx="5" fill="#100c28" stroke="#8b5cf6" stroke-width="1.5"/>
 <text x="1286" y="73" text-anchor="middle" fill="#a78bfa" class="hdr">Celery Task System</text>
-<text x="1286" y="86" text-anchor="middle" fill="#5a4a8a" class="sub">30+ tasks · Beat scheduler · Redis broker · celery_app.py</text>
+<text x="1286" y="86" text-anchor="middle" fill="#5a4a8a" class="sub">40+ tasks · Beat scheduler · Redis broker · celery_app.py</text>
 
 <!-- Per-Message Tasks -->
 <rect x="990" y="93" width="592" height="262" rx="4" fill="#180d40" stroke="#7c3aed" stroke-width="1"/>
