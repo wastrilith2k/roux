@@ -97,15 +97,12 @@ class CommandHandler:
         cmd_name = parts[0].lower()
         args = parts[1] if len(parts) > 1 else ""
 
-        # Look up and execute command
+        # Look up and execute command locally; unknown commands fall through to backend
         handler = self.commands.get(cmd_name)
         if handler:
             return await handler(args)
         else:
-            return CommandResult(
-                handled=True,
-                message=f"unknown command: /{cmd_name}"
-            )
+            return CommandResult(handled=False)
 
     async def cmd_help(self, args: str) -> CommandResult:
         """Show help"""

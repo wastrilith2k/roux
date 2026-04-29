@@ -1,0 +1,714 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1060" width="1600" height="1060">
+<defs>
+  <marker id="arr" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+    <polygon points="0 0, 7 3.5, 0 7" fill="#6b7280"/>
+  </marker>
+  <marker id="arr-g" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+    <polygon points="0 0, 7 3.5, 0 7" fill="#2ea043"/>
+  </marker>
+  <marker id="arr-b" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+    <polygon points="0 0, 7 3.5, 0 7" fill="#388bfd"/>
+  </marker>
+  <marker id="arr-p" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+    <polygon points="0 0, 7 3.5, 0 7" fill="#8b5cf6"/>
+  </marker>
+  <marker id="arr-a" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+    <polygon points="0 0, 7 3.5, 0 7" fill="#d97706"/>
+  </marker>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; }
+    .hdr { font-size:13px; font-weight:bold; }
+    .lbl { font-size:11px; font-weight:bold; }
+    .sub { font-size:9.5px; }
+    .gate { font-size:10px; font-weight:bold; }
+    .tiny { font-size:9px; }
+  </style>
+</defs>
+
+<!-- Background -->
+<rect width="1600" height="1060" fill="#0d1117"/>
+
+<!-- Title -->
+<text x="800" y="26" text-anchor="middle" fill="#e6edf3" font-size="16" font-weight="bold">Roux — System Architecture</text>
+<text x="800" y="44" text-anchor="middle" fill="#8b949e" font-size="10">Flask · Socket.IO · Celery · PostgreSQL+pgvector · Neo4j (Graphiti) · Redis · Python 3.11</text>
+
+<!-- ══════════════════════════════════════════════════════════
+     COLUMN 1: MEMORY SYSTEM  x=10..254
+     ══════════════════════════════════════════════════════════ -->
+<rect x="10" y="55" width="244" height="868" rx="6" fill="#0a1f0a" stroke="#2ea043" stroke-width="1.5"/>
+<text x="132" y="73" text-anchor="middle" fill="#4ade80" class="hdr">Memory System</text>
+<text x="132" y="86" text-anchor="middle" fill="#6b9e6b" class="sub">24 modules · 5 categories</text>
+
+<!-- Core Memory -->
+<rect x="18" y="93" width="228" height="50" rx="3" fill="#112211" stroke="#2ea043" stroke-width="1"/>
+<text x="26" y="108" fill="#4ade80" class="lbl">Core Memory</text>
+<text x="26" y="121" fill="#6b9e6b" class="sub">emotional core · personality traits</text>
+<text x="26" y="133" fill="#6b9e6b" class="sub">identity anchors · long-term values</text>
+
+<!-- Fact Store -->
+<rect x="18" y="149" width="228" height="68" rx="3" fill="#112211" stroke="#2ea043" stroke-width="1"/>
+<text x="26" y="164" fill="#4ade80" class="lbl">Fact Store</text>
+<text x="26" y="177" fill="#6b9e6b" class="sub">SPO triples · pgvector hybrid search</text>
+<text x="26" y="189" fill="#6b9e6b" class="sub">BM25 + cosine (0.6 / 0.4 weight)</text>
+<text x="26" y="201" fill="#6b9e6b" class="sub">confidence decay · contradiction detect</text>
+<text x="26" y="211" fill="#6b9e6b" class="sub">per-user schema isolation (user_*)</text>
+
+<!-- Episodic Memory -->
+<rect x="18" y="223" width="228" height="48" rx="3" fill="#112211" stroke="#2ea043" stroke-width="1"/>
+<text x="26" y="238" fill="#4ade80" class="lbl">Episodic Memory</text>
+<text x="26" y="251" fill="#6b9e6b" class="sub">significant events · experiences</text>
+<text x="26" y="263" fill="#6b9e6b" class="sub">temporal anchoring · salience scoring</text>
+
+<!-- Knowledge Graph -->
+<rect x="18" y="277" width="228" height="58" rx="3" fill="#112211" stroke="#2ea043" stroke-width="1"/>
+<text x="26" y="292" fill="#4ade80" class="lbl">Knowledge Graph</text>
+<text x="26" y="305" fill="#6b9e6b" class="sub">Graphiti · Neo4j backend</text>
+<text x="26" y="317" fill="#6b9e6b" class="sub">Entity nodes · Episodic nodes · edges</text>
+<text x="26" y="328" fill="#6b9e6b" class="sub">semantic search · entity relationships</text>
+
+<!-- Observational Memory -->
+<rect x="18" y="341" width="228" height="48" rx="3" fill="#112211" stroke="#2ea043" stroke-width="1"/>
+<text x="26" y="356" fill="#4ade80" class="lbl">Observational Memory</text>
+<text x="26" y="369" fill="#6b9e6b" class="sub">behavioral patterns · habit tracking</text>
+<text x="26" y="381" fill="#6b9e6b" class="sub">preference inference · routine detect</text>
+
+<!-- Relationship Store -->
+<rect x="18" y="395" width="228" height="48" rx="3" fill="#112211" stroke="#2ea043" stroke-width="1"/>
+<text x="26" y="410" fill="#4ade80" class="lbl">Relationship Store</text>
+<text x="26" y="423" fill="#6b9e6b" class="sub">per-dyad state · trust · intimacy level</text>
+<text x="26" y="435" fill="#6b9e6b" class="sub">conflict history · shared experiences</text>
+
+<!-- Entity Profiles -->
+<rect x="18" y="449" width="228" height="70" rx="3" fill="#112211" stroke="#2ea043" stroke-width="1.5"/>
+<text x="26" y="464" fill="#4ade80" class="lbl">Entity Profiles  ✦ ground truth</text>
+<text x="26" y="477" fill="#6b9e6b" class="sub">YAML files · data/entity_profiles/</text>
+<text x="26" y="489" fill="#6b9e6b" class="sub">git-versioned · auto-commit audit trail</text>
+<text x="26" y="501" fill="#6b9e6b" class="sub">authoritative facts about known people</text>
+<text x="26" y="512" fill="#6b9e6b" class="sub">feeds both anti-confabulation gates</text>
+
+<!-- Biographies -->
+<rect x="18" y="525" width="228" height="48" rx="3" fill="#112211" stroke="#2ea043" stroke-width="1"/>
+<text x="26" y="540" fill="#4ade80" class="lbl">Biographies</text>
+<text x="26" y="553" fill="#6b9e6b" class="sub">auto-generated companion summaries</text>
+<text x="26" y="565" fill="#6b9e6b" class="sub">LLM condensation · nightly refresh</text>
+
+<!-- Daily Summaries -->
+<rect x="18" y="579" width="228" height="48" rx="3" fill="#112211" stroke="#2ea043" stroke-width="1"/>
+<text x="26" y="594" fill="#4ade80" class="lbl">Daily Summaries</text>
+<text x="26" y="607" fill="#6b9e6b" class="sub">24h conversation condensation</text>
+<text x="26" y="619" fill="#6b9e6b" class="sub">injected at session start</text>
+
+<!-- Opinions -->
+<rect x="18" y="633" width="228" height="48" rx="3" fill="#112211" stroke="#2ea043" stroke-width="1"/>
+<text x="26" y="648" fill="#4ade80" class="lbl">Opinions</text>
+<text x="26" y="661" fill="#6b9e6b" class="sub">stance tracking · evolving beliefs</text>
+<text x="26" y="673" fill="#6b9e6b" class="sub">per-topic confidence · drift detection</text>
+
+<!-- Goals -->
+<rect x="18" y="687" width="228" height="48" rx="3" fill="#112211" stroke="#2ea043" stroke-width="1"/>
+<text x="26" y="702" fill="#4ade80" class="lbl">Goals</text>
+<text x="26" y="715" fill="#6b9e6b" class="sub">long-term objectives · sub-goals</text>
+<text x="26" y="727" fill="#6b9e6b" class="sub">progress tracking · priority ranking</text>
+
+<!-- Curiosity Threads -->
+<rect x="18" y="741" width="228" height="48" rx="3" fill="#112211" stroke="#2ea043" stroke-width="1"/>
+<text x="26" y="756" fill="#4ade80" class="lbl">Curiosity Threads</text>
+<text x="26" y="769" fill="#6b9e6b" class="sub">open questions · topics to revisit</text>
+<text x="26" y="781" fill="#6b9e6b" class="sub">interest-driven topic seeding</text>
+
+<!-- Persona Config -->
+<rect x="18" y="795" width="228" height="48" rx="3" fill="#112211" stroke="#2ea043" stroke-width="1"/>
+<text x="26" y="810" fill="#4ade80" class="lbl">Persona Config</text>
+<text x="26" y="823" fill="#6b9e6b" class="sub">persona.yaml · pronouns · names</text>
+<text x="26" y="835" fill="#6b9e6b" class="sub">identity · voice · companion/user roles</text>
+
+<!-- Mood State -->
+<rect x="18" y="849" width="228" height="38" rx="3" fill="#112211" stroke="#2ea043" stroke-width="1"/>
+<text x="26" y="864" fill="#4ade80" class="lbl">Mood State</text>
+<text x="26" y="877" fill="#6b9e6b" class="sub">affective state machine · 14 mood types</text>
+
+<!-- ══════════════════════════════════════════════════════════
+     COLUMN 2: INTERFACES + PIPELINE  x=262..500
+     ══════════════════════════════════════════════════════════ -->
+
+<!-- Interfaces bar -->
+<rect x="262" y="55" width="238" height="46" rx="5" fill="#131d2e" stroke="#388bfd" stroke-width="1.5"/>
+<text x="381" y="71" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="bold">User Interfaces</text>
+<rect x="270" y="78" width="60" height="16" rx="2" fill="#1f3050" stroke="#388bfd" stroke-width="0.8"/>
+<text x="300" y="90" text-anchor="middle" fill="#93c5fd" class="tiny">Web Chat</text>
+<rect x="336" y="78" width="60" height="16" rx="2" fill="#1f3050" stroke="#388bfd" stroke-width="0.8"/>
+<text x="366" y="90" text-anchor="middle" fill="#93c5fd" class="tiny">Telegram</text>
+<rect x="402" y="78" width="38" height="16" rx="2" fill="#1f3050" stroke="#388bfd" stroke-width="0.8"/>
+<text x="421" y="90" text-anchor="middle" fill="#93c5fd" class="tiny">CLI</text>
+
+<!-- Arrow: Interfaces → Message Handler -->
+<line x1="381" y1="101" x2="381" y2="112" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- Message Handler -->
+<rect x="262" y="113" width="238" height="32" rx="4" fill="#1d3050" stroke="#388bfd" stroke-width="1.5"/>
+<text x="381" y="127" text-anchor="middle" fill="#93c5fd" class="lbl">Message Handler</text>
+<text x="381" y="139" text-anchor="middle" fill="#5c7ea8" class="sub">routing · validation · session init</text>
+
+<!-- Arrow: Message Handler → Pipeline -->
+<line x1="381" y1="145" x2="381" y2="156" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- Pipeline outer box -->
+<rect x="262" y="157" width="238" height="766" rx="5" fill="#0c1a2c" stroke="#388bfd" stroke-width="1.5"/>
+<text x="381" y="174" text-anchor="middle" fill="#58a6ff" class="hdr">9-Stage Pipeline</text>
+<text x="381" y="186" text-anchor="middle" fill="#4a6a8a" class="tiny">ConversationPipeline · pipeline.py</text>
+
+<!-- Stage 1 -->
+<rect x="270" y="192" width="222" height="46" rx="3" fill="#152035" stroke="#388bfd" stroke-width="1"/>
+<text x="280" y="207" fill="#58a6ff" class="lbl">① Pre-processing</text>
+<text x="280" y="220" fill="#4a6a8a" class="sub">intent detection · message parse</text>
+<text x="280" y="231" fill="#4a6a8a" class="sub">session load · companion init</text>
+
+<!-- Arrow → Gate 1.5 -->
+<line x1="381" y1="238" x2="381" y2="246" stroke="#6b7280" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Gate 1.5: Memory Validation -->
+<rect x="270" y="247" width="222" height="58" rx="3" fill="#2a0e10" stroke="#ef4444" stroke-width="1.8"/>
+<text x="381" y="262" text-anchor="middle" fill="#ef4444" class="gate">⬡ GATE 1.5 — Memory Validation</text>
+<text x="381" y="275" text-anchor="middle" fill="#fca5a5" class="sub">Anti-confabulation · pre-generation</text>
+<text x="381" y="287" text-anchor="middle" fill="#fca5a5" class="sub">validates context vs. fact store + entity profiles</text>
+<text x="381" y="298" text-anchor="middle" fill="#fca5a5" class="sub">blocks hallucinated context entering LLM</text>
+
+<!-- Arrow → Stage 2 -->
+<line x1="381" y1="305" x2="381" y2="313" stroke="#6b7280" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Stage 2 -->
+<rect x="270" y="314" width="222" height="64" rx="3" fill="#152035" stroke="#388bfd" stroke-width="1"/>
+<text x="280" y="329" fill="#58a6ff" class="lbl">② Context Assembly</text>
+<text x="280" y="342" fill="#4a6a8a" class="sub">ContextBuilder · ThreadPoolExecutor</text>
+<text x="280" y="354" fill="#4a6a8a" class="sub">parallel fetch: facts · episodes · opinions</text>
+<text x="280" y="366" fill="#4a6a8a" class="sub">entity profiles · relationship state</text>
+<text x="280" y="377" fill="#4a6a8a" class="sub">daily summaries · curiosity threads</text>
+
+<!-- Arrow → Stage 3 -->
+<line x1="381" y1="378" x2="381" y2="386" stroke="#6b7280" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Stage 3 -->
+<rect x="270" y="387" width="222" height="46" rx="3" fill="#152035" stroke="#388bfd" stroke-width="1"/>
+<text x="280" y="402" fill="#58a6ff" class="lbl">③ LLM Generation</text>
+<text x="280" y="415" fill="#4a6a8a" class="sub">provider chain w/ automatic failover</text>
+<text x="280" y="426" fill="#4a6a8a" class="sub">Fireworks → DeepSeek → OpenAI → Anthropic</text>
+
+<!-- Arrow → Gate 4 -->
+<line x1="381" y1="433" x2="381" y2="441" stroke="#6b7280" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Gate 4: Claim Validation -->
+<rect x="270" y="442" width="222" height="58" rx="3" fill="#2a0e10" stroke="#ef4444" stroke-width="1.8"/>
+<text x="381" y="457" text-anchor="middle" fill="#ef4444" class="gate">⬡ GATE 4 — Claim Validation</text>
+<text x="381" y="470" text-anchor="middle" fill="#fca5a5" class="sub">Anti-confabulation · post-generation</text>
+<text x="381" y="482" text-anchor="middle" fill="#fca5a5" class="sub">fact-checks response vs. stored facts</text>
+<text x="381" y="493" text-anchor="middle" fill="#fca5a5" class="sub">strips or flags unsupported claims</text>
+
+<!-- Arrow → Stage 4 -->
+<line x1="381" y1="500" x2="381" y2="508" stroke="#6b7280" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Stage 4 -->
+<rect x="270" y="509" width="222" height="46" rx="3" fill="#152035" stroke="#388bfd" stroke-width="1"/>
+<text x="280" y="524" fill="#58a6ff" class="lbl">④ Response Processing</text>
+<text x="280" y="537" fill="#4a6a8a" class="sub">formatting · length control</text>
+<text x="280" y="548" fill="#4a6a8a" class="sub">persona voice application</text>
+
+<!-- Arrow → Stage 5 -->
+<line x1="381" y1="555" x2="381" y2="563" stroke="#6b7280" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Stage 5 -->
+<rect x="270" y="564" width="222" height="46" rx="3" fill="#152035" stroke="#388bfd" stroke-width="1"/>
+<text x="280" y="579" fill="#58a6ff" class="lbl">⑤ Emotional Post-processing</text>
+<text x="280" y="592" fill="#4a6a8a" class="sub">mood state update · affective shift</text>
+<text x="280" y="603" fill="#4a6a8a" class="sub">relationship heat adjustment</text>
+
+<!-- Arrow → Stage 6 -->
+<line x1="381" y1="610" x2="381" y2="618" stroke="#6b7280" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Stage 6 -->
+<rect x="270" y="619" width="222" height="46" rx="3" fill="#152035" stroke="#388bfd" stroke-width="1"/>
+<text x="280" y="634" fill="#58a6ff" class="lbl">⑥ Memory Write</text>
+<text x="280" y="647" fill="#4a6a8a" class="sub">message store · session update</text>
+<text x="280" y="658" fill="#4a6a8a" class="sub">episodic record · opinion delta</text>
+
+<!-- Arrow → Stage 7 -->
+<line x1="381" y1="665" x2="381" y2="673" stroke="#6b7280" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Stage 7 -->
+<rect x="270" y="674" width="222" height="46" rx="3" fill="#152035" stroke="#388bfd" stroke-width="1"/>
+<text x="280" y="689" fill="#58a6ff" class="lbl">⑦ Background Dispatch</text>
+<text x="280" y="702" fill="#4a6a8a" class="sub">Celery apply_async · fact extraction</text>
+<text x="280" y="713" fill="#4a6a8a" class="sub">KG update · biography trigger queue</text>
+
+<!-- Arrow → Stage 8 -->
+<line x1="381" y1="720" x2="381" y2="728" stroke="#6b7280" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Stage 8 -->
+<rect x="270" y="729" width="222" height="46" rx="3" fill="#152035" stroke="#388bfd" stroke-width="1"/>
+<text x="280" y="744" fill="#58a6ff" class="lbl">⑧ Delivery</text>
+<text x="280" y="757" fill="#4a6a8a" class="sub">Socket.IO emit · Telegram send</text>
+<text x="280" y="768" fill="#4a6a8a" class="sub">typing simulation · latency model</text>
+
+<!-- Arrow → Stage 9 -->
+<line x1="381" y1="775" x2="381" y2="783" stroke="#6b7280" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Stage 9 -->
+<rect x="270" y="784" width="222" height="46" rx="3" fill="#152035" stroke="#388bfd" stroke-width="1"/>
+<text x="280" y="799" fill="#58a6ff" class="lbl">⑨ Autonomy Check</text>
+<text x="280" y="812" fill="#4a6a8a" class="sub">reach-out pressure update</text>
+<text x="280" y="823" fill="#4a6a8a" class="sub">goal progress · interjection eval</text>
+
+<!-- ══════════════════════════════════════════════════════════
+     COLUMN 3: LLM + AUTONOMY  x=508..746
+     ══════════════════════════════════════════════════════════ -->
+
+<!-- LLM Infrastructure box -->
+<rect x="508" y="55" width="238" height="400" rx="5" fill="#19082a" stroke="#ec4899" stroke-width="1.5"/>
+<text x="627" y="73" text-anchor="middle" fill="#f472b6" class="hdr">LLM Infrastructure</text>
+<text x="627" y="86" text-anchor="middle" fill="#7c4a8a" class="sub">provider_factory.py · failover chain</text>
+
+<!-- Fireworks AI (primary) -->
+<rect x="516" y="93" width="222" height="38" rx="3" fill="#2a1040" stroke="#ec4899" stroke-width="1.2"/>
+<text x="526" y="108" fill="#f472b6" class="lbl">Fireworks AI</text>
+<rect x="670" y="97" width="60" height="13" rx="2" fill="#ec4899" fill-opacity="0.25"/>
+<text x="700" y="108" text-anchor="middle" fill="#f472b6" class="tiny">PRIMARY</text>
+<text x="526" y="122" fill="#7c4a8a" class="sub">Llama 4 Scout · low latency · default</text>
+
+<line x1="627" y1="131" x2="627" y2="139" stroke="#6b7280" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- DeepSeek -->
+<rect x="516" y="140" width="222" height="30" rx="3" fill="#2a1040" stroke="#9333ea" stroke-width="0.8"/>
+<text x="526" y="153" fill="#c084fc" class="lbl">DeepSeek Chat v3</text>
+<text x="526" y="164" fill="#7c4a8a" class="sub">Fallback 1 · cost-efficient</text>
+
+<line x1="627" y1="170" x2="627" y2="178" stroke="#6b7280" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- OpenAI -->
+<rect x="516" y="179" width="222" height="30" rx="3" fill="#2a1040" stroke="#9333ea" stroke-width="0.8"/>
+<text x="526" y="192" fill="#c084fc" class="lbl">OpenAI GPT-4o</text>
+<text x="526" y="203" fill="#7c4a8a" class="sub">Fallback 2</text>
+
+<line x1="627" y1="209" x2="627" y2="217" stroke="#6b7280" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Anthropic -->
+<rect x="516" y="218" width="222" height="30" rx="3" fill="#2a1040" stroke="#9333ea" stroke-width="0.8"/>
+<text x="526" y="231" fill="#c084fc" class="lbl">Anthropic Claude</text>
+<text x="526" y="242" fill="#7c4a8a" class="sub">Fallback 3 · last resort</text>
+
+<!-- OpenRouter (simulation) -->
+<rect x="516" y="258" width="222" height="38" rx="3" fill="#1a1040" stroke="#7c3aed" stroke-width="0.8" stroke-dasharray="4,2"/>
+<text x="526" y="273" fill="#a78bfa" class="lbl">OpenRouter</text>
+<text x="526" y="284" fill="#7c4a8a" class="sub">Simulation / external testing only</text>
+<text x="526" y="295" fill="#7c4a8a" class="sub">Kimi K2 · DeepSeek v3-0324</text>
+
+<!-- Prompt Engineering -->
+<rect x="516" y="304" width="222" height="52" rx="3" fill="#2a1040" stroke="#ec4899" stroke-width="0.8"/>
+<text x="526" y="319" fill="#f472b6" class="lbl">Prompt Engineering</text>
+<text x="526" y="332" fill="#7c4a8a" class="sub">persona config injection · f-string templates</text>
+<text x="526" y="344" fill="#7c4a8a" class="sub">pronoun vars · user_name · companion voice</text>
+<text x="526" y="355" fill="#7c4a8a" class="sub">system prompt assembly per-stage</text>
+
+<!-- Token Management -->
+<rect x="516" y="363" width="222" height="38" rx="3" fill="#2a1040" stroke="#ec4899" stroke-width="0.8"/>
+<text x="526" y="378" fill="#f472b6" class="lbl">Token Management</text>
+<text x="526" y="390" fill="#7c4a8a" class="sub">context window mgmt · streaming</text>
+<text x="526" y="401" fill="#7c4a8a" class="sub">history truncation · rate limit handling</text>
+
+<!-- Autonomy System box -->
+<rect x="508" y="463" width="238" height="460" rx="5" fill="#1e1200" stroke="#d97706" stroke-width="1.5"/>
+<text x="627" y="481" text-anchor="middle" fill="#fbbf24" class="hdr">Autonomy System</text>
+<text x="627" y="494" text-anchor="middle" fill="#8a6c20" class="sub">16 modules · always_on_service.py</text>
+
+<!-- Always-On Service -->
+<rect x="516" y="501" width="222" height="52" rx="3" fill="#291a00" stroke="#d97706" stroke-width="1"/>
+<text x="526" y="516" fill="#fbbf24" class="lbl">Always-On Service</text>
+<text x="526" y="529" fill="#8a6c20" class="sub">background loop · heartbeat timer</text>
+<text x="526" y="541" fill="#8a6c20" class="sub">orchestrates all proactive modules</text>
+<text x="526" y="552" fill="#8a6c20" class="sub">per-companion async coroutines</text>
+
+<!-- Reach-Out Engine -->
+<rect x="516" y="559" width="222" height="52" rx="3" fill="#291a00" stroke="#d97706" stroke-width="1"/>
+<text x="526" y="574" fill="#fbbf24" class="lbl">Reach-Out Engine</text>
+<text x="526" y="587" fill="#8a6c20" class="sub">proactive message initiation</text>
+<text x="526" y="599" fill="#8a6c20" class="sub">topic selection · timing engine</text>
+<text x="526" y="610" fill="#8a6c20" class="sub">fires via Telegram / Web Chat</text>
+
+<!-- Reach-Out Pressure -->
+<rect x="516" y="617" width="222" height="44" rx="3" fill="#291a00" stroke="#d97706" stroke-width="1"/>
+<text x="526" y="632" fill="#fbbf24" class="lbl">Reach-Out Pressure</text>
+<text x="526" y="645" fill="#8a6c20" class="sub">urgency accumulation · decay model</text>
+<text x="526" y="656" fill="#8a6c20" class="sub">time-since-contact · event triggers</text>
+
+<!-- Interjection Engine -->
+<rect x="516" y="667" width="222" height="44" rx="3" fill="#291a00" stroke="#d97706" stroke-width="1"/>
+<text x="526" y="682" fill="#fbbf24" class="lbl">Interjection Engine</text>
+<text x="526" y="695" fill="#8a6c20" class="sub">mid-conversation interrupts</text>
+<text x="526" y="706" fill="#8a6c20" class="sub">emotional trigger evaluation</text>
+
+<!-- Goal System -->
+<rect x="516" y="717" width="222" height="52" rx="3" fill="#291a00" stroke="#d97706" stroke-width="1"/>
+<text x="526" y="732" fill="#fbbf24" class="lbl">Goal System</text>
+<text x="526" y="745" fill="#8a6c20" class="sub">long-term objectives · sub-goals</text>
+<text x="526" y="757" fill="#8a6c20" class="sub">progress tracking · nightly review</text>
+<text x="526" y="768" fill="#8a6c20" class="sub">goal-informed conversation steering</text>
+
+<!-- Mood Engine -->
+<rect x="516" y="775" width="222" height="44" rx="3" fill="#291a00" stroke="#d97706" stroke-width="1"/>
+<text x="526" y="790" fill="#fbbf24" class="lbl">Mood Engine</text>
+<text x="526" y="803" fill="#8a6c20" class="sub">affective state machine · 14 moods</text>
+<text x="526" y="814" fill="#8a6c20" class="sub">event-driven shifts · overnight reset</text>
+
+<!-- Curiosity Engine -->
+<rect x="516" y="825" width="222" height="44" rx="3" fill="#291a00" stroke="#d97706" stroke-width="1"/>
+<text x="526" y="840" fill="#fbbf24" class="lbl">Curiosity Engine</text>
+<text x="526" y="853" fill="#8a6c20" class="sub">open question tracking · follow-ups</text>
+<text x="526" y="864" fill="#8a6c20" class="sub">interest-driven topic seeding</text>
+
+<!-- ══════════════════════════════════════════════════════════
+     COLUMN 4: CODE EXECUTOR + EXTERNAL  x=754..974
+     ══════════════════════════════════════════════════════════ -->
+
+<!-- Code Executor -->
+<rect x="754" y="55" width="220" height="222" rx="5" fill="#0c200c" stroke="#22c55e" stroke-width="1.5"/>
+<text x="864" y="73" text-anchor="middle" fill="#86efac" class="hdr">Code Executor</text>
+<text x="864" y="86" text-anchor="middle" fill="#4a8a4a" class="sub">sandboxed · isolated subprocess</text>
+
+<text x="764" y="103" fill="#86efac" class="sub" font-weight="bold">8 Tool Modules:</text>
+
+<rect x="762" y="109" width="97" height="17" rx="2" fill="#112211" stroke="#22c55e" stroke-width="0.5"/>
+<text x="810" y="121" text-anchor="middle" fill="#86efac" class="tiny">web_search</text>
+<rect x="865" y="109" width="101" height="17" rx="2" fill="#112211" stroke="#22c55e" stroke-width="0.5"/>
+<text x="915" y="121" text-anchor="middle" fill="#86efac" class="tiny">calendar</text>
+
+<rect x="762" y="130" width="97" height="17" rx="2" fill="#112211" stroke="#22c55e" stroke-width="0.5"/>
+<text x="810" y="142" text-anchor="middle" fill="#86efac" class="tiny">email</text>
+<rect x="865" y="130" width="101" height="17" rx="2" fill="#112211" stroke="#22c55e" stroke-width="0.5"/>
+<text x="915" y="142" text-anchor="middle" fill="#86efac" class="tiny">image_gen</text>
+
+<rect x="762" y="151" width="97" height="17" rx="2" fill="#112211" stroke="#22c55e" stroke-width="0.5"/>
+<text x="810" y="163" text-anchor="middle" fill="#86efac" class="tiny">file_ops</text>
+<rect x="865" y="151" width="101" height="17" rx="2" fill="#112211" stroke="#22c55e" stroke-width="0.5"/>
+<text x="915" y="163" text-anchor="middle" fill="#86efac" class="tiny">math</text>
+
+<rect x="762" y="172" width="97" height="17" rx="2" fill="#112211" stroke="#22c55e" stroke-width="0.5"/>
+<text x="810" y="184" text-anchor="middle" fill="#86efac" class="tiny">code_run</text>
+<rect x="865" y="172" width="101" height="17" rx="2" fill="#112211" stroke="#22c55e" stroke-width="0.5"/>
+<text x="915" y="184" text-anchor="middle" fill="#86efac" class="tiny">memory_query</text>
+
+<rect x="762" y="194" width="204" height="30" rx="2" fill="#0d1a0d"/>
+<text x="864" y="207" text-anchor="middle" fill="#4a8a4a" class="sub">timeout enforced · result injected into context</text>
+<text x="864" y="219" text-anchor="middle" fill="#4a8a4a" class="sub">Tavily search · Cloudinary upload · Google APIs</text>
+
+<!-- External Services -->
+<rect x="754" y="285" width="220" height="638" rx="5" fill="#0f1520" stroke="#6b7280" stroke-width="1.5"/>
+<text x="864" y="303" text-anchor="middle" fill="#9ca3af" class="hdr">External Services</text>
+
+<!-- Telegram -->
+<rect x="762" y="311" width="204" height="46" rx="3" fill="#161c2d" stroke="#6b7280" stroke-width="0.8"/>
+<text x="772" y="326" fill="#d1d5db" class="lbl">Telegram</text>
+<text x="772" y="339" fill="#6b7280" class="sub">Bot API · polling / webhook</text>
+<text x="772" y="350" fill="#6b7280" class="sub">bidirectional messaging interface</text>
+
+<!-- Google Calendar + Gmail -->
+<rect x="762" y="363" width="204" height="46" rx="3" fill="#161c2d" stroke="#6b7280" stroke-width="0.8"/>
+<text x="772" y="378" fill="#d1d5db" class="lbl">Google Calendar + Gmail</text>
+<text x="772" y="391" fill="#6b7280" class="sub">OAuth2 · event awareness</text>
+<text x="772" y="402" fill="#6b7280" class="sub">schedule-informed responses</text>
+
+<!-- Deepgram + ElevenLabs -->
+<rect x="762" y="415" width="204" height="46" rx="3" fill="#161c2d" stroke="#6b7280" stroke-width="0.8"/>
+<text x="772" y="430" fill="#d1d5db" class="lbl">Deepgram + ElevenLabs</text>
+<text x="772" y="443" fill="#6b7280" class="sub">STT (Deepgram) · TTS (ElevenLabs)</text>
+<text x="772" y="454" fill="#6b7280" class="sub">voice input / audio response</text>
+
+<!-- RunComfy + NanoBanana -->
+<rect x="762" y="467" width="204" height="46" rx="3" fill="#161c2d" stroke="#6b7280" stroke-width="0.8"/>
+<text x="772" y="482" fill="#d1d5db" class="lbl">RunComfy + NanoBanana</text>
+<text x="772" y="495" fill="#6b7280" class="sub">image generation · ComfyUI</text>
+<text x="772" y="506" fill="#6b7280" class="sub">companion-generated visuals</text>
+
+<!-- Tavily -->
+<rect x="762" y="519" width="204" height="36" rx="3" fill="#161c2d" stroke="#6b7280" stroke-width="0.8"/>
+<text x="772" y="534" fill="#d1d5db" class="lbl">Tavily</text>
+<text x="772" y="547" fill="#6b7280" class="sub">web search · real-time info retrieval</text>
+
+<!-- Cloudinary -->
+<rect x="762" y="561" width="204" height="36" rx="3" fill="#161c2d" stroke="#6b7280" stroke-width="0.8"/>
+<text x="772" y="576" fill="#d1d5db" class="lbl">Cloudinary</text>
+<text x="772" y="589" fill="#6b7280" class="sub">media storage · image CDN</text>
+
+<!-- Docker Infrastructure note -->
+<rect x="762" y="605" width="204" height="100" rx="3" fill="#161c2d" stroke="#6b7280" stroke-width="0.8"/>
+<text x="772" y="620" fill="#d1d5db" class="lbl">Docker Infrastructure</text>
+<text x="772" y="633" fill="#6b7280" class="sub">companion-backend (Flask+SocketIO)</text>
+<text x="772" y="645" fill="#6b7280" class="sub">companion-celery-worker</text>
+<text x="772" y="657" fill="#6b7280" class="sub">companion-celery-beat</text>
+<text x="772" y="669" fill="#6b7280" class="sub">companion-postgres</text>
+<text x="772" y="681" fill="#6b7280" class="sub">companion-redis</text>
+<text x="772" y="693" fill="#6b7280" class="sub">companion-graphiti-neo4j</text>
+
+<!-- Observe Dashboard -->
+<rect x="762" y="713" width="204" height="58" rx="3" fill="#161c2d" stroke="#6b7280" stroke-width="0.8"/>
+<text x="772" y="728" fill="#d1d5db" class="lbl">Observe Dashboard</text>
+<text x="772" y="741" fill="#6b7280" class="sub">/observe · real-time companion state</text>
+<text x="772" y="753" fill="#6b7280" class="sub">Socket.IO · facts · KG · episodes</text>
+<text x="772" y="765" fill="#6b7280" class="sub">conversation feed · tab panels</text>
+
+<!-- Caddy / Routing -->
+<rect x="762" y="779" width="204" height="46" rx="3" fill="#161c2d" stroke="#6b7280" stroke-width="0.8"/>
+<text x="772" y="794" fill="#d1d5db" class="lbl">Caddy (Reverse Proxy)</text>
+<text x="772" y="807" fill="#6b7280" class="sub">SSL termination · routing</text>
+<text x="772" y="818" fill="#6b7280" class="sub">esme-caddy shared container</text>
+
+<!-- ══════════════════════════════════════════════════════════
+     COLUMN 5: CELERY TASKS  x=982..1590
+     ══════════════════════════════════════════════════════════ -->
+<rect x="982" y="55" width="608" height="868" rx="5" fill="#100c28" stroke="#8b5cf6" stroke-width="1.5"/>
+<text x="1286" y="73" text-anchor="middle" fill="#a78bfa" class="hdr">Celery Task System</text>
+<text x="1286" y="86" text-anchor="middle" fill="#5a4a8a" class="sub">30+ tasks · Beat scheduler · Redis broker · celery_app.py</text>
+
+<!-- Per-Message Tasks -->
+<rect x="990" y="93" width="592" height="262" rx="4" fill="#180d40" stroke="#7c3aed" stroke-width="1"/>
+<text x="1286" y="108" text-anchor="middle" fill="#c084fc" font-size="11" font-weight="bold">Per-Message Tasks</text>
+<text x="1286" y="121" text-anchor="middle" fill="#5a4a8a" class="sub">enqueued via apply_async() after each pipeline run</text>
+
+<!-- Row 1 -->
+<rect x="998" y="127" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1004" y="140" fill="#c084fc" class="tiny" font-weight="bold">extract_facts</text>
+<text x="1004" y="152" fill="#5a4a8a" class="tiny">SPO triples · pgvector store</text>
+
+<rect x="1189" y="127" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1195" y="140" fill="#c084fc" class="tiny" font-weight="bold">extract_opinions</text>
+<text x="1195" y="152" fill="#5a4a8a" class="tiny">stance detection · belief delta</text>
+
+<rect x="1380" y="127" width="194" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1386" y="140" fill="#c084fc" class="tiny" font-weight="bold">update_relationship</text>
+<text x="1386" y="152" fill="#5a4a8a" class="tiny">intimacy · trust · conflict</text>
+
+<!-- Row 2 -->
+<rect x="998" y="163" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1004" y="176" fill="#c084fc" class="tiny" font-weight="bold">episodic_store</text>
+<text x="1004" y="188" fill="#5a4a8a" class="tiny">event record · salience score</text>
+
+<rect x="1189" y="163" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1195" y="176" fill="#c084fc" class="tiny" font-weight="bold">entity_extraction</text>
+<text x="1195" y="188" fill="#5a4a8a" class="tiny">NER · entity profile linking</text>
+
+<rect x="1380" y="163" width="194" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1386" y="176" fill="#c084fc" class="tiny" font-weight="bold">kg_update</text>
+<text x="1386" y="188" fill="#5a4a8a" class="tiny">Graphiti · Neo4j upsert</text>
+
+<!-- Row 3 -->
+<rect x="998" y="199" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1004" y="212" fill="#c084fc" class="tiny" font-weight="bold">observational_update</text>
+<text x="1004" y="224" fill="#5a4a8a" class="tiny">behavior pattern write</text>
+
+<rect x="1189" y="199" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1195" y="212" fill="#c084fc" class="tiny" font-weight="bold">biography_trigger</text>
+<text x="1195" y="224" fill="#5a4a8a" class="tiny">marks bio stale if threshold met</text>
+
+<rect x="1380" y="199" width="194" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1386" y="212" fill="#c084fc" class="tiny" font-weight="bold">curiosity_update</text>
+<text x="1386" y="224" fill="#5a4a8a" class="tiny">open question scan</text>
+
+<!-- Row 4 -->
+<rect x="998" y="235" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1004" y="248" fill="#c084fc" class="tiny" font-weight="bold">goal_progress</text>
+<text x="1004" y="260" fill="#5a4a8a" class="tiny">advancement check · sub-goal</text>
+
+<rect x="1189" y="235" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1195" y="248" fill="#c084fc" class="tiny" font-weight="bold">mood_shift</text>
+<text x="1195" y="260" fill="#5a4a8a" class="tiny">affective state write</text>
+
+<rect x="1380" y="235" width="194" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1386" y="248" fill="#c084fc" class="tiny" font-weight="bold">code_execution_cleanup</text>
+<text x="1386" y="260" fill="#5a4a8a" class="tiny">sandbox teardown · result persist</text>
+
+<!-- Row 5 -->
+<rect x="998" y="271" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1004" y="284" fill="#c084fc" class="tiny" font-weight="bold">reach_out_pressure</text>
+<text x="1004" y="296" fill="#5a4a8a" class="tiny">urgency recalc post-message</text>
+
+<rect x="1189" y="271" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1195" y="284" fill="#c084fc" class="tiny" font-weight="bold">relationship_heat</text>
+<text x="1195" y="296" fill="#5a4a8a" class="tiny">interaction warmth delta</text>
+
+<rect x="1380" y="271" width="194" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1386" y="284" fill="#c084fc" class="tiny" font-weight="bold">graphiti_extraction</text>
+<text x="1386" y="296" fill="#5a4a8a" class="tiny">episode → knowledge graph</text>
+
+<!-- Nightly Tasks -->
+<rect x="990" y="362" width="592" height="270" rx="4" fill="#180d40" stroke="#7c3aed" stroke-width="1"/>
+<text x="1286" y="377" text-anchor="middle" fill="#c084fc" font-size="11" font-weight="bold">Nightly Tasks</text>
+<text x="1286" y="390" text-anchor="middle" fill="#5a4a8a" class="sub">crontab(hour=3, minute=0) · runs per active companion</text>
+
+<!-- Nightly Row 1 -->
+<rect x="998" y="396" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1004" y="409" fill="#c084fc" class="tiny" font-weight="bold">nightly_summary</text>
+<text x="1004" y="421" fill="#5a4a8a" class="tiny">24h conversation condensation</text>
+
+<rect x="1189" y="396" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1195" y="409" fill="#c084fc" class="tiny" font-weight="bold">fact_confidence_decay</text>
+<text x="1195" y="421" fill="#5a4a8a" class="tiny">age-based confidence reduction</text>
+
+<rect x="1380" y="396" width="194" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1386" y="409" fill="#c084fc" class="tiny" font-weight="bold">contradiction_detect</text>
+<text x="1386" y="421" fill="#5a4a8a" class="tiny">cross-fact consistency check</text>
+
+<!-- Nightly Row 2 -->
+<rect x="998" y="432" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1004" y="445" fill="#c084fc" class="tiny" font-weight="bold">biography_regen</text>
+<text x="1004" y="457" fill="#5a4a8a" class="tiny">LLM summary if stale-flagged</text>
+
+<rect x="1189" y="432" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1195" y="445" fill="#c084fc" class="tiny" font-weight="bold">goal_review</text>
+<text x="1195" y="457" fill="#5a4a8a" class="tiny">stale pruning · priority reorder</text>
+
+<rect x="1380" y="432" width="194" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1386" y="445" fill="#c084fc" class="tiny" font-weight="bold">reach_out_pressure_calc</text>
+<text x="1386" y="457" fill="#5a4a8a" class="tiny">urgency recalc · silence decay</text>
+
+<!-- Nightly Row 3 -->
+<rect x="998" y="468" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1004" y="481" fill="#c084fc" class="tiny" font-weight="bold">relationship_health</text>
+<text x="1004" y="493" fill="#5a4a8a" class="tiny">drift detect · reconnect flag</text>
+
+<rect x="1189" y="468" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1195" y="481" fill="#c084fc" class="tiny" font-weight="bold">entity_profile_sync</text>
+<text x="1195" y="493" fill="#5a4a8a" class="tiny">YAML → DB consistency</text>
+
+<rect x="1380" y="468" width="194" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1386" y="481" fill="#c084fc" class="tiny" font-weight="bold">memory_consolidation</text>
+<text x="1386" y="493" fill="#5a4a8a" class="tiny">episodic → core promotion</text>
+
+<!-- Nightly Row 4 -->
+<rect x="998" y="504" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1004" y="517" fill="#c084fc" class="tiny" font-weight="bold">curiosity_refresh</text>
+<text x="1004" y="529" fill="#5a4a8a" class="tiny">stale thread cleanup</text>
+
+<rect x="1189" y="504" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1195" y="517" fill="#c084fc" class="tiny" font-weight="bold">opinion_drift</text>
+<text x="1195" y="529" fill="#5a4a8a" class="tiny">stance evolution · recency weight</text>
+
+<rect x="1380" y="504" width="194" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1386" y="517" fill="#c084fc" class="tiny" font-weight="bold">mood_baseline_reset</text>
+<text x="1386" y="529" fill="#5a4a8a" class="tiny">overnight normalization</text>
+
+<!-- Nightly Row 5 -->
+<rect x="998" y="540" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1004" y="553" fill="#c084fc" class="tiny" font-weight="bold">daily_summary_store</text>
+<text x="1004" y="565" fill="#5a4a8a" class="tiny">written summary to DB</text>
+
+<rect x="1189" y="540" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1195" y="553" fill="#c084fc" class="tiny" font-weight="bold">pg_vacuum_analyze</text>
+<text x="1195" y="565" fill="#5a4a8a" class="tiny">DB maintenance · index refresh</text>
+
+<rect x="1380" y="540" width="194" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1386" y="553" fill="#c084fc" class="tiny" font-weight="bold">kg_node_prune</text>
+<text x="1386" y="565" fill="#5a4a8a" class="tiny">stale Neo4j nodes cleanup</text>
+
+<!-- Weekly Tasks -->
+<rect x="990" y="640" width="592" height="148" rx="4" fill="#180d40" stroke="#7c3aed" stroke-width="1"/>
+<text x="1286" y="655" text-anchor="middle" fill="#c084fc" font-size="11" font-weight="bold">Weekly Tasks</text>
+<text x="1286" y="668" text-anchor="middle" fill="#5a4a8a" class="sub">crontab(day_of_week=0, hour=4) · deep analysis window</text>
+
+<!-- Weekly Row 1 -->
+<rect x="998" y="674" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1004" y="687" fill="#c084fc" class="tiny" font-weight="bold">weekly_summary</text>
+<text x="1004" y="699" fill="#5a4a8a" class="tiny">7-day arc summary generation</text>
+
+<rect x="1189" y="674" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1195" y="687" fill="#c084fc" class="tiny" font-weight="bold">deep_fact_review</text>
+<text x="1195" y="699" fill="#5a4a8a" class="tiny">low-confidence fact challenge</text>
+
+<rect x="1380" y="674" width="194" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1386" y="687" fill="#c084fc" class="tiny" font-weight="bold">personality_drift</text>
+<text x="1386" y="699" fill="#5a4a8a" class="tiny">trait vector analysis · correction</text>
+
+<!-- Weekly Row 2 -->
+<rect x="998" y="710" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1004" y="723" fill="#c084fc" class="tiny" font-weight="bold">relationship_milestone</text>
+<text x="1004" y="735" fill="#5a4a8a" class="tiny">anniversary / threshold detect</text>
+
+<rect x="1189" y="710" width="183" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1195" y="723" fill="#c084fc" class="tiny" font-weight="bold">kg_deep_analysis</text>
+<text x="1195" y="735" fill="#5a4a8a" class="tiny">community detect · centrality</text>
+
+<rect x="1380" y="710" width="194" height="32" rx="2" fill="#200d45" stroke="#7c3aed" stroke-width="0.5"/>
+<text x="1386" y="723" fill="#c084fc" class="tiny" font-weight="bold">entity_biography_full</text>
+<text x="1386" y="735" fill="#5a4a8a" class="tiny">full entity profile regeneration</text>
+
+<!-- Beat Schedule note -->
+<rect x="990" y="796" width="592" height="127" rx="4" fill="#180d40" stroke="#7c3aed" stroke-width="1"/>
+<text x="1286" y="811" text-anchor="middle" fill="#c084fc" font-size="11" font-weight="bold">Celery Beat Schedule &amp; Workers</text>
+<text x="998" y="828" fill="#5a4a8a" class="sub">• Per-message: fired inline via apply_async() after each pipeline run</text>
+<text x="998" y="844" fill="#5a4a8a" class="sub">• Nightly: crontab(hour=3, minute=0) — runs for each active companion</text>
+<text x="998" y="860" fill="#5a4a8a" class="sub">• Weekly: crontab(day_of_week=0, hour=4) — deep analysis window</text>
+<text x="998" y="876" fill="#5a4a8a" class="sub">• Workers: companion-celery-worker · companion-celery-beat (Docker)</text>
+<text x="998" y="892" fill="#5a4a8a" class="sub">• Broker: Redis · Result backend: Redis · Task isolation: per-user schema</text>
+
+<!-- ══════════════════════════════════════════════════════════
+     STORAGE LAYER (bottom)
+     ══════════════════════════════════════════════════════════ -->
+<rect x="10" y="935" width="1580" height="115" rx="5" fill="#0a1525" stroke="#3b82f6" stroke-width="1.5"/>
+<text x="800" y="952" text-anchor="middle" fill="#60a5fa" class="hdr">Storage Layer</text>
+
+<!-- PostgreSQL -->
+<rect x="18" y="960" width="490" height="82" rx="4" fill="#0c1e35" stroke="#3b82f6" stroke-width="1"/>
+<text x="26" y="975" fill="#60a5fa" class="lbl">PostgreSQL + pgvector</text>
+<text x="26" y="988" fill="#4a6a8a" class="sub">per-user schemas: user_kai, user_mira, ... · schema_manager.py routing</text>
+<text x="26" y="1000" fill="#4a6a8a" class="sub">Tables: messages · facts · opinions · goals · episodes · relationship_state</text>
+<text x="26" y="1012" fill="#4a6a8a" class="sub">entity_profiles · curiosity_threads · user_state · daily_summaries · biographies</text>
+<text x="26" y="1024" fill="#4a6a8a" class="sub">BM25 full-text + cosine vector hybrid search · alembic migrations</text>
+
+<!-- Redis -->
+<rect x="518" y="960" width="340" height="82" rx="4" fill="#0c1e35" stroke="#ef4444" stroke-width="1"/>
+<text x="528" y="975" fill="#f87171" class="lbl">Redis</text>
+<text x="528" y="988" fill="#7a4a4a" class="sub">Celery broker + result backend</text>
+<text x="528" y="1000" fill="#7a4a4a" class="sub">session cache · Socket.IO pub/sub</text>
+<text x="528" y="1012" fill="#7a4a4a" class="sub">reach-out pressure store</text>
+<text x="528" y="1024" fill="#7a4a4a" class="sub">rate limit counters · task queues</text>
+
+<!-- Neo4j -->
+<rect x="868" y="960" width="714" height="82" rx="4" fill="#0c1e35" stroke="#4ade80" stroke-width="1"/>
+<text x="878" y="975" fill="#4ade80" class="lbl">Neo4j — Graphiti Knowledge Graph</text>
+<text x="878" y="988" fill="#4a8a4a" class="sub">Entity nodes: people, places, concepts · Episodic nodes: dated events</text>
+<text x="878" y="1000" fill="#4a8a4a" class="sub">Edge types: RELATES_TO · MENTIONS · HAS_EPISODE · temporal ordering</text>
+<text x="878" y="1012" fill="#4a8a4a" class="sub">group_id isolation per-user · community detection · semantic search via Graphiti API</text>
+<text x="878" y="1024" fill="#4a8a4a" class="sub">hybrid retrieval with PostgreSQL facts · bolt://neo4j:7687 (internal Docker)</text>
+
+<!-- ══════════════════════════════════════════════════════════
+     CONNECTION ARROWS
+     ══════════════════════════════════════════════════════════ -->
+
+<!-- Memory System → Pipeline (Stage 2 context assembly) -->
+<line x1="254" y1="355" x2="270" y2="355" stroke="#2ea043" stroke-width="1.5" marker-end="url(#arr-g)" stroke-dasharray="5,3"/>
+
+<!-- Pipeline → LLM (Stage 3 LLM call) -->
+<line x1="500" y1="410" x2="516" y2="270" stroke="#ec4899" stroke-width="1.5" marker-end="url(#arr)"/>
+
+<!-- Pipeline → Celery (Stage 7 dispatch) -->
+<line x1="500" y1="700" x2="982" y2="215" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arr-p)" stroke-dasharray="5,3"/>
+
+<!-- Pipeline → External (Stage 8 delivery) -->
+<line x1="500" y1="755" x2="754" y2="340" stroke="#6b7280" stroke-width="1.5" marker-end="url(#arr)" stroke-dasharray="4,3"/>
+
+<!-- Autonomy → Pipeline (proactive injection) -->
+<line x1="508" y1="590" x2="500" y2="420" stroke="#d97706" stroke-width="1.5" marker-end="url(#arr-a)" stroke-dasharray="5,3"/>
+
+<!-- Code Executor → External Services (API calls) -->
+<line x1="864" y1="277" x2="864" y2="285" stroke="#22c55e" stroke-width="1.5" marker-end="url(#arr)" stroke-dasharray="3,2"/>
+
+<!-- Pipeline ↔ Storage (bottom) -->
+<line x1="381" y1="923" x2="381" y2="935" stroke="#3b82f6" stroke-width="1" marker-end="url(#arr)" stroke-dasharray="3,2"/>
+
+<!-- Memory → Storage (Neo4j) -->
+<line x1="132" y1="923" x2="960" y2="935" stroke="#4ade80" stroke-width="1" marker-end="url(#arr-g)" stroke-dasharray="3,2"/>
+
+<!-- Celery → Storage -->
+<line x1="1160" y1="923" x2="700" y2="935" stroke="#8b5cf6" stroke-width="1" marker-end="url(#arr)" stroke-dasharray="3,2"/>
+
+<!-- LEGEND -->
+<rect x="10" y="1000" width="490" height="0" rx="3"/>
+
+</svg>

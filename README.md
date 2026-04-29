@@ -1,4 +1,4 @@
-# Companion Framework
+# Roux
 
 A full-stack framework for building AI companions with genuine memory and autonomous behavior. Drop in a persona, connect an LLM, and get a character that remembers everything, forms its own opinions, evolves over time, and reaches out proactively when it has something to say.
 
@@ -40,8 +40,8 @@ OpenRouter -> Fireworks (DeepSeek) -> OpenAI -> Anthropic
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/wastrilith2k/roux companion-framework
-cd companion-framework
+git clone https://github.com/wastrilith2k/roux
+cd roux
 cp .env.example .env
 ```
 
@@ -592,6 +592,7 @@ tests/                Test suite
 ## Documentation
 
 - [Architecture](docs/architecture.md) — System overview, module map, data flows, and design patterns
+- [Slash Commands](docs/slash-commands.md) — All `/commands` for web chat and CLI, with aliases and usage
 - [Onboarding](docs/onboarding.md) — Getting started guide for new developers
 - [Services](docs/services.md) — Entry points, background services, Celery tasks, and integrations
 - [CLI](cli/README.md) — Terminal chat client usage

@@ -10,6 +10,12 @@
 
 <div id="demo-banner" style="background:#1a1a2e;color:#e0c97f;padding:8px 16px;text-align:center;font-size:13px;position:sticky;top:0;z-index:100;">
   Read-only demo — recorded simulation between AI companions. No live interaction.
+  &nbsp;·&nbsp;
+  <a href="https://getroux.dev" target="_blank" style="color:#e0c97f;text-decoration:underline;">getroux.dev</a>
+  &nbsp;·&nbsp;
+  <a href="/architecture.svg" target="_blank" style="color:#e0c97f;text-decoration:underline;">Architecture</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/wastrilith2k/roux" target="_blank" style="color:#e0c97f;text-decoration:underline;">GitHub</a>
 </div>
 
 <div class="header">
@@ -21,30 +27,33 @@
     </div>
 </div>
 
-<!-- Character selector bar -->
+<!-- Conversation selector bar -->
 <div class="character-selector" id="character-selector">
-    <span class="selector-label">Characters:</span>
-    <div class="selector-buttons" id="selector-buttons">
-        <!-- Populated dynamically -->
+    <span class="selector-label">Conversation:</span>
+    <div id="conv-picker" class="conv-picker">
+        <button id="conv-picker-btn" class="conv-picker-btn">
+            <span class="conv-picker-label">All conversations</span>
+            <span class="conv-picker-arrow">▾</span>
+        </button>
+        <div id="conv-dropdown" class="conv-dropdown">
+            <input id="conv-search" type="text" placeholder="Filter..." class="conv-search" autocomplete="off">
+            <div id="conv-tree" class="conv-tree"></div>
+        </div>
     </div>
-    <button class="selector-all" id="btn-show-all" onclick="showAllCharacters()">Show All</button>
+    <div class="selector-buttons" id="selector-buttons" style="margin-left:16px;">
+        <!-- Participant pills — populated when a conversation is selected -->
+    </div>
 </div>
 
 <div class="dashboard">
 
-    <!-- Left: State panels (dynamically populated) -->
+    <!-- Left: State panels (dynamically populated per conversation) -->
     <div class="state-panels" id="state-panels">
         <!-- Built by JS -->
     </div>
 
     <!-- Center: Conversation feed -->
     <div class="feed-container">
-        <div id="companion-controls" style="padding:8px 16px;">
-            <label for="companion-select">Companion: </label>
-            <select id="companion-select">
-                <option value="">All</option>
-            </select>
-        </div>
         <div class="feed" id="feed"></div>
         <div style="text-align:center;padding:8px;">
             <button id="btn-load-more" style="display:none;background:#1f2937;color:#8b949e;border:1px solid #30363d;padding:6px 16px;border-radius:4px;cursor:pointer;">Load more</button>
@@ -62,7 +71,7 @@
             <button data-tab="relationship">Relationship</button>
         </div>
         <div class="tab-companion-toggle" id="tab-companion-toggle">
-            <!-- Populated dynamically -->
+            <!-- Participant pills for bottom tabs — populated dynamically -->
         </div>
         <div class="tab-content active" id="tab-facts">
             <div class="empty-state">No facts yet</div>

@@ -159,9 +159,19 @@ def _register_all_commands(registry: CommandRegistry):
     from .help_command import register_help_command
     from .biographies_command import register_biographies_command
     from .relationships_command import register_relationships_command
+    from .facts_command import register_facts_command
+    from .goals_command import register_goals_command
+    from .opinions_command import register_opinions_command
+    from .episodes_command import register_episodes_command
+    from .curiosity_command import register_curiosity_command
 
     register_help_command(registry)
     register_models_command(registry)
     register_status_command(registry)
     register_biographies_command(registry)
     register_relationships_command(registry)
+    register_facts_command(registry)
+    register_goals_command(registry)
+    register_opinions_command(registry)
+    register_episodes_command(registry)
+    register_curiosity_command(registry)

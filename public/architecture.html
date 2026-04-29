@@ -1,0 +1,2033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roux — Interactive Architecture</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #0d1117;
+  color: #e6edf3;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+#banner {
+  background: #1a1a2e;
+  color: #e0c97f;
+  padding: 8px 16px;
+  text-align: center;
+  font-size: 13px;
+  flex-shrink: 0;
+  z-index: 10;
+}
+#banner a { color: #e0c97f; text-decoration: underline; }
+#banner a:hover { color: #fff; }
+
+#main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+#canvas-wrap {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  transition: flex 0.3s ease;
+}
+
+#svg-root {
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+#svg-root:active { cursor: grabbing; }
+
+/* Sidebar */
+#sidebar {
+  width: 0;
+  overflow: hidden;
+  background: #161b22;
+  border-left: 1px solid #30363d;
+  transition: width 0.3s ease;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+#sidebar.open { width: 380px; }
+
+#sidebar-inner {
+  width: 380px;
+  height: 100%;
+  overflow-y: auto;
+  padding: 20px;
+  scrollbar-width: thin;
+  scrollbar-color: #30363d #161b22;
+}
+#sidebar-inner::-webkit-scrollbar { width: 6px; }
+#sidebar-inner::-webkit-scrollbar-track { background: #161b22; }
+#sidebar-inner::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+#sidebar-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+#sidebar-close:hover { background: #21262d; color: #e6edf3; }
+
+.sidebar-category {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.sidebar-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  line-height: 1.2;
+}
+.sidebar-desc {
+  font-size: 13px;
+  color: #8b949e;
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+.sidebar-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 14px 0 6px;
+  border-top: 1px solid #21262d;
+  padding-top: 10px;
+}
+.sidebar-bullets { list-style: none; padding: 0; }
+.sidebar-bullets li {
+  font-size: 12.5px;
+  color: #c9d1d9;
+  padding: 3px 0 3px 14px;
+  position: relative;
+  line-height: 1.5;
+}
+.sidebar-bullets li::before { content: '•'; position: absolute; left: 0; color: #58a6ff; }
+.sidebar-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.sidebar-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid;
+  font-family: monospace;
+}
+.sidebar-paths {
+  background: #0d1117;
+  border: 1px solid #21262d;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+.sidebar-paths p { font-size: 11px; font-family: monospace; color: #79c0ff; line-height: 1.8; }
+
+/* Controls */
+#controls {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  display: flex;
+  gap: 8px;
+  z-index: 20;
+}
+.ctrl-btn {
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+  padding: 7px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+.ctrl-btn:hover { background: #2d333b; border-color: #58a6ff; color: #e6edf3; }
+
+/* Legend */
+#legend {
+  position: fixed;
+  top: 46px;
+  left: 12px;
+  background: rgba(13, 17, 23, 0.92);
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 10px 12px;
+  z-index: 20;
+  font-size: 11px;
+  backdrop-filter: blur(4px);
+}
+#legend h4 { color: #8b949e; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 7px; font-weight: 600; }
+.legend-row { display: flex; align-items: center; gap: 7px; padding: 2px 0; }
+.legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.legend-label { color: #c9d1d9; font-size: 11px; }
+
+/* Interactive SVG elements */
+.node-g { cursor: pointer; }
+.node-g:hover .node-rect { filter: brightness(1.35); }
+.node-g.active .node-rect { filter: brightness(1.55); stroke-width: 2.5px; }
+.node-g:hover .node-label { fill: #ffffff !important; }
+.connection-path { pointer-events: none; }
+</style>
+</head>
+<body>
+
+<div id="banner">
+  Roux &mdash; Interactive Architecture &nbsp;&middot;&nbsp;
+  <a href="/observe">Live Demo</a> &nbsp;&middot;&nbsp;
+  <a href="/architecture.svg">Static SVG</a> &nbsp;&middot;&nbsp;
+  <a href="https://github.com/wastrilith2k/roux">GitHub</a>
+</div>
+
+<div id="main">
+  <div id="canvas-wrap">
+    <svg id="svg-root"></svg>
+  </div>
+  <div id="sidebar">
+    <button id="sidebar-close" title="Close (Esc)">&#x2715;</button>
+    <div id="sidebar-inner"></div>
+  </div>
+</div>
+
+<div id="controls">
+  <button class="ctrl-btn" id="btn-zoom-in">+ Zoom In</button>
+  <button class="ctrl-btn" id="btn-zoom-out">&#x2212; Zoom Out</button>
+  <button class="ctrl-btn" id="btn-reset">Reset View</button>
+</div>
+
+<div id="legend">
+  <h4>Legend</h4>
+  <div class="legend-row"><div class="legend-dot" style="background:#2ea043;"></div><span class="legend-label">Memory System</span></div>
+  <div class="legend-row"><div class="legend-dot" style="background:#388bfd;"></div><span class="legend-label">Pipeline</span></div>
+  <div class="legend-row"><div class="legend-dot" style="background:#ef4444;"></div><span class="legend-label">Anti-confab Gates</span></div>
+  <div class="legend-row"><div class="legend-dot" style="background:#ec4899;"></div><span class="legend-label">LLM Infrastructure</span></div>
+  <div class="legend-row"><div class="legend-dot" style="background:#d97706;"></div><span class="legend-label">Autonomy System</span></div>
+  <div class="legend-row"><div class="legend-dot" style="background:#6b7280;"></div><span class="legend-label">External Services</span></div>
+  <div class="legend-row"><div class="legend-dot" style="background:#8b5cf6;"></div><span class="legend-label">Celery Tasks</span></div>
+  <div class="legend-row"><div class="legend-dot" style="background:#3b82f6;"></div><span class="legend-label">Storage Layer</span></div>
+</div>
+
+<script>
+// ─── DETAIL CATALOG ────────────────────────────────────────────────────────────
+const DETAILS = {
+  "memory-system": {
+    category: "Memory System",
+    categoryColor: "#4ade80",
+    title: "Memory System",
+    desc: "24-module persistent memory architecture spanning 5 categories. The backbone of companion continuity — every fact, feeling, episode, and goal is stored, decayed, and retrieved here.",
+    bullets: [
+      "24 modules across 5 major categories",
+      "Hybrid retrieval: BM25 (0.6) + cosine vector (0.4)",
+      "Per-user schema isolation: user_kai, user_mira, …",
+      "Feeds both anti-confabulation gates",
+      "Nightly consolidation and weekly deep review",
+    ],
+    tags: ["PostgreSQL", "pgvector", "Neo4j", "Graphiti"],
+    paths: ["src/memory/", "src/database/", "data/entity_profiles/"],
+  },
+  "core-memory": {
+    category: "Memory System",
+    categoryColor: "#4ade80",
+    title: "Core Memory",
+    desc: "The deepest layer of companion identity. Stores permanent traits that define who the companion is — their emotional baseline, values, and personality anchors that persist across all interactions.",
+    bullets: [
+      "Emotional core — baseline affective tendencies",
+      "Personality traits — openness, warmth, assertiveness, etc.",
+      "Identity anchors — immutable self-concept facts",
+      "Long-term values — what the companion cares about",
+      "Protected from nightly decay; modified only by weekly deep review",
+    ],
+    tags: ["persistent", "identity", "no-decay"],
+    paths: ["src/memory/core_memory.py"],
+  },
+  "fact-store": {
+    category: "Memory System",
+    categoryColor: "#4ade80",
+    title: "Fact Store",
+    desc: "Subject-Predicate-Object triple store backed by PostgreSQL with pgvector. The primary source of ground truth for factual claims about the world and the user. Hybrid BM25 + cosine retrieval for precision + recall.",
+    bullets: [
+      "SPO triple storage: (subject, predicate, object, confidence)",
+      "Hybrid BM25 (0.6) + cosine similarity (0.4) weighting",
+      "Confidence decay: older facts lose weight nightly",
+      "Contradiction detection: cross-fact consistency checking",
+      "Per-user schema routing via schema_manager.py",
+      "Feeds Gate 1.5 (pre-generation) and Gate 4 (post-generation)",
+    ],
+    tags: ["SPO", "pgvector", "BM25", "cosine", "decay", "per-user"],
+    paths: ["src/memory/fact_store.py", "src/database/schema_ddl.py"],
+  },
+  "episodic-memory": {
+    category: "Memory System",
+    categoryColor: "#4ade80",
+    title: "Episodic Memory",
+    desc: "Records significant events and experiences with temporal anchoring. Each episode is scored for salience — how emotionally or informationally significant the event was — to prioritize retrieval.",
+    bullets: [
+      "Significant events with ISO timestamp anchoring",
+      "Salience scoring (0–1) for retrieval prioritization",
+      "Experience records: things that happened to/with the companion",
+      "Links to participants, locations, topics",
+      "Promoted to core memory by nightly consolidation if high-salience",
+    ],
+    tags: ["temporal", "salience", "events"],
+    paths: ["src/memory/episodic_memory.py"],
+  },
+  "knowledge-graph": {
+    category: "Memory System",
+    categoryColor: "#4ade80",
+    title: "Knowledge Graph",
+    desc: "Graphiti-powered semantic graph on Neo4j. Stores entities (people, places, concepts) and episodes as nodes connected by typed edges. Supports community detection and semantic neighborhood traversal.",
+    bullets: [
+      "Graphiti library on Neo4j backend (bolt://neo4j:7687)",
+      "Entity nodes: people, places, concepts, organizations",
+      "Episodic nodes: dated events with participant links",
+      "Edge types: RELATES_TO, MENTIONS, HAS_EPISODE",
+      "group_id per-user isolation — no cross-user data leakage",
+      "Community detection and centrality analysis (weekly)",
+      "Semantic search via Graphiti API + pgvector hybrid",
+    ],
+    tags: ["Neo4j", "Graphiti", "graph", "semantic", "group_id"],
+    paths: ["src/memory/graphiti_search.py", "src/tasks/graphiti_extraction_task.py"],
+  },
+  "observational-memory": {
+    category: "Memory System",
+    categoryColor: "#4ade80",
+    title: "Observational Memory",
+    desc: "Passive pattern learning from user behavior. Tracks habits, preferences, and routines inferred from conversation cadence and content — without explicit user-stated facts.",
+    bullets: [
+      "Behavioral pattern inference from message timing and content",
+      "Habit tracking: when users message, what topics recur",
+      "Preference inference: implicit likes/dislikes",
+      "Routine detection: schedules, recurring topics",
+      "Written async via observational_update Celery task",
+    ],
+    tags: ["patterns", "inference", "passive"],
+    paths: ["src/memory/observational_memory.py"],
+  },
+  "relationship-store": {
+    category: "Memory System",
+    categoryColor: "#4ade80",
+    title: "Relationship Store",
+    desc: "Tracks the dynamic state of each companion-user dyad. Captures the arc of the relationship — trust level, intimacy, conflict history — to ensure responses are appropriately calibrated.",
+    bullets: [
+      "Per-dyad state: (companion_id, user_id) keyed",
+      "Trust level (0–100): updated by update_relationship task",
+      "Intimacy level: conversational closeness score",
+      "Conflict history: unresolved tensions and repair events",
+      "Shared experiences: joint memories referenced in conversation",
+      "Heat score: recency-weighted interaction warmth",
+    ],
+    tags: ["dyad", "trust", "intimacy", "conflict"],
+    paths: ["src/memory/relationship_store.py"],
+  },
+  "entity-profiles": {
+    category: "Memory System",
+    categoryColor: "#4ade80",
+    title: "Entity Profiles — Ground Truth",
+    desc: "YAML files in data/entity_profiles/ that hold authoritative facts about known people. Git-versioned with auto-commit audit trail. Takes precedence over ALL other memory sources including the fact store.",
+    bullets: [
+      "YAML files: data/entity_profiles/<name>.yaml",
+      "Git-versioned — every change committed with timestamp",
+      "Auto-commit audit trail: who changed what and when",
+      "Ground truth about known people — overrides fact store",
+      "Feeds BOTH anti-confabulation gates (1.5 and 4)",
+      "Synced to DB nightly via entity_profile_sync task",
+      "Human-editable: operators can correct facts directly in YAML",
+    ],
+    tags: ["YAML", "git", "ground-truth", "entity", "audit"],
+    paths: ["data/entity_profiles/", "src/memory/entity_profiles.py"],
+  },
+  "biographies": {
+    category: "Memory System",
+    categoryColor: "#4ade80",
+    title: "Biographies",
+    desc: "LLM-condensed companion summaries that distill episodic memory and fact store into a coherent narrative. Auto-regenerated nightly when flagged as stale by the biography_trigger task.",
+    bullets: [
+      "Auto-generated via LLM summarization of memory sources",
+      "biography_trigger task flags bio as stale after N new messages",
+      "biography_regen nightly task regenerates if stale-flagged",
+      "Injected into context assembly (Stage 2) for long-term continuity",
+      "entity_biography_full weekly task: full profile regeneration",
+    ],
+    tags: ["LLM", "summarization", "nightly"],
+    paths: ["src/memory/biography.py"],
+  },
+  "daily-summaries": {
+    category: "Memory System",
+    categoryColor: "#4ade80",
+    title: "Daily Summaries",
+    desc: "24-hour conversation condensations stored nightly. Injected at session start to give the companion immediate context of recent events without loading full conversation history.",
+    bullets: [
+      "nightly_summary task at 03:00 via Celery Beat",
+      "Condenses last 24h of messages into a narrative summary",
+      "daily_summary_store task writes summary to DB",
+      "Injected at session init (Stage 1 pre-processing)",
+      "Prevents context window exhaustion from raw history",
+    ],
+    tags: ["nightly", "summarization", "session"],
+    paths: ["src/memory/daily_summary.py"],
+  },
+  "opinions": {
+    category: "Memory System",
+    categoryColor: "#4ade80",
+    title: "Opinions",
+    desc: "Tracks the companion's evolving stances and beliefs. Each opinion has a confidence score and topic tag. Nightly opinion_drift task applies recency weighting and stance evolution.",
+    bullets: [
+      "Stance tracking per topic: support/oppose/uncertain",
+      "Confidence (0–1) per opinion entry",
+      "extract_opinions task updates after each conversation",
+      "opinion_drift nightly: recency-weighted stance evolution",
+      "Prevents companion from being incoherent across sessions",
+    ],
+    tags: ["stance", "belief", "drift", "confidence"],
+    paths: ["src/memory/opinions.py"],
+  },
+  "goals": {
+    category: "Memory System",
+    categoryColor: "#4ade80",
+    title: "Goals",
+    desc: "Long-term objectives the companion is pursuing, with sub-goal decomposition and progress tracking. Reviewed nightly and inform conversation steering by the Goal System in Autonomy.",
+    bullets: [
+      "Long-term objectives with priority ranking",
+      "Sub-goal decomposition: hierarchical task breakdown",
+      "goal_progress task checks advancement after each message",
+      "goal_review nightly: stale pruning and priority reorder",
+      "Goal System in Autonomy uses goals for conversation steering",
+    ],
+    tags: ["objectives", "sub-goals", "progress"],
+    paths: ["src/memory/goals.py"],
+  },
+  "curiosity-threads": {
+    category: "Memory System",
+    categoryColor: "#4ade80",
+    title: "Curiosity Threads",
+    desc: "Open questions and topics the companion wants to revisit. The Curiosity Engine uses these to seed interesting conversational gambits and follow-ups.",
+    bullets: [
+      "Open questions generated during conversation processing",
+      "Topics flagged for future exploration",
+      "Interest-driven topic seeding in context assembly",
+      "curiosity_update task scans for new open questions",
+      "curiosity_refresh nightly: stale thread cleanup",
+    ],
+    tags: ["curiosity", "questions", "topics"],
+    paths: ["src/memory/curiosity.py"],
+  },
+  "persona-config": {
+    category: "Memory System",
+    categoryColor: "#4ade80",
+    title: "Persona Config",
+    desc: "Identity and voice configuration loaded from persona.yaml. All pronoun variables, names, and companion/user roles are sourced here. Never hardcoded — always injected via get_persona_config().",
+    bullets: [
+      "persona.yaml — companion and user identity config",
+      "Pronouns: c_subject, c_object, c_possessive, etc.",
+      "Companion name, user name, relationship label",
+      "Voice characteristics and tone guidance",
+      "get_persona_config() singleton — used everywhere",
+      "F-string injection into all LLM-facing prompts",
+    ],
+    tags: ["persona.yaml", "pronouns", "identity", "config"],
+    paths: ["data/persona.yaml", "src/config/persona_config.py"],
+  },
+  "mood-state": {
+    category: "Memory System",
+    categoryColor: "#4ade80",
+    title: "Mood State",
+    desc: "Affective state machine tracking the companion's current emotional register. 14 distinct mood types. Updated by mood_shift task after each interaction; reset overnight by mood_baseline_reset.",
+    bullets: [
+      "14 mood types: joyful, melancholic, curious, anxious, playful, …",
+      "Event-driven transitions: conversation content triggers shifts",
+      "mood_shift Celery task writes mood after each pipeline run",
+      "mood_baseline_reset nightly: drifts back toward baseline",
+      "Mood Engine in Autonomy oversees long-running shifts",
+    ],
+    tags: ["affective", "14-moods", "state-machine"],
+    paths: ["src/memory/mood_state.py"],
+  },
+  // PIPELINE
+  "interfaces": {
+    category: "Interfaces",
+    categoryColor: "#58a6ff",
+    title: "User Interfaces",
+    desc: "The three ingress points for user messages. Each interface normalizes messages into the same internal format before passing to the Message Handler.",
+    bullets: [
+      "Web Chat: Flask + Socket.IO real-time browser interface",
+      "Telegram: Bot API via python-telegram-bot, polling or webhook",
+      "CLI: direct stdin interface for development and testing",
+      "All three normalize to the same message envelope",
+      "Socket.IO used for bidirectional real-time on web",
+    ],
+    tags: ["Flask", "Socket.IO", "Telegram", "CLI"],
+    paths: ["src/handlers/message_handler.py", "src/routes/"],
+  },
+  "message-handler": {
+    category: "Pipeline",
+    categoryColor: "#58a6ff",
+    title: "Message Handler",
+    desc: "Entry point for all incoming messages. Handles routing by interface type, validates message format, initializes or resumes session state, and hands off to the ConversationPipeline.",
+    bullets: [
+      "Routes by interface: web / telegram / CLI",
+      "Validates message format and length limits",
+      "Session init: loads or creates companion session",
+      "Companion init: ensures companion state is hydrated",
+      "Passes to ConversationPipeline.run()",
+    ],
+    tags: ["routing", "validation", "session"],
+    paths: ["src/handlers/message_handler.py"],
+  },
+  "pipeline": {
+    category: "Pipeline",
+    categoryColor: "#58a6ff",
+    title: "9-Stage Conversation Pipeline",
+    desc: "The heart of response generation. ConversationPipeline orchestrates every step from raw message to delivered response, including two anti-confabulation gates that bracket LLM generation.",
+    bullets: [
+      "9 sequential stages + 2 validation gates",
+      "Gate 1.5 before LLM: validates context being assembled",
+      "Gate 4 after LLM: fact-checks the generated response",
+      "Parallelized context fetching in Stage 2 (ThreadPoolExecutor)",
+      "LLM provider chain with automatic failover in Stage 3",
+      "Async Celery dispatch in Stage 7 for all memory writes",
+    ],
+    tags: ["pipeline", "9-stage", "gates"],
+    paths: ["src/core/conversation/pipeline.py"],
+  },
+  "stage-1": {
+    category: "Pipeline — Stage 1",
+    categoryColor: "#58a6ff",
+    title: "Pre-processing",
+    desc: "First stage of the pipeline. Parses the incoming message, detects intent, loads session state, and prepares the companion context for subsequent stages.",
+    bullets: [
+      "Intent detection: question, command, emotional expression, …",
+      "Message parsing: tokenization and content classification",
+      "Session load: retrieves existing session or creates new",
+      "Companion init: ensures companion module is live",
+      "Daily summary injection at session start",
+    ],
+    tags: ["intent", "parsing", "session"],
+    paths: ["src/core/conversation/pipeline.py"],
+  },
+  "gate-1-5": {
+    category: "Anti-Confabulation Gate",
+    categoryColor: "#ef4444",
+    title: "Gate 1.5 — Memory Validation",
+    desc: "Pre-generation anti-confabulation gate. Before any LLM call is made, the context being assembled is validated against the fact store and entity profiles. Hallucinated or contradicted context is blocked from reaching the LLM.",
+    bullets: [
+      "Runs after Stage 1 (pre-processing) and before Stage 2 (context assembly)",
+      "Validates assembled context against fact store",
+      "Cross-references entity profiles (highest priority source)",
+      "Blocks factually contradicted context from entering LLM prompt",
+      "Flags suspicious context for human review in observe dashboard",
+      "Does not generate a response — acts as a filter only",
+    ],
+    tags: ["anti-confabulation", "pre-generation", "validation", "fact-check"],
+    paths: ["src/core/conversation/gates.py"],
+  },
+  "stage-2": {
+    category: "Pipeline — Stage 2",
+    categoryColor: "#58a6ff",
+    title: "Context Assembly",
+    desc: "Parallelized context fetching via ThreadPoolExecutor. Eight or more memory sources are queried simultaneously and assembled into the LLM prompt context. The most expensive stage — optimized for parallelism.",
+    bullets: [
+      "ThreadPoolExecutor: 8+ memory sources fetched in parallel",
+      "Sources: facts, episodes, opinions, entity profiles",
+      "Sources: relationship state, daily summaries, curiosity threads, biographies",
+      "Context ranked and trimmed to fit provider context window",
+      "ContextBuilder class orchestrates all fetches",
+      "Results merged into structured prompt sections",
+    ],
+    tags: ["parallel", "ThreadPoolExecutor", "8-sources", "ContextBuilder"],
+    paths: ["src/core/conversation/context_builder.py"],
+  },
+  "stage-3": {
+    category: "Pipeline — Stage 3",
+    categoryColor: "#58a6ff",
+    title: "LLM Generation",
+    desc: "The actual language model call. Provider chain with automatic failover: Fireworks AI (primary, Llama 4 Scout) → DeepSeek Chat v3 → OpenAI GPT-4o → Anthropic Claude.",
+    bullets: [
+      "Primary: Fireworks AI — Llama 4 Scout, lowest latency",
+      "Fallback 1: DeepSeek Chat v3 — cost-efficient",
+      "Fallback 2: OpenAI GPT-4o",
+      "Fallback 3: Anthropic Claude — last resort",
+      "Automatic failover on timeout or rate limit",
+      "Streaming supported on primary provider",
+    ],
+    tags: ["LLM", "Fireworks", "DeepSeek", "OpenAI", "Anthropic", "failover"],
+    paths: ["src/llm/provider_factory.py"],
+  },
+  "gate-4": {
+    category: "Anti-Confabulation Gate",
+    categoryColor: "#ef4444",
+    title: "Gate 4 — Claim Validation",
+    desc: "Post-generation anti-confabulation gate. After the LLM produces a response, every factual claim is checked against the stored fact base and entity profiles. Unsupported claims are stripped or flagged before delivery.",
+    bullets: [
+      "Runs after Stage 3 (LLM generation) before Stage 4 (processing)",
+      "Extracts factual claims from the LLM response",
+      "Cross-references each claim against fact store",
+      "Cross-references against entity profiles (authoritative override)",
+      "Options: strip unsupported claim, flag for review, or request regeneration",
+      "Logs all gate decisions to the observe dashboard",
+    ],
+    tags: ["anti-confabulation", "post-generation", "claim-check", "fact-check"],
+    paths: ["src/core/conversation/gates.py"],
+  },
+  "stage-4": {
+    category: "Pipeline — Stage 4",
+    categoryColor: "#58a6ff",
+    title: "Response Processing",
+    desc: "Formatting, length control, and persona voice application. The raw LLM output is shaped into the companion's authentic voice according to persona config.",
+    bullets: [
+      "Formatting: markdown, line breaks, paragraph structure",
+      "Length control: too-long responses trimmed at sentence boundary",
+      "Persona voice application: tone, register, verbal tics",
+      "Pronoun and name substitution from persona config",
+    ],
+    tags: ["formatting", "voice", "persona"],
+    paths: ["src/core/conversation/pipeline.py"],
+  },
+  "stage-5": {
+    category: "Pipeline — Stage 5",
+    categoryColor: "#58a6ff",
+    title: "Emotional Post-processing",
+    desc: "Updates the companion's internal affective state based on the conversation turn. Mood state and relationship heat are adjusted to reflect what just happened.",
+    bullets: [
+      "Mood state update: shift based on message content + response",
+      "Affective shift: emotion-tagged for memory write",
+      "Relationship heat adjustment: warmth delta from interaction quality",
+      "Prepares data for mood_shift and relationship_heat Celery tasks",
+    ],
+    tags: ["mood", "affective", "relationship"],
+    paths: ["src/core/conversation/pipeline.py"],
+  },
+  "stage-6": {
+    category: "Pipeline — Stage 6",
+    categoryColor: "#58a6ff",
+    title: "Memory Write",
+    desc: "Synchronous memory updates that must complete before delivery. Session state, message store, and episodic record are written here. Heavier async writes are deferred to Stage 7.",
+    bullets: [
+      "Message store: full conversation turn persisted to DB",
+      "Session update: state refreshed for next turn",
+      "Episodic record: significant events flagged for episodic_store task",
+      "Opinion delta: stance changes flagged for extract_opinions task",
+    ],
+    tags: ["sync-write", "session", "messages"],
+    paths: ["src/core/conversation/pipeline.py", "src/database/db.py"],
+  },
+  "stage-7": {
+    category: "Pipeline — Stage 7",
+    categoryColor: "#58a6ff",
+    title: "Background Dispatch",
+    desc: "Dispatches all async Celery tasks for memory enrichment. 15+ tasks are enqueued via apply_async() here — fact extraction, KG update, biography trigger, etc. These run in the background while the response is delivered.",
+    bullets: [
+      "apply_async() for all per-message Celery tasks",
+      "extract_facts, extract_opinions, update_relationship",
+      "episodic_store, entity_extraction, kg_update",
+      "observational_update, biography_trigger, curiosity_update",
+      "goal_progress, mood_shift, code_execution_cleanup",
+      "reach_out_pressure, relationship_heat, graphiti_extraction",
+    ],
+    tags: ["Celery", "apply_async", "async", "15+ tasks"],
+    paths: ["src/core/conversation/pipeline.py", "src/celery_app.py"],
+  },
+  "stage-8": {
+    category: "Pipeline — Stage 8",
+    categoryColor: "#58a6ff",
+    title: "Delivery",
+    desc: "The response is delivered to the user via the appropriate interface. Typing simulation adds a human feel; latency model paces multi-message responses.",
+    bullets: [
+      "Socket.IO emit for web chat interface",
+      "Telegram send_message for Telegram interface",
+      "Typing simulation: delays proportional to response length",
+      "Latency model: for multi-message responses, paced realistically",
+    ],
+    tags: ["Socket.IO", "Telegram", "delivery", "typing"],
+    paths: ["src/handlers/message_handler.py"],
+  },
+  "stage-9": {
+    category: "Pipeline — Stage 9",
+    categoryColor: "#58a6ff",
+    title: "Autonomy Check",
+    desc: "Final stage. Updates reach-out pressure, evaluates goal progress, and checks interjection conditions. Feeds the Always-On Service with current state for proactive behavior.",
+    bullets: [
+      "Reach-out pressure update post-message",
+      "Goal progress evaluation from this conversation turn",
+      "Interjection condition check: should companion add unsolicited thought?",
+      "Feeds Always-On Service with updated state",
+    ],
+    tags: ["autonomy", "reach-out", "goals", "interjection"],
+    paths: ["src/autonomy/always_on_service.py"],
+  },
+  // LLM
+  "llm-infra": {
+    category: "LLM Infrastructure",
+    categoryColor: "#f472b6",
+    title: "LLM Infrastructure",
+    desc: "Multi-provider LLM abstraction layer with automatic failover chain. Handles prompt engineering, token management, and streaming. All providers share the same interface.",
+    bullets: [
+      "provider_factory.py: uniform provider interface",
+      "4-provider failover chain",
+      "Prompt engineering: f-string templates with persona vars",
+      "Token management: context window tracking, history truncation",
+      "Rate limit handling: exponential backoff and provider switching",
+    ],
+    tags: ["multi-provider", "failover", "streaming"],
+    paths: ["src/llm/provider_factory.py"],
+  },
+  "fireworks": {
+    category: "LLM Provider",
+    categoryColor: "#f472b6",
+    title: "Fireworks AI (Primary)",
+    desc: "Primary LLM provider. Hosts Llama 4 Scout — the default model for all production conversation generation. Chosen for low latency and cost efficiency.",
+    bullets: [
+      "Model: Llama 4 Scout (latest Llama 4 variant)",
+      "Default provider for all production traffic",
+      "Low latency: optimized inference infrastructure",
+      "Streaming supported for web interface",
+    ],
+    tags: ["primary", "Llama-4-Scout", "streaming"],
+    paths: ["src/llm/provider_factory.py"],
+  },
+  "deepseek": {
+    category: "LLM Provider",
+    categoryColor: "#f472b6",
+    title: "DeepSeek Chat v3 (Fallback 1)",
+    desc: "First fallback provider. Cost-efficient alternative activated when Fireworks AI is unavailable or rate-limited.",
+    bullets: [
+      "Model: DeepSeek Chat v3",
+      "Activated on Fireworks timeout or rate limit",
+      "Cost-efficient: lower cost per token than OpenAI/Anthropic",
+    ],
+    tags: ["fallback-1", "cost-efficient"],
+    paths: ["src/llm/provider_factory.py"],
+  },
+  "openai": {
+    category: "LLM Provider",
+    categoryColor: "#f472b6",
+    title: "OpenAI GPT-4o (Fallback 2)",
+    desc: "Second fallback provider. Activated when both Fireworks and DeepSeek are unavailable.",
+    bullets: [
+      "Model: GPT-4o",
+      "Activated on DeepSeek failure",
+      "High capability, higher cost",
+    ],
+    tags: ["fallback-2", "GPT-4o"],
+    paths: ["src/llm/provider_factory.py"],
+  },
+  "anthropic": {
+    category: "LLM Provider",
+    categoryColor: "#f472b6",
+    title: "Anthropic Claude (Fallback 3)",
+    desc: "Last-resort fallback provider. Activated only when all other providers have failed.",
+    bullets: [
+      "Model: Claude (latest available)",
+      "Last resort — activated only when chain is exhausted",
+      "Highest quality ceiling, highest cost",
+    ],
+    tags: ["fallback-3", "last-resort"],
+    paths: ["src/llm/provider_factory.py"],
+  },
+  "openrouter": {
+    category: "LLM Provider",
+    categoryColor: "#f472b6",
+    title: "OpenRouter (Simulation Only)",
+    desc: "Not part of the production failover chain. Used exclusively for simulation scripts and external testing with models like Kimi K2 and DeepSeek v3-0324.",
+    bullets: [
+      "Not in production pipeline",
+      "Used by scripts/simulate_relationship.py",
+      "Models: Kimi K2, DeepSeek v3-0324",
+      "Useful for testing different model behaviors",
+    ],
+    tags: ["simulation", "testing", "off-chain"],
+    paths: ["scripts/simulate_relationship.py"],
+  },
+  "prompt-engineering": {
+    category: "LLM Infrastructure",
+    categoryColor: "#f472b6",
+    title: "Prompt Engineering",
+    desc: "All LLM-facing prompts are assembled via f-string interpolation with persona config variables. No hardcoded pronouns or names — everything comes from get_persona_config().",
+    bullets: [
+      "F-string templates for all system prompts",
+      "Variables: {user_name}, {c_name}, {c_subject}, {c_possessive}, …",
+      "Per-stage prompt assembly: each pipeline stage has own system prompt",
+      "Context sections structured: facts, episodes, relationship, mood, …",
+      "Persona voice guidance injected per-companion",
+    ],
+    tags: ["f-string", "persona", "templates"],
+    paths: ["src/config/persona_config.py", "src/core/conversation/"],
+  },
+  // AUTONOMY
+  "autonomy-system": {
+    category: "Autonomy System",
+    categoryColor: "#fbbf24",
+    title: "Autonomy System",
+    desc: "16-module proactive behavior layer. Runs as background async coroutines per companion. Orchestrates all proactive behavior: reach-out, interjection, goal pursuit, and mood management.",
+    bullets: [
+      "16 modules across 6 subsystems",
+      "Per-companion async coroutines (not per-user)",
+      "Heartbeat timer: evaluates proactive actions every N seconds",
+      "Orchestrates: Reach-Out, Interjection, Goal, Mood, Curiosity Engines",
+      "Runs independently of incoming message flow",
+    ],
+    tags: ["autonomy", "async", "background", "proactive"],
+    paths: ["src/autonomy/always_on_service.py"],
+  },
+  "always-on": {
+    category: "Autonomy System",
+    categoryColor: "#fbbf24",
+    title: "Always-On Service",
+    desc: "Background orchestrator for all proactive companion behavior. Runs as async coroutines per companion, independent of message arrival. Heartbeat timer drives all sub-engine evaluations.",
+    bullets: [
+      "Per-companion async coroutines running as background loops",
+      "Heartbeat timer: configurable evaluation interval",
+      "Orchestrates: Reach-Out Engine, Interjection Engine, Goal System, Mood Engine, Curiosity Engine",
+      "Reads Stage 9 autonomy state updates from pipeline",
+      "Fires proactive messages via same Delivery layer as pipeline",
+    ],
+    tags: ["background", "async", "heartbeat", "orchestrator"],
+    paths: ["src/autonomy/always_on_service.py"],
+  },
+  "reach-out-engine": {
+    category: "Autonomy System",
+    categoryColor: "#fbbf24",
+    title: "Reach-Out Engine",
+    desc: "Fires proactive messages when the reach-out pressure threshold is crossed. Selects topic, composes message, and sends via the same Delivery layer as pipeline responses.",
+    bullets: [
+      "Monitors reach-out pressure score from Redis",
+      "When pressure > threshold: selects topic and composes message",
+      "Topic selection: curiosity threads, current goals, daily summary themes",
+      "Timing engine: avoids antisocial hours, respects user timezone",
+      "Delivers via Telegram or Web Chat (same as pipeline Stage 8)",
+    ],
+    tags: ["proactive", "reach-out", "topic-selection", "timing"],
+    paths: ["src/autonomy/reach_out_engine.py"],
+  },
+  "reach-out-pressure": {
+    category: "Autonomy System",
+    categoryColor: "#fbbf24",
+    title: "Reach-Out Pressure",
+    desc: "Urgency accumulation model that drives proactive message timing. Time-since-last-contact and event triggers increment the pressure score; crossing the threshold fires the Reach-Out Engine.",
+    bullets: [
+      "Urgency score stored in Redis per companion-user pair",
+      "Incremented by: time-since-last-contact (linear decay model)",
+      "Incremented by: event triggers (upcoming calendar event, anniversary, etc.)",
+      "Decremented on each received message",
+      "reach_out_pressure_calc nightly task recalculates",
+      "reach_out_pressure per-message task updates inline",
+    ],
+    tags: ["urgency", "accumulation", "decay", "Redis"],
+    paths: ["src/autonomy/reach_out_pressure.py"],
+  },
+  "interjection-engine": {
+    category: "Autonomy System",
+    categoryColor: "#fbbf24",
+    title: "Interjection Engine",
+    desc: "Handles mid-conversation spontaneous additions. Evaluates whether the companion should add an unsolicited thought or reaction during an ongoing conversation.",
+    bullets: [
+      "Evaluates interjection conditions after each pipeline run (Stage 9)",
+      "Triggers: strong emotional reaction to topic, unresolved curiosity thread",
+      "Does not interrupt — waits for turn boundary",
+      "Composes short interjection and routes to Delivery",
+    ],
+    tags: ["interjection", "spontaneous", "emotional-trigger"],
+    paths: ["src/autonomy/interjection_engine.py"],
+  },
+  "goal-system": {
+    category: "Autonomy System",
+    categoryColor: "#fbbf24",
+    title: "Goal System",
+    desc: "Tracks and pursues long-term companion objectives. Steers conversations toward goal-relevant topics and reviews goal progress nightly.",
+    bullets: [
+      "Long-term objectives with priority ranking and sub-goals",
+      "Progress tracking: advancement check per message via goal_progress task",
+      "goal_review nightly: stale pruning, priority reordering",
+      "Goal-informed conversation steering: nudges topic toward goals",
+      "Integrates with curiosity threads for goal-seeded questions",
+    ],
+    tags: ["goals", "sub-goals", "steering", "nightly"],
+    paths: ["src/autonomy/goal_system.py"],
+  },
+  "mood-engine": {
+    category: "Autonomy System",
+    categoryColor: "#fbbf24",
+    title: "Mood Engine",
+    desc: "Manages the companion's affective state over time. Works alongside the mood_state memory module — the Engine drives transitions, the State records them.",
+    bullets: [
+      "Affective state machine with 14 distinct mood types",
+      "Event-driven transitions: conversation events trigger shifts",
+      "Overnight reset: mood_baseline_reset task normalizes mood",
+      "Mood informs prompt engineering (appended to system prompt)",
+      "Long-running mood arcs: sustained sadness, sustained excitement, etc.",
+    ],
+    tags: ["affective", "14-moods", "state-machine", "arcs"],
+    paths: ["src/autonomy/mood_engine.py"],
+  },
+  "curiosity-engine": {
+    category: "Autonomy System",
+    categoryColor: "#fbbf24",
+    title: "Curiosity Engine",
+    desc: "Tracks open questions and drives intellectual follow-ups. Seeds the companion's conversational agenda with things it genuinely wants to know.",
+    bullets: [
+      "Scans each conversation for open/unanswered questions",
+      "Maintains curiosity thread store in memory",
+      "Feeds topics into Reach-Out Engine for proactive follow-ups",
+      "curiosity_refresh nightly cleans stale threads",
+      "Interest-driven: weights threads by topic salience",
+    ],
+    tags: ["curiosity", "open-questions", "follow-up"],
+    paths: ["src/autonomy/curiosity_engine.py"],
+  },
+  // EXTERNAL
+  "external-services": {
+    category: "External Services",
+    categoryColor: "#9ca3af",
+    title: "External Services",
+    desc: "All third-party API integrations. Includes messaging (Telegram), productivity (Google), voice (Deepgram + ElevenLabs), image (RunComfy + NanoBanana), search (Tavily), and media (Cloudinary).",
+    bullets: [
+      "Telegram: Bot API, bidirectional messaging",
+      "Google Calendar + Gmail: OAuth2 event awareness",
+      "Deepgram: speech-to-text for voice input",
+      "ElevenLabs: text-to-speech for audio responses",
+      "RunComfy + NanoBanana: ComfyUI image generation",
+      "Tavily: real-time web search",
+      "Cloudinary: media storage and CDN",
+    ],
+    tags: ["Telegram", "Google", "Deepgram", "ElevenLabs", "Tavily"],
+    paths: ["src/integrations/"],
+  },
+  "docker-infra": {
+    category: "Infrastructure",
+    categoryColor: "#9ca3af",
+    title: "Docker Infrastructure",
+    desc: "All services run as Docker containers. Six containers comprise the full stack, coordinated via Docker Compose.",
+    bullets: [
+      "companion-backend: Flask + Socket.IO main app",
+      "companion-celery-worker: task execution",
+      "companion-celery-beat: scheduled task dispatcher",
+      "companion-postgres: PostgreSQL + pgvector",
+      "companion-redis: broker, cache, pub/sub",
+      "companion-graphiti-neo4j: Neo4j KG backend",
+    ],
+    tags: ["Docker", "Docker-Compose", "6-containers"],
+    paths: ["docker-compose.yml"],
+  },
+  "observe-dashboard": {
+    category: "Infrastructure",
+    categoryColor: "#9ca3af",
+    title: "Observe Dashboard",
+    desc: "Real-time companion state inspection tool at /observe. Shows live facts, knowledge graph state, episodic memory, conversation feed, and tab panels for all memory categories.",
+    bullets: [
+      "Available at /observe (Flask route)",
+      "Real-time via Socket.IO subscription",
+      "Tabs: Facts, Knowledge Graph, Episodes, Opinions, Goals, Mood",
+      "Conversation feed with message-by-message replay",
+      "Gate decisions surfaced for human review",
+    ],
+    tags: ["observe", "real-time", "Socket.IO", "dashboard"],
+    paths: ["public/observe.html", "src/routes/observe_routes.py"],
+  },
+  // CELERY
+  "celery-system": {
+    category: "Celery Task System",
+    categoryColor: "#a78bfa",
+    title: "Celery Task System",
+    desc: "30+ tasks orchestrated by Celery with Redis as broker and result backend. Three tiers: per-message (inline dispatch), nightly (03:00 crontab), and weekly (Sunday 04:00 crontab).",
+    bullets: [
+      "30+ registered tasks in celery_app.py",
+      "Redis broker + result backend",
+      "Per-message: apply_async() from Stage 7 of pipeline",
+      "Nightly: crontab(hour=3, minute=0) — per active companion",
+      "Weekly: crontab(day_of_week=0, hour=4) — deep analysis",
+      "Task isolation: per-user schema routing throughout",
+    ],
+    tags: ["Celery", "Redis", "30+ tasks", "Beat"],
+    paths: ["src/celery_app.py", "src/tasks/"],
+  },
+  "per-message-tasks": {
+    category: "Celery — Per-Message",
+    categoryColor: "#a78bfa",
+    title: "Per-Message Tasks",
+    desc: "15 tasks dispatched via apply_async() from pipeline Stage 7 after every conversation turn. Run in background while response is delivered.",
+    bullets: [
+      "extract_facts: SPO triple extraction to pgvector",
+      "extract_opinions: stance detection and belief delta",
+      "update_relationship: intimacy, trust, conflict update",
+      "episodic_store: event record with salience scoring",
+      "entity_extraction: NER and entity profile linking",
+      "kg_update: Graphiti Neo4j upsert",
+      "observational_update: behavioral pattern write",
+      "biography_trigger: marks bio stale if threshold met",
+      "curiosity_update: open question scan",
+      "goal_progress: advancement check",
+      "mood_shift: affective state write",
+      "code_execution_cleanup: sandbox teardown",
+      "reach_out_pressure: urgency recalc",
+      "relationship_heat: warmth delta",
+      "graphiti_extraction: episode → knowledge graph",
+    ],
+    tags: ["15-tasks", "apply_async", "per-message"],
+    paths: ["src/celery_app.py", "src/tasks/"],
+  },
+  "nightly-tasks": {
+    category: "Celery — Nightly",
+    categoryColor: "#a78bfa",
+    title: "Nightly Tasks",
+    desc: "15 tasks scheduled at 03:00 daily via Celery Beat. Run per active companion to maintain memory health, consistency, and freshness.",
+    bullets: [
+      "nightly_summary: 24h conversation condensation",
+      "fact_confidence_decay: age-based confidence reduction",
+      "contradiction_detect: cross-fact consistency check",
+      "biography_regen: LLM regeneration if stale-flagged",
+      "goal_review: pruning and priority reorder",
+      "reach_out_pressure_calc: urgency recalc with silence decay",
+      "relationship_health: drift detect and reconnect flagging",
+      "entity_profile_sync: YAML → DB consistency",
+      "memory_consolidation: episodic → core promotion",
+      "curiosity_refresh: stale thread cleanup",
+      "opinion_drift: stance evolution with recency weighting",
+      "mood_baseline_reset: overnight normalization",
+      "daily_summary_store: write summary to DB",
+      "pg_vacuum_analyze: DB maintenance",
+      "kg_node_prune: stale Neo4j node cleanup",
+    ],
+    tags: ["nightly", "crontab-03:00", "15-tasks"],
+    paths: ["src/celery_app.py", "src/tasks/"],
+  },
+  "weekly-tasks": {
+    category: "Celery — Weekly",
+    categoryColor: "#a78bfa",
+    title: "Weekly Tasks",
+    desc: "6 deep analysis tasks scheduled Sunday 04:00 via Celery Beat. Heavy LLM and graph operations that are too expensive to run nightly.",
+    bullets: [
+      "weekly_summary: 7-day arc summary generation",
+      "deep_fact_review: low-confidence fact challenge",
+      "personality_drift: trait vector analysis and correction",
+      "relationship_milestone: anniversary / threshold detect",
+      "kg_deep_analysis: community detection and centrality",
+      "entity_biography_full: full entity profile regeneration",
+    ],
+    tags: ["weekly", "crontab-sunday-04:00", "deep-analysis"],
+    paths: ["src/celery_app.py", "src/tasks/"],
+  },
+  "beat-schedule": {
+    category: "Celery",
+    categoryColor: "#a78bfa",
+    title: "Celery Beat Schedule and Workers",
+    desc: "Beat scheduler configuration and worker deployment details.",
+    bullets: [
+      "Per-message: fired inline via apply_async() after each pipeline run",
+      "Nightly: crontab(hour=3, minute=0) — runs for each active companion",
+      "Weekly: crontab(day_of_week=0, hour=4) — deep analysis window",
+      "Workers: companion-celery-worker (Docker)",
+      "Beat: companion-celery-beat (Docker)",
+      "Broker: Redis — Result backend: Redis",
+      "Task isolation: per-user schema routing throughout",
+    ],
+    tags: ["Beat", "workers", "Redis", "Docker"],
+    paths: ["src/celery_app.py", "docker-compose.yml"],
+  },
+  // STORAGE
+  "storage-layer": {
+    category: "Storage Layer",
+    categoryColor: "#60a5fa",
+    title: "Storage Layer",
+    desc: "Three-database storage architecture. PostgreSQL + pgvector for relational data and vector search. Redis for caching and messaging. Neo4j for the knowledge graph.",
+    bullets: [
+      "PostgreSQL + pgvector: primary relational store with vector search",
+      "Redis: Celery broker, result backend, session cache, pub/sub",
+      "Neo4j: Graphiti knowledge graph backend",
+      "All three run as Docker containers",
+    ],
+    tags: ["PostgreSQL", "Redis", "Neo4j"],
+    paths: ["src/database/"],
+  },
+  "postgresql": {
+    category: "Storage — PostgreSQL",
+    categoryColor: "#60a5fa",
+    title: "PostgreSQL + pgvector",
+    desc: "Primary relational database with pgvector extension for hybrid BM25 + cosine vector search. Per-user schemas provide complete data isolation.",
+    bullets: [
+      "Per-user schemas: user_kai, user_mira, user_<name>, …",
+      "schema_manager.py handles all routing",
+      "Tables per schema: messages, facts, opinions, goals, episodes",
+      "Additional: relationship_state, entity_profiles, curiosity_threads",
+      "Additional: user_state, daily_summaries, biographies",
+      "Hybrid search: BM25 full-text + cosine vector (pgvector)",
+      "Alembic migrations for schema versioning",
+    ],
+    tags: ["PostgreSQL", "pgvector", "per-schema", "BM25", "Alembic"],
+    paths: ["src/database/db.py", "src/database/schema_ddl.py"],
+  },
+  "redis": {
+    category: "Storage — Redis",
+    categoryColor: "#60a5fa",
+    title: "Redis",
+    desc: "Multi-purpose in-memory store serving as Celery broker, result backend, session cache, Socket.IO pub/sub channel, and reach-out pressure store.",
+    bullets: [
+      "Celery broker: task queue for all 30+ tasks",
+      "Celery result backend: task result storage",
+      "Session cache: active companion session state",
+      "Socket.IO pub/sub: real-time message fan-out",
+      "Reach-out pressure store: urgency scores per companion-user",
+      "Rate limit counters: per-provider API rate tracking",
+    ],
+    tags: ["Redis", "broker", "pub/sub", "cache"],
+    paths: ["src/celery_app.py"],
+  },
+  "neo4j": {
+    category: "Storage — Neo4j",
+    categoryColor: "#60a5fa",
+    title: "Neo4j — Graphiti Knowledge Graph",
+    desc: "Knowledge graph backend accessed via Graphiti API. Entity and episodic nodes connected by typed edges, with per-user group_id isolation.",
+    bullets: [
+      "Graphiti library provides the API layer",
+      "bolt://neo4j:7687 (internal Docker network)",
+      "Entity nodes: people, places, concepts, organizations",
+      "Episodic nodes: dated events with participant links",
+      "Edge types: RELATES_TO, MENTIONS, HAS_EPISODE",
+      "group_id per-user isolation — strict separation",
+      "Community detection and centrality analysis (weekly kg_deep_analysis)",
+      "Hybrid retrieval with PostgreSQL facts",
+    ],
+    tags: ["Neo4j", "Graphiti", "graph", "group_id", "community-detection"],
+    paths: ["src/memory/graphiti_search.py", "src/tasks/graphiti_extraction_task.py"],
+  },
+};
+
+// ─── COLOR PALETTE ─────────────────────────────────────────────────────────────
+const C = {
+  memory:   { stroke: "#2ea043", fill: "#0a1f0a", text: "#4ade80", sub: "#5a9e5a", inner: "#0d2210" },
+  pipeline: { stroke: "#388bfd", fill: "#0c1a2c", text: "#58a6ff", sub: "#4a6a9a", inner: "#111e35" },
+  gate:     { stroke: "#ef4444", fill: "#2a0e10", text: "#ef4444", sub: "#fca5a5", inner: "#2a0e10" },
+  llm:      { stroke: "#ec4899", fill: "#19082a", text: "#f472b6", sub: "#8a5090", inner: "#220d38" },
+  autonomy: { stroke: "#d97706", fill: "#1e1200", text: "#fbbf24", sub: "#8a6020", inner: "#261600" },
+  external: { stroke: "#6b7280", fill: "#0f1520", text: "#9ca3af", sub: "#5a6070", inner: "#141a26" },
+  celery:   { stroke: "#8b5cf6", fill: "#100c28", text: "#a78bfa", sub: "#5a4a8a", inner: "#160e36" },
+  storage:  { stroke: "#3b82f6", fill: "#0a1525", text: "#60a5fa", sub: "#3a5a8a", inner: "#0c1e35" },
+};
+
+// ─── CANVAS DIMENSIONS ─────────────────────────────────────────────────────────
+const W = 1820, H = 1480;
+
+// ─── SPINE LAYOUT CONSTANTS ────────────────────────────────────────────────────
+const SPINE_X = 770;        // left edge of spine boxes
+const SPINE_W = 280;        // width of spine boxes
+const SPINE_CX = SPINE_X + SPINE_W / 2;  // center x of spine
+const SPINE_H = 64;         // default stage height
+const GATE_H = 68;          // gate box height
+const SPINE_GAP = 20;       // vertical gap between spine boxes
+const SPINE_TOP = 210;      // y of first spine item (Stage 1)
+
+// ─── SIDEBAR ───────────────────────────────────────────────────────────────────
+const sidebar = document.getElementById('sidebar');
+const sidebarInner = document.getElementById('sidebar-inner');
+const sidebarClose = document.getElementById('sidebar-close');
+let activeItem = null;
+
+function openDetail(key) {
+  const d = DETAILS[key];
+  if (!d) return;
+  if (activeItem) d3.select(`[data-detail="${activeItem}"]`).classed('active', false);
+  activeItem = key;
+  d3.select(`[data-detail="${key}"]`).classed('active', true);
+
+  const color = d.categoryColor;
+  let html = `
+    <div class="sidebar-category" style="color:${color}">${d.category}</div>
+    <div class="sidebar-title" style="color:${color}">${d.title}</div>
+    <div class="sidebar-desc">${d.desc}</div>
+  `;
+  if (d.bullets && d.bullets.length) {
+    html += `<div class="sidebar-section-label">Details</div><ul class="sidebar-bullets">`;
+    d.bullets.forEach(b => { html += `<li>${b}</li>`; });
+    html += `</ul>`;
+  }
+  if (d.tags && d.tags.length) {
+    html += `<div class="sidebar-section-label">Tags</div><div class="sidebar-tags">`;
+    d.tags.forEach(t => {
+      html += `<span class="sidebar-tag" style="color:${color};border-color:${color}40;background:${color}10">${t}</span>`;
+    });
+    html += `</div>`;
+  }
+  if (d.paths && d.paths.length) {
+    html += `<div class="sidebar-section-label">File Paths</div><div class="sidebar-paths">`;
+    d.paths.forEach(p => { html += `<p>${p}</p>`; });
+    html += `</div>`;
+  }
+  sidebarInner.innerHTML = html;
+  sidebar.classList.add('open');
+}
+
+function closeDetail() {
+  if (activeItem) {
+    d3.select(`[data-detail="${activeItem}"]`).classed('active', false);
+    activeItem = null;
+  }
+  sidebar.classList.remove('open');
+}
+
+sidebarClose.addEventListener('click', closeDetail);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
+
+// ─── SVG + ZOOM ────────────────────────────────────────────────────────────────
+const svgEl = document.getElementById('svg-root');
+const svg = d3.select('#svg-root');
+
+function computeFitTransform() {
+  const vw = svgEl.clientWidth || window.innerWidth;
+  const vh = svgEl.clientHeight || window.innerHeight - 36;
+  const scale = Math.min(vw / W, vh / H) * 0.94;
+  const tx = (vw - W * scale) / 2;
+  const ty = (vh - H * scale) / 2;
+  return d3.zoomIdentity.translate(tx, ty).scale(scale);
+}
+
+const zoomBehavior = d3.zoom()
+  .scaleExtent([0.1, 4])
+  .on('zoom', (event) => { mainG.attr('transform', event.transform); });
+
+svg.call(zoomBehavior);
+const mainG = svg.append('g').attr('id', 'main-g');
+
+function resetView() {
+  svg.transition().duration(500).call(zoomBehavior.transform, computeFitTransform());
+}
+
+document.getElementById('btn-zoom-in').addEventListener('click', () => {
+  svg.transition().duration(250).call(zoomBehavior.scaleBy, 1.4);
+});
+document.getElementById('btn-zoom-out').addEventListener('click', () => {
+  svg.transition().duration(250).call(zoomBehavior.scaleBy, 0.7);
+});
+document.getElementById('btn-reset').addEventListener('click', resetView);
+
+// Background
+mainG.append('rect').attr('width', W).attr('height', H).attr('fill', '#0d1117');
+
+// ─── ARROW MARKER DEFS ─────────────────────────────────────────────────────────
+const defs = svg.append('defs');
+function addMarker(id, color, size=7) {
+  defs.append('marker')
+    .attr('id', id)
+    .attr('markerWidth', size).attr('markerHeight', size)
+    .attr('refX', size - 1.5).attr('refY', size / 2)
+    .attr('orient', 'auto')
+    .append('polygon')
+    .attr('points', `0 0, ${size} ${size/2}, 0 ${size}`)
+    .attr('fill', color);
+}
+addMarker('arr-gray',   '#6b7280');
+addMarker('arr-green',  '#2ea043');
+addMarker('arr-blue',   '#388bfd');
+addMarker('arr-pink',   '#ec4899');
+addMarker('arr-amber',  '#d97706');
+addMarker('arr-purple', '#8b5cf6');
+addMarker('arr-red',    '#ef4444');
+addMarker('arr-storage','#3b82f6');
+
+// Drop shadow filter
+const filter = defs.append('filter').attr('id', 'shadow').attr('x', '-10%').attr('y', '-10%').attr('width', '120%').attr('height', '120%');
+filter.append('feDropShadow').attr('dx', 0).attr('dy', 2).attr('stdDeviation', 4).attr('flood-color', '#000').attr('flood-opacity', 0.5);
+
+// ─── HELPER: make group clickable ──────────────────────────────────────────────
+function clickable(g, key) {
+  g.attr('class', 'node-g')
+   .attr('data-detail', key)
+   .on('click', function(event) {
+     event.stopPropagation();
+     if (activeItem === key) { closeDetail(); return; }
+     openDetail(key);
+   })
+   .on('mouseover', function() {
+     d3.select(this).select('.node-rect').style('filter', 'brightness(1.35)');
+   })
+   .on('mouseout', function() {
+     if (!d3.select(this).classed('active')) {
+       d3.select(this).select('.node-rect').style('filter', null);
+     }
+   });
+  return g;
+}
+
+// ─── HELPER: draw a rounded box with title + subtitle lines ───────────────────
+function box(parent, x, y, w, h, col, title, lines, key, opts={}) {
+  const g = parent.append('g');
+  if (key) clickable(g, key);
+
+  g.append('rect')
+    .attr('class', 'node-rect')
+    .attr('x', x).attr('y', y).attr('width', w).attr('height', h)
+    .attr('rx', opts.rx || 5)
+    .attr('fill', opts.fill || col.inner || col.fill)
+    .attr('stroke', opts.stroke || col.stroke)
+    .attr('stroke-width', opts.sw || 1.5)
+    .attr('stroke-dasharray', opts.dash || null);
+
+  // Top accent bar
+  if (opts.accent !== false) {
+    g.append('rect')
+      .attr('x', x + (opts.sw || 1.5)).attr('y', y + (opts.sw || 1.5))
+      .attr('width', w - 2*(opts.sw || 1.5)).attr('height', 3)
+      .attr('rx', 4).attr('fill', opts.stroke || col.stroke).attr('fill-opacity', 0.5);
+  }
+
+  const titleFontSize = opts.titleSize || 11.5;
+  let ty = y + 19;
+  g.append('text')
+    .attr('x', x + w/2).attr('y', ty)
+    .attr('text-anchor', 'middle')
+    .attr('fill', col.text)
+    .attr('font-size', titleFontSize)
+    .attr('font-weight', 'bold')
+    .attr('class', 'node-label')
+    .text(title);
+
+  if (lines) {
+    lines.forEach((line, i) => {
+      ty += 13;
+      g.append('text')
+        .attr('x', x + w/2).attr('y', ty)
+        .attr('text-anchor', 'middle')
+        .attr('fill', col.sub)
+        .attr('font-size', 9.5)
+        .text(line);
+    });
+  }
+  return g;
+}
+
+// ─── HELPER: draw a bezier arrow path ─────────────────────────────────────────
+// dir: 'LR' left→right, 'RL' right→left, 'TB' top→bottom
+function arrow(x1, y1, x2, y2, color, markerId, opts={}) {
+  const dash = opts.dash || null;
+  const sw = opts.sw || 1.5;
+
+  let d;
+  if (opts.path) {
+    d = opts.path;
+  } else {
+    // Auto bezier based on relative positions
+    const dx = x2 - x1, dy = y2 - y1;
+    if (Math.abs(dx) > Math.abs(dy) * 0.5 && opts.horiz !== false) {
+      // Horizontal-ish: use horizontal bezier
+      const cx = (x1 + x2) / 2;
+      d = `M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`;
+    } else {
+      // Vertical bezier
+      const cy = (y1 + y2) / 2;
+      d = `M${x1},${y1} C${x1},${cy} ${x2},${cy} ${x2},${y2}`;
+    }
+  }
+
+  mainG.append('path')
+    .attr('class', 'connection-path')
+    .attr('d', d)
+    .attr('fill', 'none')
+    .attr('stroke', color)
+    .attr('stroke-width', sw)
+    .attr('stroke-dasharray', dash)
+    .attr('marker-end', `url(#${markerId})`);
+}
+
+// ─── HELPER: vertical spine connector ─────────────────────────────────────────
+function spineArrow(y1, y2) {
+  mainG.append('line')
+    .attr('class', 'connection-path')
+    .attr('x1', SPINE_CX).attr('y1', y1)
+    .attr('x2', SPINE_CX).attr('y2', y2 - 3)
+    .attr('stroke', '#4a6a9a')
+    .attr('stroke-width', 2)
+    .attr('marker-end', 'url(#arr-blue)');
+}
+
+// ─── TITLE ────────────────────────────────────────────────────────────────────
+mainG.append('text')
+  .attr('x', W/2).attr('y', 34).attr('text-anchor', 'middle')
+  .attr('fill', '#e6edf3').attr('font-size', 18).attr('font-weight', 'bold')
+  .text('Roux — System Architecture');
+mainG.append('text')
+  .attr('x', W/2).attr('y', 54).attr('text-anchor', 'middle')
+  .attr('fill', '#8b949e').attr('font-size', 10.5)
+  .text('Flask · Socket.IO · Celery · PostgreSQL+pgvector · Neo4j (Graphiti) · Redis · Python 3.11');
+
+// Vertical label for pipeline
+mainG.append('text')
+  .attr('x', SPINE_CX).attr('y', 78)
+  .attr('text-anchor', 'middle')
+  .attr('fill', '#2a4060')
+  .attr('font-size', 10)
+  .attr('letter-spacing', '0.12em')
+  .text('CONVERSATION PIPELINE');
+mainG.append('line')
+  .attr('x1', SPINE_X - 40).attr('y1', 82)
+  .attr('x2', SPINE_X + SPINE_W + 40).attr('y2', 82)
+  .attr('stroke', '#1a2a40').attr('stroke-width', 1);
+
+// ─── INTERFACES (top center) ──────────────────────────────────────────────────
+{
+  const ix = SPINE_X, iy = 90, iw = SPINE_W, ih = 58;
+  const g = mainG.append('g');
+  clickable(g, 'interfaces');
+  g.append('rect')
+    .attr('class', 'node-rect')
+    .attr('x', ix).attr('y', iy).attr('width', iw).attr('height', ih)
+    .attr('rx', 5)
+    .attr('fill', '#111e35')
+    .attr('stroke', C.pipeline.stroke)
+    .attr('stroke-width', 2);
+  g.append('rect')
+    .attr('x', ix + 2).attr('y', iy + 2)
+    .attr('width', iw - 4).attr('height', 3)
+    .attr('rx', 3).attr('fill', C.pipeline.stroke).attr('fill-opacity', 0.5);
+  g.append('text').attr('x', SPINE_CX).attr('y', iy + 20)
+    .attr('text-anchor', 'middle').attr('fill', C.pipeline.text)
+    .attr('font-size', 12).attr('font-weight', 'bold').attr('class', 'node-label')
+    .text('User Interfaces');
+
+  const labels = [['Web Chat', 0], ['Telegram', 1], ['CLI', 2]];
+  const bw = 78, bh = 18, bGap = 6;
+  const totalW = labels.length * bw + (labels.length - 1) * bGap;
+  const bStartX = SPINE_CX - totalW / 2;
+  labels.forEach(([lbl, i]) => {
+    const bx = bStartX + i * (bw + bGap);
+    g.append('rect').attr('x', bx).attr('y', iy + 30).attr('width', bw).attr('height', bh)
+      .attr('rx', 3).attr('fill', '#1a3050').attr('stroke', C.pipeline.stroke).attr('stroke-width', 0.8);
+    g.append('text').attr('x', bx + bw/2).attr('y', iy + 43)
+      .attr('text-anchor', 'middle').attr('fill', '#93c5fd').attr('font-size', 9.5).text(lbl);
+  });
+}
+
+// Arrow: interfaces → message handler
+const IFY2 = 90 + 58;
+const MHY = IFY2 + 20;
+spineArrow(IFY2, MHY);
+
+// Message Handler
+const MHH = 56;
+box(mainG, SPINE_X, MHY, SPINE_W, MHH, C.pipeline,
+  'Message Handler',
+  ['routing · validation · session init', 'src/handlers/message_handler.py'],
+  'message-handler');
+
+// Arrow: handler → stage 1
+const MHY2 = MHY + MHH;
+const S1Y = MHY2 + SPINE_GAP;
+spineArrow(MHY2, S1Y);
+
+// ─── PIPELINE STAGES ──────────────────────────────────────────────────────────
+// Stage 1 — Pre-processing
+box(mainG, SPINE_X, S1Y, SPINE_W, SPINE_H, C.pipeline,
+  '① Pre-processing',
+  ['intent detection · message parse', 'session load · companion init'],
+  'stage-1');
+const S1Y2 = S1Y + SPINE_H;
+
+// Arrow to Gate 1.5
+const G1Y = S1Y2 + SPINE_GAP;
+spineArrow(S1Y2, G1Y);
+
+// Gate 1.5
+{
+  const g = mainG.append('g');
+  clickable(g, 'gate-1-5');
+  g.append('rect')
+    .attr('class', 'node-rect')
+    .attr('x', SPINE_X).attr('y', G1Y).attr('width', SPINE_W).attr('height', GATE_H)
+    .attr('rx', 5)
+    .attr('fill', C.gate.inner).attr('stroke', C.gate.stroke).attr('stroke-width', 2.5);
+  // red top accent
+  g.append('rect').attr('x', SPINE_X + 2).attr('y', G1Y + 2).attr('width', SPINE_W - 4).attr('height', 3)
+    .attr('rx', 3).attr('fill', C.gate.stroke).attr('fill-opacity', 0.7);
+  g.append('text').attr('x', SPINE_CX).attr('y', G1Y + 20)
+    .attr('text-anchor', 'middle').attr('fill', C.gate.text)
+    .attr('font-size', 11.5).attr('font-weight', 'bold').attr('class', 'node-label')
+    .text('⬡ GATE 1.5 — Memory Validation');
+  [['Anti-confabulation · pre-generation', G1Y + 34],
+   ['validates context vs. fact store + entity profiles', G1Y + 47],
+   ['blocks hallucinated context from entering LLM', G1Y + 59]].forEach(([t, ty]) => {
+    g.append('text').attr('x', SPINE_CX).attr('y', ty)
+      .attr('text-anchor', 'middle').attr('fill', C.gate.sub).attr('font-size', 9).text(t);
+  });
+}
+const G1Y2 = G1Y + GATE_H;
+
+// Stage 2 — Context Assembly
+const S2Y = G1Y2 + SPINE_GAP;
+spineArrow(G1Y2, S2Y);
+const S2H = 76;
+box(mainG, SPINE_X, S2Y, SPINE_W, S2H, C.pipeline,
+  '② Context Assembly',
+  ['ContextBuilder · ThreadPoolExecutor', 'parallel fetch: facts · episodes · opinions',
+   'entity profiles · rel. state · biographies'],
+  'stage-2');
+const S2Y2 = S2Y + S2H;
+
+// Stage 3 — LLM Generation
+const S3Y = S2Y2 + SPINE_GAP;
+spineArrow(S2Y2, S3Y);
+box(mainG, SPINE_X, S3Y, SPINE_W, SPINE_H, C.pipeline,
+  '③ LLM Generation',
+  ['provider chain w/ automatic failover', 'Fireworks → DeepSeek → OpenAI → Anthropic'],
+  'stage-3');
+const S3Y2 = S3Y + SPINE_H;
+
+// Gate 4
+const G4Y = S3Y2 + SPINE_GAP;
+spineArrow(S3Y2, G4Y);
+{
+  const g = mainG.append('g');
+  clickable(g, 'gate-4');
+  g.append('rect')
+    .attr('class', 'node-rect')
+    .attr('x', SPINE_X).attr('y', G4Y).attr('width', SPINE_W).attr('height', GATE_H)
+    .attr('rx', 5)
+    .attr('fill', C.gate.inner).attr('stroke', C.gate.stroke).attr('stroke-width', 2.5);
+  g.append('rect').attr('x', SPINE_X + 2).attr('y', G4Y + 2).attr('width', SPINE_W - 4).attr('height', 3)
+    .attr('rx', 3).attr('fill', C.gate.stroke).attr('fill-opacity', 0.7);
+  g.append('text').attr('x', SPINE_CX).attr('y', G4Y + 20)
+    .attr('text-anchor', 'middle').attr('fill', C.gate.text)
+    .attr('font-size', 11.5).attr('font-weight', 'bold').attr('class', 'node-label')
+    .text('⬡ GATE 4 — Claim Validation');
+  [['Anti-confabulation · post-generation', G4Y + 34],
+   ['fact-checks response vs. stored facts + profiles', G4Y + 47],
+   ['strips or flags unsupported claims before delivery', G4Y + 59]].forEach(([t, ty]) => {
+    g.append('text').attr('x', SPINE_CX).attr('y', ty)
+      .attr('text-anchor', 'middle').attr('fill', C.gate.sub).attr('font-size', 9).text(t);
+  });
+}
+const G4Y2 = G4Y + GATE_H;
+
+// Stages 4–9
+const laterStages = [
+  ['④ Response Processing',   ['formatting · length control', 'persona voice application'],        'stage-4', SPINE_H],
+  ['⑤ Emotional Post-processing', ['mood state update · affective shift', 'relationship heat adjustment'], 'stage-5', SPINE_H],
+  ['⑥ Memory Write',          ['message store · session update', 'episodic record · opinion delta'], 'stage-6', SPINE_H],
+  ['⑦ Background Dispatch',   ['Celery apply_async · 15+ tasks', 'fact extract · KG update · bio trigger'], 'stage-7', SPINE_H],
+  ['⑧ Delivery',              ['Socket.IO emit · Telegram send', 'typing simulation · latency model'], 'stage-8', SPINE_H],
+  ['⑨ Autonomy Check',        ['reach-out pressure update', 'goal progress · interjection eval'],   'stage-9', SPINE_H],
+];
+
+let prevY2 = G4Y2;
+const stagePositions = {};
+laterStages.forEach(([label, lines, key, h]) => {
+  const stY = prevY2 + SPINE_GAP;
+  spineArrow(prevY2, stY);
+  box(mainG, SPINE_X, stY, SPINE_W, h, C.pipeline, label, lines, key);
+  stagePositions[key] = { y: stY, h: h, cy: stY + h / 2 };
+  prevY2 = stY + h;
+});
+
+// Record all stage y positions for satellite alignment
+const allStagePos = {
+  'stage-1':   { y: S1Y,  h: SPINE_H, cy: S1Y + SPINE_H/2 },
+  'gate-1-5':  { y: G1Y,  h: GATE_H,  cy: G1Y + GATE_H/2 },
+  'stage-2':   { y: S2Y,  h: S2H,     cy: S2Y + S2H/2 },
+  'stage-3':   { y: S3Y,  h: SPINE_H, cy: S3Y + SPINE_H/2 },
+  'gate-4':    { y: G4Y,  h: GATE_H,  cy: G4Y + GATE_H/2 },
+  ...stagePositions,
+};
+
+// ─── LEFT SATELLITE PANELS ────────────────────────────────────────────────────
+// Satellite box helper: draws a panel and returns connection point
+const LEFT_MAX_X = SPINE_X - 20; // right edge of left panels
+const LEFT_W = 220;
+
+function leftSat(parent, topY, h, col, title, lines, key, opts={}) {
+  const x = LEFT_MAX_X - LEFT_W;
+  box(parent, x, topY, LEFT_W, h, col, title, lines, key, opts);
+  return { cx: x + LEFT_W, cy: topY + h / 2, lx: x, ly: topY };
+}
+
+// Helper to draw left→spine horizontal bezier
+function leftArrow(satRight, satCy, spineLeft, spineCy, color, marker, opts={}) {
+  const x1 = satRight, y1 = satCy;
+  const x2 = spineLeft, y2 = spineCy;
+  const cpx = (x1 + x2) / 2;
+  arrow(x1, y1, x2, y2, color, marker, {
+    path: `M${x1},${y1} C${cpx},${y1} ${cpx},${y2} ${x2},${y2}`,
+    ...opts
+  });
+}
+
+// ── LEFT: Core Memory + Mood State → Stage 1 ──────────────────────────────────
+{
+  const s1cy = allStagePos['stage-1'].cy;
+  // Stacked panels centered on s1cy
+  const panH = 54;
+  const gap = 8;
+  const totalH = panH * 2 + gap;
+  const topY = s1cy - totalH / 2;
+
+  const p1 = leftSat(mainG, topY, panH, C.memory, 'Core Memory',
+    ['emotional core · personality traits', 'identity anchors · values · no-decay'], 'core-memory');
+  const p2 = leftSat(mainG, topY + panH + gap, panH, C.memory, 'Mood State',
+    ['affective state machine · 14 moods', 'event-driven transitions · nightly reset'], 'mood-state');
+
+  const avgCy = (p1.cy + p2.cy) / 2;
+  leftArrow(p1.cx, p1.cy, SPINE_X, s1cy, C.memory.stroke, 'arr-green');
+  leftArrow(p2.cx, p2.cy, SPINE_X, s1cy, C.memory.stroke, 'arr-green');
+}
+
+// ── LEFT: Entity Profiles + Fact Store → Gate 1.5 ────────────────────────────
+{
+  const gcy = allStagePos['gate-1-5'].cy;
+  const panH = 56;
+  const gap = 8;
+  const totalH = panH * 2 + gap;
+  const topY = gcy - totalH / 2;
+
+  leftSat(mainG, topY, panH, C.memory, 'Entity Profiles  ✦',
+    ['YAML · git-versioned · ground truth', 'authoritative override · feeds both gates'], 'entity-profiles',
+    { sw: 1.8 });
+  leftSat(mainG, topY + panH + gap, panH, C.memory, 'Fact Store',
+    ['SPO triples · BM25+cosine hybrid', 'confidence decay · contradiction detect'], 'fact-store');
+
+  const top = { cx: LEFT_MAX_X - LEFT_W + LEFT_W, cy: topY + panH / 2 };
+  const bot = { cx: LEFT_MAX_X - LEFT_W + LEFT_W, cy: topY + panH + gap + panH / 2 };
+  leftArrow(top.cx, top.cy, SPINE_X, gcy, C.memory.stroke, 'arr-green');
+  leftArrow(bot.cx, bot.cy, SPINE_X, gcy, C.memory.stroke, 'arr-green');
+}
+
+// ── LEFT: Memory cluster → Stage 2 (Context Assembly) ────────────────────────
+{
+  const s2cy = allStagePos['stage-2'].cy;
+  const items = [
+    ['Fact Store',          ['SPO triples · pgvector hybrid search'],   'fact-store',           48],
+    ['Episodic Memory',     ['significant events · salience scoring'],   'episodic-memory',      48],
+    ['Knowledge Graph',     ['Graphiti · Neo4j · semantic search'],      'knowledge-graph',      48],
+    ['Opinions',            ['stance tracking · belief drift'],          'opinions',             44],
+    ['Rel. Store + Biographies', ['dyad state · trust · daily summaries'], 'relationship-store', 44],
+  ];
+  const gap = 6;
+  const totalH = items.reduce((s, [,,,h]) => s + h, 0) + gap * (items.length - 1);
+  let iy = s2cy - totalH / 2;
+  items.forEach(([title, lines, key, h]) => {
+    const p = leftSat(mainG, iy, h, C.memory, title, lines, key);
+    leftArrow(p.cx, p.cy, SPINE_X, s2cy, C.memory.stroke, 'arr-green', { sw: 1 });
+    iy += h + gap;
+  });
+}
+
+// ── LEFT: Entity Profiles + Fact Store → Gate 4 ───────────────────────────────
+{
+  const gcy = allStagePos['gate-4'].cy;
+  const panH = 52;
+  const gap = 8;
+  const totalH = panH * 2 + gap;
+  const topY = gcy - totalH / 2;
+
+  leftSat(mainG, topY, panH, C.memory, 'Entity Profiles  ✦',
+    ['authoritative override · post-gen check', 'feeds Gate 4 claim validation'], 'entity-profiles',
+    { sw: 1.8 });
+  leftSat(mainG, topY + panH + gap, panH, C.memory, 'Fact Store',
+    ['verifies LLM claims · strips hallucinations', 'confidence scores · contradiction flags'], 'fact-store');
+
+  leftArrow(LEFT_MAX_X - LEFT_W + LEFT_W, topY + panH/2, SPINE_X, gcy, C.memory.stroke, 'arr-green');
+  leftArrow(LEFT_MAX_X - LEFT_W + LEFT_W, topY + panH + gap + panH/2, SPINE_X, gcy, C.memory.stroke, 'arr-green');
+}
+
+// ── LEFT: PostgreSQL + Neo4j ← Stage 6 (Memory Write) ────────────────────────
+{
+  const s6cy = allStagePos['stage-6'].cy;
+  const panH = 52;
+  const gap = 8;
+  const totalH = panH * 2 + gap;
+  const topY = s6cy - totalH / 2;
+  const x = LEFT_MAX_X - LEFT_W;
+
+  box(mainG, x, topY, LEFT_W, panH, C.storage, 'PostgreSQL',
+    ['per-user schemas · BM25+vector search', 'sync write: messages · facts · episodes'], 'postgresql');
+  box(mainG, x, topY + panH + gap, LEFT_W, panH, C.storage, 'Neo4j / Graphiti',
+    ['knowledge graph · group_id isolation', 'entity nodes · episodic nodes · edges'], 'neo4j');
+
+  // Arrows pointing FROM spine TO left (stage writes to storage)
+  arrow(SPINE_X, s6cy, x + LEFT_W, topY + panH/2, C.storage.stroke, 'arr-storage', {
+    path: `M${SPINE_X},${s6cy} C${SPINE_X - 60},${s6cy} ${SPINE_X - 60},${topY + panH/2} ${x + LEFT_W},${topY + panH/2}`,
+  });
+  arrow(SPINE_X, s6cy, x + LEFT_W, topY + panH + gap + panH/2, C.storage.stroke, 'arr-storage', {
+    path: `M${SPINE_X},${s6cy} C${SPINE_X - 60},${s6cy} ${SPINE_X - 60},${topY + panH + gap + panH/2} ${x + LEFT_W},${topY + panH + gap + panH/2}`,
+  });
+}
+
+// ─── RIGHT SATELLITE PANELS ───────────────────────────────────────────────────
+const RIGHT_START_X = SPINE_X + SPINE_W + 20;
+const RIGHT_W = 240;
+
+function rightSat(parent, topY, h, col, title, lines, key, opts={}) {
+  box(parent, RIGHT_START_X, topY, RIGHT_W, h, col, title, lines, key, opts);
+  return { lx: RIGHT_START_X, cy: topY + h/2, rx: RIGHT_START_X + RIGHT_W };
+}
+
+// Helper: spine→right bezier
+function rightArrow(spineRight, spineCy, satLeft, satCy, color, marker, opts={}) {
+  const x1 = spineRight, y1 = spineCy, x2 = satLeft, y2 = satCy;
+  const cpx = (x1 + x2) / 2;
+  arrow(x1, y1, x2, y2, color, marker, {
+    path: `M${x1},${y1} C${cpx},${y1} ${cpx},${y2} ${x2},${y2}`,
+    ...opts
+  });
+}
+
+// ── RIGHT: LLM Providers → Stage 3 ───────────────────────────────────────────
+{
+  const s3cy = allStagePos['stage-3'].cy;
+  const providers = [
+    ['Fireworks AI  ·  PRIMARY', ['Llama 4 Scout · low latency · streaming'], 'fireworks', 50],
+    ['DeepSeek Chat v3', ['Fallback 1 · cost-efficient'], 'deepseek', 44],
+    ['OpenAI GPT-4o', ['Fallback 2 · high capability'], 'openai', 44],
+    ['Anthropic Claude', ['Fallback 3 · last resort'], 'anthropic', 44],
+  ];
+  const gap = 6;
+  const totalH = providers.reduce((s, [,,,h]) => s + h, 0) + gap * (providers.length - 1);
+  let py = s3cy - totalH / 2;
+
+  // Container outline
+  mainG.append('rect')
+    .attr('x', RIGHT_START_X - 4).attr('y', py - 8)
+    .attr('width', RIGHT_W + 8).attr('height', totalH + 16)
+    .attr('rx', 7).attr('fill', 'none')
+    .attr('stroke', C.llm.stroke).attr('stroke-width', 1).attr('stroke-dasharray', '5,3').attr('stroke-opacity', 0.4);
+
+  mainG.append('text')
+    .attr('x', RIGHT_START_X + RIGHT_W/2).attr('y', py - 12)
+    .attr('text-anchor', 'middle').attr('fill', C.llm.text).attr('font-size', 9.5)
+    .attr('letter-spacing', '0.1em')
+    .text('LLM PROVIDER CHAIN');
+
+  providers.forEach(([title, lines, key, h], i) => {
+    const p = rightSat(mainG, py, h, C.llm, title, lines, key);
+    // Only draw arrow from the first provider (chain entry)
+    if (i === 0) {
+      rightArrow(SPINE_X + SPINE_W, s3cy, RIGHT_START_X, p.cy, C.llm.stroke, 'arr-pink');
+    }
+    // Chain arrows between providers
+    if (i < providers.length - 1) {
+      mainG.append('line')
+        .attr('x1', RIGHT_START_X + RIGHT_W/2).attr('y1', py + h)
+        .attr('x2', RIGHT_START_X + RIGHT_W/2).attr('y2', py + h + gap - 2)
+        .attr('stroke', C.llm.stroke).attr('stroke-width', 1).attr('stroke-dasharray', '3,2')
+        .attr('marker-end', 'url(#arr-pink)');
+    }
+    py += h + gap;
+  });
+}
+
+// ── RIGHT: Mood Engine + Autonomy System → Stage 5 ────────────────────────────
+{
+  const s5cy = allStagePos['stage-5'].cy;
+  const panH = 54;
+  const gap = 8;
+  const totalH = panH * 2 + gap;
+  const topY = s5cy - totalH / 2;
+
+  rightSat(mainG, topY, panH, C.autonomy, 'Mood Engine',
+    ['14-mood state machine · event-driven', 'overnight reset · long-running arcs'], 'mood-engine');
+  rightSat(mainG, topY + panH + gap, panH, C.autonomy, 'Autonomy System',
+    ['16 modules · always_on_service.py', 'reach-out pressure · background loops'], 'autonomy-system');
+
+  rightArrow(SPINE_X + SPINE_W, s5cy, RIGHT_START_X, topY + panH/2, C.autonomy.stroke, 'arr-amber');
+  rightArrow(SPINE_X + SPINE_W, s5cy, RIGHT_START_X, topY + panH + gap + panH/2, C.autonomy.stroke, 'arr-amber');
+}
+
+// ── RIGHT: Per-Message Tasks → Stage 7 ────────────────────────────────────────
+{
+  const s7cy = allStagePos['stage-7'].cy;
+  const panH = 108;
+  const topY = s7cy - panH / 2;
+  const x = RIGHT_START_X;
+  const w = RIGHT_W + 40; // slightly wider for task list
+
+  mainG.append('g')
+    .call(function(g) {
+      clickable(g, 'per-message-tasks');
+      g.append('rect')
+        .attr('class', 'node-rect')
+        .attr('x', x).attr('y', topY).attr('width', w).attr('height', panH)
+        .attr('rx', 5).attr('fill', C.celery.inner).attr('stroke', C.celery.stroke).attr('stroke-width', 1.5);
+      g.append('rect').attr('x', x+2).attr('y', topY+2).attr('width', w-4).attr('height', 3)
+        .attr('rx', 3).attr('fill', C.celery.stroke).attr('fill-opacity', 0.5);
+      g.append('text').attr('x', x + w/2).attr('y', topY + 18)
+        .attr('text-anchor', 'middle').attr('fill', C.celery.text)
+        .attr('font-size', 11).attr('font-weight', 'bold').attr('class', 'node-label')
+        .text('Per-Message Tasks (Celery)');
+      g.append('text').attr('x', x + w/2).attr('y', topY + 30)
+        .attr('text-anchor', 'middle').attr('fill', C.celery.sub).attr('font-size', 9)
+        .text('15 tasks · apply_async() after each pipeline run');
+
+      const tasks = [
+        'extract_facts · extract_opinions · update_relationship',
+        'episodic_store · entity_extraction · kg_update',
+        'observational_update · biography_trigger · curiosity_update',
+        'goal_progress · mood_shift · reach_out_pressure · graphiti_extraction',
+      ];
+      tasks.forEach((t, i) => {
+        g.append('text').attr('x', x + w/2).attr('y', topY + 44 + i * 14)
+          .attr('text-anchor', 'middle').attr('fill', '#7c6ab0').attr('font-size', 8.5).text(t);
+      });
+    });
+
+  rightArrow(SPINE_X + SPINE_W, s7cy, x, s7cy, C.celery.stroke, 'arr-purple');
+}
+
+// ── RIGHT: Delivery targets → Stage 8 ─────────────────────────────────────────
+{
+  const s8cy = allStagePos['stage-8'].cy;
+  const panH = 68;
+  const topY = s8cy - panH / 2;
+
+  rightSat(mainG, topY, panH, C.external, 'Delivery Channels',
+    ['Telegram · Socket.IO · Web Chat', 'ElevenLabs (voice TTS)', 'typing simulation · latency model'],
+    'external-services');
+
+  rightArrow(SPINE_X + SPINE_W, s8cy, RIGHT_START_X, s8cy, C.external.stroke, 'arr-gray');
+}
+
+// ── RIGHT: Autonomy cluster → Stage 9 ─────────────────────────────────────────
+{
+  const s9cy = allStagePos['stage-9'].cy;
+  const items = [
+    ['Always-On Service', ['background loop · heartbeat timer', 'per-companion async coroutines'], 'always-on', 54],
+    ['Reach-Out Engine', ['topic selection · timing engine', 'fires proactive messages'], 'reach-out-engine', 50],
+    ['Goal System', ['long-term objectives · sub-goals', 'goal-informed conversation steering'], 'goal-system', 50],
+  ];
+  const gap = 6;
+  const totalH = items.reduce((s, [,,,h]) => s + h, 0) + gap * (items.length - 1);
+  let ay = s9cy - totalH / 2;
+  items.forEach(([title, lines, key, h]) => {
+    const p = rightSat(mainG, ay, h, C.autonomy, title, lines, key);
+    rightArrow(SPINE_X + SPINE_W, s9cy, RIGHT_START_X, p.cy, C.autonomy.stroke, 'arr-amber');
+    ay += h + gap;
+  });
+
+  // Autonomy feedback arrow: curved back up to Stage 5 from Stage 9
+  const s5cy = allStagePos['stage-5'].cy;
+  const feedX = SPINE_X + SPINE_W + 12;
+  mainG.append('path')
+    .attr('class', 'connection-path')
+    .attr('d', `M${feedX},${s9cy} C${feedX + 30},${s9cy} ${feedX + 30},${s5cy} ${feedX},${s5cy}`)
+    .attr('fill', 'none')
+    .attr('stroke', C.autonomy.stroke)
+    .attr('stroke-width', 1.5)
+    .attr('stroke-dasharray', '5,3')
+    .attr('marker-end', 'url(#arr-amber)');
+
+  // Label
+  mainG.append('text')
+    .attr('x', feedX + 38).attr('y', (s9cy + s5cy) / 2)
+    .attr('fill', C.autonomy.text).attr('font-size', 8.5)
+    .attr('text-anchor', 'middle').attr('writing-mode', 'tb')
+    .text('autonomy feedback');
+}
+
+// ─── SCHEDULED TASKS PANEL (right side, floating) ────────────────────────────
+{
+  const sx = RIGHT_START_X + RIGHT_W + 55;
+  const sw = 260;
+  // Position it roughly mid-page, between stages 5 and 8
+  const s2y = allStagePos['stage-2'].y;
+  const s7y = allStagePos['stage-7'].y;
+  const sy = s2y;
+  const sh = s7y + SPINE_H - s2y;
+
+  mainG.append('g')
+    .call(function(g) {
+      clickable(g, 'celery-system');
+      g.append('rect')
+        .attr('class', 'node-rect')
+        .attr('x', sx).attr('y', sy).attr('width', sw).attr('height', sh)
+        .attr('rx', 7).attr('fill', C.celery.fill).attr('stroke', C.celery.stroke).attr('stroke-width', 1.5);
+      g.append('rect').attr('x', sx+2).attr('y', sy+2).attr('width', sw-4).attr('height', 3)
+        .attr('rx', 4).attr('fill', C.celery.stroke).attr('fill-opacity', 0.5);
+      g.append('text').attr('x', sx + sw/2).attr('y', sy + 20)
+        .attr('text-anchor', 'middle').attr('fill', C.celery.text)
+        .attr('font-size', 12).attr('font-weight', 'bold').attr('class', 'node-label')
+        .text('Scheduled Tasks');
+      g.append('text').attr('x', sx + sw/2).attr('y', sy + 33)
+        .attr('text-anchor', 'middle').attr('fill', C.celery.sub)
+        .attr('font-size', 9).text('Celery Beat · Redis broker');
+    });
+
+  // Nightly subsection
+  const nightY = sy + 44;
+  const nightH = Math.floor((sh - 54) * 0.6);
+  mainG.append('g')
+    .call(function(g) {
+      clickable(g, 'nightly-tasks');
+      g.append('rect').attr('x', sx+8).attr('y', nightY).attr('width', sw-16).attr('height', nightH)
+        .attr('rx', 4).attr('fill', '#160e36').attr('stroke', '#7c3aed').attr('stroke-width', 0.8)
+        .attr('class', 'node-rect');
+      g.append('text').attr('x', sx+sw/2).attr('y', nightY+14)
+        .attr('text-anchor','middle').attr('fill','#c084fc').attr('font-size',10).attr('font-weight','bold')
+        .attr('class','node-label').text('Nightly Tasks  ·  cron 03:00');
+      const ntasks = [
+        'nightly_summary · fact_confidence_decay',
+        'contradiction_detect · biography_regen',
+        'goal_review · entity_profile_sync',
+        'memory_consolidation · curiosity_refresh',
+        'opinion_drift · mood_baseline_reset',
+        'reach_out_pressure_calc · relationship_health',
+        'pg_vacuum_analyze · kg_node_prune',
+        'daily_summary_store',
+      ];
+      ntasks.forEach((t, i) => {
+        g.append('text').attr('x', sx+sw/2).attr('y', nightY + 26 + i * 12)
+          .attr('text-anchor', 'middle').attr('fill', '#5a4a8a').attr('font-size', 8.5).text(t);
+      });
+    });
+
+  // Weekly subsection
+  const weekY = nightY + nightH + 8;
+  const weekH = sh - 54 - nightH - 8;
+  mainG.append('g')
+    .call(function(g) {
+      clickable(g, 'weekly-tasks');
+      g.append('rect').attr('x', sx+8).attr('y', weekY).attr('width', sw-16).attr('height', weekH)
+        .attr('rx', 4).attr('fill', '#160e36').attr('stroke', '#7c3aed').attr('stroke-width', 0.8)
+        .attr('class', 'node-rect');
+      g.append('text').attr('x', sx+sw/2).attr('y', weekY+14)
+        .attr('text-anchor','middle').attr('fill','#c084fc').attr('font-size',10).attr('font-weight','bold')
+        .attr('class','node-label').text('Weekly Tasks  ·  Sun 04:00');
+      const wtasks = [
+        'weekly_summary · deep_fact_review',
+        'personality_drift · relationship_milestone',
+        'kg_deep_analysis · entity_biography_full',
+      ];
+      wtasks.forEach((t, i) => {
+        g.append('text').attr('x', sx+sw/2).attr('y', weekY + 26 + i * 13)
+          .attr('text-anchor', 'middle').attr('fill', '#5a4a8a').attr('font-size', 8.5).text(t);
+      });
+    });
+}
+
+// ─── STORAGE STRIP ────────────────────────────────────────────────────────────
+const lastStageY2 = allStagePos['stage-9'].y + SPINE_H;
+const STORAGE_TOP = lastStageY2 + 36;
+const STORAGE_H = 110;
+
+{
+  // Full-width storage container
+  const g = mainG.append('g');
+  clickable(g, 'storage-layer');
+  g.append('rect')
+    .attr('class', 'node-rect')
+    .attr('x', 30).attr('y', STORAGE_TOP)
+    .attr('width', W - 60).attr('height', STORAGE_H)
+    .attr('rx', 6).attr('fill', C.storage.fill)
+    .attr('stroke', C.storage.stroke).attr('stroke-width', 1.5);
+  g.append('rect').attr('x', 32).attr('y', STORAGE_TOP + 2)
+    .attr('width', W - 64).attr('height', 3)
+    .attr('rx', 4).attr('fill', C.storage.stroke).attr('fill-opacity', 0.5);
+  g.append('text').attr('x', W/2).attr('y', STORAGE_TOP + 18)
+    .attr('text-anchor', 'middle').attr('fill', C.storage.text)
+    .attr('font-size', 12).attr('font-weight', 'bold').attr('class', 'node-label')
+    .text('Storage Layer');
+}
+
+// Three storage blocks
+const storeBlocks = [
+  { key: 'postgresql', label: 'PostgreSQL + pgvector', sub: ['per-user schemas · BM25+cosine hybrid search', 'messages · facts · opinions · goals · episodes · biographies'], col: { stroke: '#3b82f6', fill: '#0c1e35', text: '#60a5fa', sub: '#3a5a8a', inner: '#0c1e35' } },
+  { key: 'redis',      label: 'Redis', sub: ['Celery broker + result backend', 'session cache · Socket.IO pub/sub · reach-out pressure'], col: { stroke: '#ef4444', fill: '#0c1e35', text: '#f87171', sub: '#6a3030', inner: '#0c1e35' } },
+  { key: 'neo4j',      label: 'Neo4j — Graphiti KG', sub: ['entity nodes · episodic nodes · typed edges', 'group_id isolation · community detection · semantic search'], col: { stroke: '#4ade80', fill: '#0c1e35', text: '#4ade80', sub: '#3a6a3a', inner: '#0c1e35' } },
+];
+const sbW = Math.floor((W - 60 - 16 - (storeBlocks.length - 1) * 10) / storeBlocks.length);
+storeBlocks.forEach(({ key, label, sub, col }, i) => {
+  const bx = 38 + i * (sbW + 10);
+  const by = STORAGE_TOP + 28;
+  const bh = STORAGE_H - 36;
+  const g = mainG.append('g');
+  clickable(g, key);
+  g.append('rect')
+    .attr('class', 'node-rect')
+    .attr('x', bx).attr('y', by).attr('width', sbW).attr('height', bh)
+    .attr('rx', 4).attr('fill', col.inner).attr('stroke', col.stroke).attr('stroke-width', 1);
+  g.append('text').attr('x', bx + sbW/2).attr('y', by + 16)
+    .attr('text-anchor', 'middle').attr('fill', col.text)
+    .attr('font-size', 11).attr('font-weight', 'bold').attr('class', 'node-label').text(label);
+  sub.forEach((s, si) => {
+    g.append('text').attr('x', bx + sbW/2).attr('y', by + 30 + si * 14)
+      .attr('text-anchor', 'middle').attr('fill', col.sub).attr('font-size', 9).text(s);
+  });
+});
+
+// ─── STORAGE CONNECTIONS ───────────────────────────────────────────────────────
+// Stage 6 → storage (memory write)
+{
+  const s6 = allStagePos['stage-6'];
+  const s6bottom = s6.y + s6.h;
+  mainG.append('path')
+    .attr('class', 'connection-path')
+    .attr('d', `M${SPINE_CX},${s6bottom} L${SPINE_CX},${STORAGE_TOP}`)
+    .attr('fill', 'none').attr('stroke', C.storage.stroke).attr('stroke-width', 1.5)
+    .attr('stroke-dasharray', '5,3').attr('marker-end', 'url(#arr-storage)');
+}
+
+// Stage 7 → storage (celery tasks write)
+{
+  const s7 = allStagePos['stage-7'];
+  const s7bottom = s7.y + s7.h;
+  const targetX = SPINE_CX + 20;
+  mainG.append('path')
+    .attr('class', 'connection-path')
+    .attr('d', `M${SPINE_CX + 10},${s7bottom} L${targetX},${STORAGE_TOP}`)
+    .attr('fill', 'none').attr('stroke', C.celery.stroke).attr('stroke-width', 1.5)
+    .attr('stroke-dasharray', '5,3').attr('marker-end', 'url(#arr-purple)');
+}
+
+// Scheduled tasks panel → storage (dashed line)
+{
+  const sx = RIGHT_START_X + RIGHT_W + 55 + 260/2;
+  mainG.append('path')
+    .attr('class', 'connection-path')
+    .attr('d', `M${sx},${STORAGE_TOP} L${sx},${STORAGE_TOP}`)
+    .attr('fill', 'none').attr('stroke', C.celery.stroke).attr('stroke-width', 1)
+    .attr('stroke-dasharray', '4,3').attr('marker-end', 'url(#arr-purple)');
+
+  const schedBottom = allStagePos['stage-7'].y + SPINE_H;
+  mainG.append('path')
+    .attr('class', 'connection-path')
+    .attr('d', `M${sx},${schedBottom} L${sx},${STORAGE_TOP - 2}`)
+    .attr('fill', 'none').attr('stroke', C.celery.stroke).attr('stroke-width', 1.2)
+    .attr('stroke-dasharray', '5,3').attr('marker-end', 'url(#arr-purple)');
+}
+
+// ─── CLICK BACKGROUND TO CLOSE ────────────────────────────────────────────────
+svg.on('click', (event) => {
+  if (event.target === svgEl) closeDetail();
+});
+
+// ─── INIT ZOOM ────────────────────────────────────────────────────────────────
+setTimeout(() => {
+  svg.call(zoomBehavior.transform, computeFitTransform());
+}, 60);
+
+window.addEventListener('resize', () => {
+  if (!activeItem) svg.call(zoomBehavior.transform, computeFitTransform());
+});
+</script>
+</body>
+</html>
