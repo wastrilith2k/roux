@@ -382,8 +382,9 @@ def get_graphiti_context_with_importance(query: str, limit: int = 10, group_id: 
                 result = session.run("""
                     MATCH ()-[edge:RELATES_TO]->()
                     WHERE edge.fact IN $facts
+                      AND ($group_id = '' OR edge.group_id = $group_id)
                     RETURN edge.fact as fact, edge.importance as importance
-                """, facts=fact_texts)
+                """, facts=fact_texts, group_id=group_id or "")
 
                 for record in result:
                     importance_map[record['fact']] = record['importance']
@@ -483,6 +484,17 @@ def get_graphiti_context_with_importance(query: str, limit: int = 10, group_id: 
 # we need ALL facts about an entity rather than the top-K vector matches.
 # =============================================================================
 
+def _group_id_from_email(user_email: Optional[str]) -> Optional[str]:
+    """Derive the Neo4j group_id property value from a user email."""
+    if not user_email:
+        return None
+    try:
+        from src.database.schema_manager import schema_name_for_user
+        return schema_name_for_user(user_email)
+    except (ValueError, Exception):
+        return None
+
+
 _neo4j_driver = None
 
 
@@ -498,7 +510,7 @@ def _get_graphiti_neo4j_driver():
     return _neo4j_driver
 
 
-def get_entity_facts(entity_name: str, limit: int = 100) -> List[Dict[str, Any]]:
+def get_entity_facts(entity_name: str, limit: int = 100, group_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Get all facts (edges) involving an entity from Graphiti.
 
@@ -508,6 +520,7 @@ def get_entity_facts(entity_name: str, limit: int = 100) -> List[Dict[str, Any]]
     Args:
         entity_name: Name of the entity (e.g., "Companion", "User")
         limit: Maximum facts to return
+        group_id: Optional group_id to scope to a specific user
 
     Returns:
         List of fact dicts with 'fact', 'fact_type', 'created_at', etc.
@@ -516,13 +529,11 @@ def get_entity_facts(entity_name: str, limit: int = 100) -> List[Dict[str, Any]]
         driver = _get_graphiti_neo4j_driver()
 
         with driver.session() as session:
-            # Query edges where entity is source or target
-            # Graphiti stores facts on edges between Entity nodes
-            # Include importance score for weighted sampling
             result = session.run("""
                 MATCH (source:Entity)-[edge:RELATES_TO]->(target:Entity)
-                WHERE toLower(source.name) CONTAINS toLower($name)
-                   OR toLower(target.name) CONTAINS toLower($name)
+                WHERE (toLower(source.name) CONTAINS toLower($name)
+                   OR toLower(target.name) CONTAINS toLower($name))
+                  AND ($group_id IS NULL OR $group_id = '' OR edge.group_id = $group_id)
                 RETURN edge.fact as fact,
                        edge.name as name,
                        edge.uuid as uuid,
@@ -534,7 +545,7 @@ def get_entity_facts(entity_name: str, limit: int = 100) -> List[Dict[str, Any]]
                        edge.invalid_at as invalid_at
                 ORDER BY edge.created_at DESC
                 LIMIT $limit
-            """, name=entity_name, limit=limit)
+            """, name=entity_name, limit=limit, group_id=group_id or "")
 
             facts = []
             for record in result:
@@ -561,7 +572,7 @@ def get_entity_facts(entity_name: str, limit: int = 100) -> List[Dict[str, Any]]
         return []
 
 
-def get_weighted_facts_for_biography(entity_name: str, medium_sample_size: int = 50) -> List[Dict[str, Any]]:
+def get_weighted_facts_for_biography(entity_name: str, medium_sample_size: int = 50, group_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Get facts for biography using importance-weighted sampling.
 
@@ -590,12 +601,11 @@ def get_weighted_facts_for_biography(entity_name: str, medium_sample_size: int =
         driver = _get_graphiti_neo4j_driver()
 
         with driver.session() as session:
-            # Get ALL facts for this entity (we'll filter in Python)
-            # Include fact_status for plan/action differentiation
             result = session.run("""
                 MATCH (source:Entity)-[edge:RELATES_TO]->(target:Entity)
-                WHERE toLower(source.name) CONTAINS toLower($name)
-                   OR toLower(target.name) CONTAINS toLower($name)
+                WHERE (toLower(source.name) CONTAINS toLower($name)
+                   OR toLower(target.name) CONTAINS toLower($name))
+                  AND ($group_id IS NULL OR $group_id = '' OR edge.group_id = $group_id)
                 RETURN edge.fact as fact,
                        edge.name as name,
                        edge.uuid as uuid,
@@ -605,7 +615,7 @@ def get_weighted_facts_for_biography(entity_name: str, medium_sample_size: int =
                        target.name as target_entity,
                        edge.created_at as created_at
                 ORDER BY edge.created_at DESC
-            """, name=entity_name)
+            """, name=entity_name, group_id=group_id or "")
 
             all_facts = []
             for record in result:
@@ -701,7 +711,8 @@ def search_facts_in_time_range(
     query: str,
     time_start: datetime,
     time_end: datetime,
-    limit: int = 20
+    limit: int = 20,
+    group_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Search Graphiti facts within a specific time range.
@@ -730,6 +741,7 @@ def search_facts_in_time_range(
                 WHERE edge.created_at >= $time_start
                   AND edge.created_at <= $time_end
                   AND ($query = '' OR toLower(edge.fact) CONTAINS toLower($query))
+                  AND ($group_id IS NULL OR $group_id = '' OR edge.group_id = $group_id)
                 RETURN edge.fact as fact,
                        edge.importance as importance,
                        edge.created_at as created_at,
@@ -738,7 +750,7 @@ def search_facts_in_time_range(
                 ORDER BY edge.created_at DESC
                 LIMIT $limit
             """, time_start=time_start.isoformat(), time_end=time_end.isoformat(),
-                query=query, limit=limit)
+                query=query, limit=limit, group_id=group_id or "")
 
             facts = []
             for record in result:
@@ -786,7 +798,7 @@ def format_temporal_facts_for_prompt(facts: List[Dict[str, Any]], period_descrip
     return "\n".join(lines)
 
 
-def get_entity_relationships(entity_name: str, limit: int = 50) -> List[Dict[str, Any]]:
+def get_entity_relationships(entity_name: str, limit: int = 50, group_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Get relationships for an entity from Graphiti.
 
@@ -804,13 +816,14 @@ def get_entity_relationships(entity_name: str, limit: int = 50) -> List[Dict[str
             result = session.run("""
                 MATCH (source:Entity)-[edge:RELATES_TO]->(target:Entity)
                 WHERE toLower(source.name) = toLower($name)
+                  AND ($group_id IS NULL OR $group_id = '' OR edge.group_id = $group_id)
                 RETURN edge.name as relationship,
                        target.name as target,
                        edge.fact as description,
                        edge.created_at as created_at
                 ORDER BY edge.created_at DESC
                 LIMIT $limit
-            """, name=entity_name, limit=limit)
+            """, name=entity_name, limit=limit, group_id=group_id or "")
 
             relationships = []
             for record in result:
@@ -845,13 +858,13 @@ class GraphitiSearch:
         """Get formatted context for prompt."""
         return get_graphiti_context(query, limit, group_id=group_id)
 
-    def get_entity_facts(self, entity_name: str, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_entity_facts(self, entity_name: str, limit: int = 100, group_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get all facts about an entity (for biography synthesis)."""
-        return get_entity_facts(entity_name, limit)
+        return get_entity_facts(entity_name, limit, group_id=group_id)
 
-    def get_entity_relationships(self, entity_name: str, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_entity_relationships(self, entity_name: str, limit: int = 50, group_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get relationships for an entity."""
-        return get_entity_relationships(entity_name, limit)
+        return get_entity_relationships(entity_name, limit, group_id=group_id)
 
 
 _graphiti_search: Optional[GraphitiSearch] = None

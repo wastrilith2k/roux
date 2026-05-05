@@ -113,7 +113,6 @@ async def score_recent_edges(limit: int = 50) -> int:
         Number of edges processed
     """
     from neo4j import GraphDatabase
-
     uri = NEO4J_GRAPHITI_URI
     driver = GraphDatabase.driver(uri, auth=None)
     processed = 0
@@ -247,6 +246,65 @@ async def rebuild_and_vectorize_biographies(entities: set):
         logger.error(f"Failed to rebuild/vectorize biographies: {e}")
 
 
+async def _stamp_group_id(add_result, user_email: str) -> None:
+    """
+    Set group_id property on all nodes/edges from a just-completed add_episode call.
+
+    Graphiti's native group_id support routes to a separate Neo4j database, which
+    requires Enterprise Edition. On Community (single database) we stamp group_id as
+    a property post-write using the UUIDs returned in AddEpisodeResults.  All read
+    queries then filter by this property for per-user isolation.
+    """
+    from src.database.schema_manager import schema_name_for_user
+    from neo4j import GraphDatabase
+
+    try:
+        group_id = schema_name_for_user(user_email)
+    except ValueError:
+        logger.warning(f"Could not derive group_id for {user_email}, skipping stamp")
+        return
+
+    episode_uuid = getattr(getattr(add_result, 'episode', None), 'uuid', None)
+    node_uuids = [n.uuid for n in (add_result.nodes or []) if getattr(n, 'uuid', None)]
+    edge_uuids = [e.uuid for e in (add_result.edges or []) if getattr(e, 'uuid', None)]
+    episodic_edge_uuids = [e.uuid for e in (add_result.episodic_edges or []) if getattr(e, 'uuid', None)]
+
+    try:
+        driver = GraphDatabase.driver(
+            NEO4J_GRAPHITI_URI,
+            auth=(NEO4J_GRAPHITI_USER, NEO4J_GRAPHITI_PASSWORD) if NEO4J_GRAPHITI_PASSWORD else None
+        )
+        with driver.session() as session:
+            if episode_uuid:
+                session.run(
+                    "MATCH (e:Episodic {uuid: $uuid}) SET e.group_id = $gid",
+                    uuid=episode_uuid, gid=group_id
+                )
+            if node_uuids:
+                session.run(
+                    "UNWIND $uuids AS uuid MATCH (n:Entity {uuid: uuid}) SET n.group_id = $gid",
+                    uuids=node_uuids, gid=group_id
+                )
+            if edge_uuids:
+                session.run(
+                    "UNWIND $uuids AS uuid MATCH ()-[r:RELATES_TO {uuid: uuid}]-() SET r.group_id = $gid",
+                    uuids=edge_uuids, gid=group_id
+                )
+            if episodic_edge_uuids:
+                session.run(
+                    "UNWIND $uuids AS uuid MATCH ()-[r:MENTIONS {uuid: uuid}]-() SET r.group_id = $gid",
+                    uuids=episodic_edge_uuids, gid=group_id
+                )
+        driver.close()
+        logger.debug(
+            f"Stamped group_id='{group_id}' on episode={episode_uuid}, "
+            f"{len(node_uuids)} nodes, {len(edge_uuids)} edges, "
+            f"{len(episodic_edge_uuids)} episodic edges"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to stamp group_id on Graphiti nodes: {e}")
+
+
 async def add_conversation_episode(
     user_email: str,
     user_message: str,
@@ -284,16 +342,42 @@ async def add_conversation_episode(
     timestamp = datetime.now(timezone.utc)
     episode_name = f"Conversation {timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
 
+    # Pre-fetch user's recent episodes so entity resolution sees the right prior
+    # context. We can't pass group_id directly to add_episode() because the SDK
+    # treats it as a Neo4j database name (Enterprise-only). Instead we supply
+    # the stamped episode UUIDs so the resolver deduplicates entities correctly
+    # within this user's namespace rather than seeing an empty history.
+    previous_episode_uuids = None
     try:
-        await graphiti.add_episode(
+        from src.database.schema_manager import schema_name_for_user
+        group_id = schema_name_for_user(user_email)
+        prior_episodes = await graphiti.retrieve_episodes(
+            reference_time=timestamp,
+            last_n=10,
+            group_ids=[group_id],
+        )
+        if prior_episodes:
+            previous_episode_uuids = [ep.uuid for ep in prior_episodes]
+            logger.debug(f"Seeding entity resolver with {len(previous_episode_uuids)} prior episodes for {group_id}")
+    except Exception as e:
+        logger.warning(f"Could not fetch prior episodes for entity context ({user_email}): {e}")
+
+    try:
+        result = await graphiti.add_episode(
             name=episode_name,
             episode_body=episode_content.strip(),
             source=EpisodeType.text,
             source_description=f"Chat conversation with {username} ({user_email})",
             reference_time=timestamp,
+            previous_episode_uuids=previous_episode_uuids,
         )
 
         logger.info(f"Added episode to Graphiti: {episode_name}")
+
+        # Stamp all created nodes/edges with the user's group_id.
+        # Graphiti's built-in group_id would switch Neo4j databases (requires
+        # Enterprise), so we set it as a property post-write instead.
+        await _stamp_group_id(result, user_email)
 
         # Score importance for any newly created edges
         scored_count = await score_recent_edges()
