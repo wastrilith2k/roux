@@ -1583,81 +1583,80 @@ function leftArrow(satRight, satCy, spineLeft, spineCy, color, marker, opts={}) 
   });
 }
 
-// ── LEFT: Core Memory + Mood State → Stage 1 ──────────────────────────────────
-{
-  const s1cy = allStagePos['stage-1'].cy;
-  // Stacked panels centered on s1cy
-  const panH = 54;
-  const gap = 8;
-  const totalH = panH * 2 + gap;
-  const topY = s1cy - totalH / 2;
-
-  const p1 = leftSat(mainG, topY, panH, C.memory, 'Core Memory',
-    ['emotional core · personality traits', 'identity anchors · values · no-decay'], 'core-memory');
-  const p2 = leftSat(mainG, topY + panH + gap, panH, C.memory, 'Mood State',
-    ['affective state machine · 14 moods', 'event-driven transitions · nightly reset'], 'mood-state');
-
-  const avgCy = (p1.cy + p2.cy) / 2;
-  leftArrow(p1.cx, p1.cy, SPINE_X, s1cy, C.memory.stroke, 'arr-green');
-  leftArrow(p2.cx, p2.cy, SPINE_X, s1cy, C.memory.stroke, 'arr-green');
-}
-
-// ── LEFT: Entity Profiles + Fact Store → Gate 1.5 ────────────────────────────
-{
-  const gcy = allStagePos['gate-1-5'].cy;
-  const panH = 56;
-  const gap = 8;
-  const totalH = panH * 2 + gap;
-  const topY = gcy - totalH / 2;
-
-  leftSat(mainG, topY, panH, C.memory, 'Entity Profiles  ✦',
-    ['YAML · git-versioned · ground truth', 'authoritative override · feeds both gates'], 'entity-profiles',
-    { sw: 1.8 });
-  leftSat(mainG, topY + panH + gap, panH, C.memory, 'Fact Store',
-    ['SPO triples · BM25+cosine hybrid', 'confidence decay · contradiction detect'], 'fact-store');
-
-  const top = { cx: LEFT_MAX_X - LEFT_W + LEFT_W, cy: topY + panH / 2 };
-  const bot = { cx: LEFT_MAX_X - LEFT_W + LEFT_W, cy: topY + panH + gap + panH / 2 };
-  leftArrow(top.cx, top.cy, SPINE_X, gcy, C.memory.stroke, 'arr-green');
-  leftArrow(bot.cx, bot.cy, SPINE_X, gcy, C.memory.stroke, 'arr-green');
-}
-
-// ── LEFT: Memory cluster → Stage 2 (Context Assembly) ────────────────────────
-{
-  const s2cy = allStagePos['stage-2'].cy;
-  const items = [
-    ['Fact Store',          ['SPO triples · pgvector hybrid search'],   'fact-store',           48],
-    ['Episodic Memory',     ['significant events · salience scoring'],   'episodic-memory',      48],
-    ['Knowledge Graph',     ['Graphiti · Neo4j · semantic search'],      'knowledge-graph',      48],
-    ['Opinions',            ['stance tracking · belief drift'],          'opinions',             44],
-    ['Rel. Store + Biographies', ['dyad state · trust · daily summaries'], 'relationship-store', 44],
-  ];
-  const gap = 6;
-  const totalH = items.reduce((s, [,,,h]) => s + h, 0) + gap * (items.length - 1);
-  let iy = s2cy - totalH / 2;
-  items.forEach(([title, lines, key, h]) => {
-    const p = leftSat(mainG, iy, h, C.memory, title, lines, key);
-    leftArrow(p.cx, p.cy, SPINE_X, s2cy, C.memory.stroke, 'arr-green', { sw: 1 });
-    iy += h + gap;
+// ── LEFT: Memory System — collision-aware layout ──────────────────────────────
+// Each cluster is positioned without overlapping its neighbors.
+// Fact Store and Entity Profiles appear once (at Gate 1.5); dashed arrows
+// connect them to Gate 4, which also reads them.
+function resolveLeftClusters(clusters, minGap) {
+  let floor = -Infinity;
+  return clusters.map(cl => {
+    const naturalTop = cl.idealCy - cl.totalH / 2;
+    const topY = Math.max(naturalTop, floor + minGap);
+    floor = topY + cl.totalH;
+    return { ...cl, topY };
   });
 }
 
-// ── LEFT: Entity Profiles + Fact Store → Gate 4 ───────────────────────────────
+const memClusters = [
+  {
+    idealCy: allStagePos['stage-1'].cy,
+    stageKey: 'stage-1',
+    gap: 8,
+    items: [
+      { title: 'Core Memory', lines: ['emotional core · personality traits', 'identity anchors · values · no-decay'], key: 'core-memory', h: 54 },
+      { title: 'Mood State',  lines: ['affective state machine · 14 moods', 'event-driven transitions · nightly reset'],  key: 'mood-state',  h: 54 },
+    ],
+  },
+  {
+    idealCy: allStagePos['gate-1-5'].cy,
+    stageKey: 'gate-1-5',
+    gap: 8,
+    saveRef: true,
+    items: [
+      { title: 'Entity Profiles  ✦', lines: ['YAML · git-versioned · ground truth', 'authoritative override · both gates'], key: 'entity-profiles', h: 56, sw: 1.8 },
+      { title: 'Fact Store',         lines: ['SPO triples · BM25+cosine hybrid',    'confidence decay · contradiction detect'], key: 'fact-store', h: 56 },
+    ],
+  },
+  {
+    idealCy: allStagePos['stage-2'].cy,
+    stageKey: 'stage-2',
+    gap: 6,
+    items: [
+      { title: 'Episodic Memory',          lines: ['significant events · salience scoring'], key: 'episodic-memory',   h: 48 },
+      { title: 'Knowledge Graph',          lines: ['Graphiti · Neo4j · semantic search'],    key: 'knowledge-graph',   h: 48 },
+      { title: 'Opinions',                 lines: ['stance tracking · belief drift'],        key: 'opinions',           h: 44 },
+      { title: 'Rel. Store + Biographies', lines: ['dyad state · trust · daily summaries'], key: 'relationship-store', h: 44 },
+    ],
+  },
+];
+
+memClusters.forEach(cl => {
+  cl.totalH = cl.items.reduce((s, it) => s + it.h, 0) + cl.gap * (cl.items.length - 1);
+});
+
+const resolvedMem = resolveLeftClusters(memClusters, 10);
+let _g15Panels = null;
+
+resolvedMem.forEach(cl => {
+  const stageCy = allStagePos[cl.stageKey].cy;
+  let iy = cl.topY;
+  const panels = [];
+  cl.items.forEach(it => {
+    const opts = it.sw ? { sw: it.sw } : {};
+    const p = leftSat(mainG, iy, it.h, C.memory, it.title, it.lines, it.key, opts);
+    leftArrow(p.cx, p.cy, SPINE_X, stageCy, C.memory.stroke, 'arr-green', { sw: 1 });
+    panels.push(p);
+    iy += it.h + cl.gap;
+  });
+  if (cl.saveRef) _g15Panels = panels;
+});
+
+// Gate 4 also reads Entity Profiles + Fact Store — dashed connectors
 {
-  const gcy = allStagePos['gate-4'].cy;
-  const panH = 52;
-  const gap = 8;
-  const totalH = panH * 2 + gap;
-  const topY = gcy - totalH / 2;
-
-  leftSat(mainG, topY, panH, C.memory, 'Entity Profiles  ✦',
-    ['authoritative override · post-gen check', 'feeds Gate 4 claim validation'], 'entity-profiles',
-    { sw: 1.8 });
-  leftSat(mainG, topY + panH + gap, panH, C.memory, 'Fact Store',
-    ['verifies LLM claims · strips hallucinations', 'confidence scores · contradiction flags'], 'fact-store');
-
-  leftArrow(LEFT_MAX_X - LEFT_W + LEFT_W, topY + panH/2, SPINE_X, gcy, C.memory.stroke, 'arr-green');
-  leftArrow(LEFT_MAX_X - LEFT_W + LEFT_W, topY + panH + gap + panH/2, SPINE_X, gcy, C.memory.stroke, 'arr-green');
+  const g4cy = allStagePos['gate-4'].cy;
+  (_g15Panels || []).forEach(p => {
+    leftArrow(p.cx, p.cy, SPINE_X, g4cy, C.memory.stroke, 'arr-green', { sw: 1, dash: '5,3' });
+  });
 }
 
 // ── LEFT: PostgreSQL + Neo4j ← Stage 6 (Memory Write) ────────────────────────

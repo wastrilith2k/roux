@@ -197,13 +197,15 @@ CREATE TABLE IF NOT EXISTS {s}.{T.MESSAGES} (
     mood_sources TEXT,
     avatar_filename TEXT,
     embedding JSONB,
-    embedding_vec VECTOR(1536)
+    embedding_vec VECTOR(1536),
+    audience TEXT[]
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_email ON {s}.{T.MESSAGES}(email);
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON {s}.{T.MESSAGES}(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON {s}.{T.MESSAGES}(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_messages_companion_id ON {s}.{T.MESSAGES}(companion_id);
+CREATE INDEX IF NOT EXISTS idx_messages_audience ON {s}.{T.MESSAGES} USING gin(audience);
 """
 
 

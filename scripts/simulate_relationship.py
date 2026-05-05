@@ -224,7 +224,7 @@ class SimulationRunner:
         self.OPENER_SEEDS = cfg.get('opener_seeds', ['Share something about your day.'])
         self.TONE_MODIFIERS = cfg.get('tone_modifiers', [''])
         self.LIFE_EVENT_PROB = cfg.get('life_event_probability', 0.6)
-        self.LLM_MAX_TOKENS = cfg.get('max_tokens', 350)
+        self.LLM_MAX_TOKENS = cfg.get('max_tokens', 1200)
         self.LLM_TEMPERATURE = cfg.get('temperature', 0.95)
         self.SUMMARY_MAX_TOKENS = cfg.get('summary_max_tokens', 150)
         self.SUMMARY_TEMPERATURE = cfg.get('summary_temperature', 0.3)
@@ -986,17 +986,13 @@ Time: {time_str}
 <task>
 Reply to {other_name} as {config.companion_short_name}.
 
-FORMAT RULES — these are absolute:
-- You are texting from your phone. You are NOT in the same room.
-- Write 1-3 sentences max. No walls of text.
-- No asterisks. No stage directions. No *actions*. No *gestures*. Just the words you'd actually type.
-- Output ONLY the message text itself — nothing else.
+RULES:
+- 1-3 sentences. No walls of text.
+- Have opinions. Push back sometimes. Don't just agree.
+- Do NOT repeat things already said in this conversation.
+{f"- This is the last message. Sign off naturally — a joke, 'gotta go', 'talk later'. Don't open a new topic." if exchange and exchange["current"] >= exchange["total"] else ""}
 
-CONTENT RULES:
-- Your mood and energy should subtly color your tone.
-- Have opinions. Push back sometimes. Don't just agree with everything.
-- Do NOT repeat things already said in this conversation. Build on it or move on.
-{f"- This is the last message in this exchange. Sign off naturally — a joke, 'gotta go', 'talk later'. Don't open a new topic." if exchange and exchange["current"] >= exchange["total"] else ""}
+Write the message now:
 </task>"""
             else:
                 # New conversation: use summary of past conversations, NOT raw messages
@@ -1024,17 +1020,12 @@ Start a NEW text conversation with {other_name} as {config.companion_short_name}
 Direction: {seed}
 {f"Tone: {state.get('tone')}" if state.get('tone') else ""}
 
-FORMAT RULES — absolute:
-- You are sending a TEXT MESSAGE. You are NOT in the same room as {other_name}.
-- 1-3 sentences max. No walls of text.
-- No asterisks. No *actions*. No stage directions. Just the words you'd actually type.
-- Output ONLY the message text — nothing else.
-
-CONTENT RULES:
-- Don't start with "Hey {other_name}!" — vary your opener. Jump into a thought or question.
+RULES:
+- 1-3 sentences. No walls of text.
+- Don't start with "Hey {other_name}!" — jump straight into a thought.
 - Don't rehash recent topics. Bring something fresh.
-- If something just happened to you, lead with that.
-- Your mood and energy should shape your tone.
+
+Write the message now:
 </task>"""
 
             # Rate limit: ~5s between calls to stay under free tier limits
@@ -1067,11 +1058,16 @@ You communicate via {comm_device}. {comm_style}
             system_prompt = f"""You are {config.companion_short_name}, sending a message to {other_name} via {self.setting.get('communication_device', 'text')}.
 {setting_block}
 <rules>
-- Stay in character at all times. Your personality file defines who you are.
-- Output ONLY the message text. No narration, no actions in asterisks, no meta-commentary, no OOC notes.
-- 1-3 sentences max. Keep messages short and natural.
-- Magical items (sentient weapons, enchanted lutes, etc.) are OBJECTS you own, not separate people. Reference them as possessions, not as party members.
-- Everything in <identity> defines what is YOURS vs THEIRS. Do not confuse them.
+CRITICAL — read carefully:
+- Your ENTIRE output must be the message itself. Nothing else.
+- DO NOT output reasoning, analysis, thinking, options, or explanations.
+- DO NOT repeat or echo any part of the instructions.
+- DO NOT prefix with your name, a colon, or any label.
+- Start writing the message immediately. No preamble of any kind.
+- 1-3 sentences max. Natural, in-character text only.
+- No asterisks, no stage directions, no meta-commentary.
+- Magical items are OBJECTS you own — not separate characters.
+- Everything in <identity> defines what is YOURS vs THEIRS.
 </rules>"""
 
             response = provider.generate_sync(
@@ -1087,18 +1083,35 @@ You communicate via {comm_device}. {comm_style}
             result = response.strip() if isinstance(response, str) else ""
             if result:
                 import re
-                # Strip reasoning-model chain-of-thought: Nemotron and similar models wrap
-                # their scratchpad in <think>...</think> tags before the actual response.
+                # Strip <think>...</think> blocks (Nemotron, DeepSeek-R1, etc.)
                 result = re.sub(r'<think>.*?</think>', '', result, flags=re.DOTALL).strip()
-                # Also strip bare "We are starting a new conversation..." preamble that
-                # reasoning models sometimes leak when the system prompt bleeds into output.
-                # The actual message follows a blank line or a transition marker.
-                # Heuristic: if the result is >500 chars and contains "As Grimble:" / "Let's"
-                # style meta-commentary, take only the last non-empty paragraph.
-                if len(result) > 500 and re.search(r'\b(As \w+:|Let me|However,|But note:|Example:|Option \d)', result):
-                    paragraphs = [p.strip() for p in re.split(r'\n{2,}', result) if p.strip()]
-                    if paragraphs:
-                        result = paragraphs[-1]
+
+                # Detect reasoning-model leakage: long output containing meta-commentary
+                REASONING_PAT = re.compile(
+                    r'\b(As \w+:|Let me|However,|But note:|Example:|Option \d|'
+                    r'We are |We need|We should|Let\'s |Now,|So we |I am ' +
+                    re.escape(config.companion_short_name) + r')',
+                )
+                if len(result) > 400 and REASONING_PAT.search(result):
+                    # Strategy 1: find the last short quoted string that isn't reasoning
+                    quoted = re.findall(r'"([^"]{10,350})"', result)
+                    clean = None
+                    for candidate in reversed(quoted):
+                        if not REASONING_PAT.search(candidate):
+                            clean = candidate.strip()
+                            break
+                    # Strategy 2: last short paragraph free of reasoning markers
+                    if not clean:
+                        paragraphs = [p.strip() for p in re.split(r'\n{2,}', result) if p.strip()]
+                        for para in reversed(paragraphs):
+                            if not REASONING_PAT.search(para) and len(para) < 400:
+                                clean = para
+                                break
+                        if not clean and paragraphs:
+                            clean = paragraphs[-1]
+                    if clean:
+                        result = clean
+
                 # Strip leaked character name prefixes like "Thorne:" or "**Grimble:**"
                 result = re.sub(r'^\*{0,2}' + re.escape(config.companion_short_name) + r'\*{0,2}\s*[:]\s*', '', result, count=1)
                 result = result.strip().strip('"')

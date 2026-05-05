@@ -2142,9 +2142,11 @@ don't force them, but don't ignore them either."""
             if not user_message or len(user_message.strip()) < 5:
                 return ""
 
+            from src.memory.graphiti_search import _group_id_from_email
             graphiti_context = get_graphiti_context_with_importance(
                 query=user_message,
-                limit=10  # Limit to prevent context bloat
+                limit=10,  # Limit to prevent context bloat
+                group_id=_group_id_from_email(user_email)
             )
 
             if graphiti_context:

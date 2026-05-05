@@ -432,7 +432,7 @@ class CompanionDB:
                      message_type: str = 'normal', conversation_id: int = None,
                      emotion_state: str = None, emotion_timestamp = None,
                      mood_intensity: float = None, mood_sources: str = None,
-                     avatar_filename: str = None):
+                     avatar_filename: str = None, audience: list = None):
         """Store a single message (user or companion)
 
         Args:
@@ -451,6 +451,9 @@ class CompanionDB:
             mood_intensity: Mood strength (0.0-1.0)
             mood_sources: JSON string of mood determination sources
             avatar_filename: Avatar image filename displayed with message
+            audience: List of companion_ids / user identifiers who can see this message.
+                      None means no restriction (visible to all). When set, only agents in
+                      the list will include this message in their context window.
 
         Returns:
             The ID of the inserted message
@@ -467,49 +470,57 @@ class CompanionDB:
                                      sentiment_score, closeness_after, model_used,
                                      romance_level, source, message_type, conversation_id,
                                      emotion_state, emotion_timestamp, mood_intensity,
-                                     mood_sources, avatar_filename)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                     mood_sources, avatar_filename, audience)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             ''', (email, sender_name, message_text, now_pacific_naive(),
                   sentiment, closeness, model, romance_level, source, message_type, conversation_id,
-                  emotion_state, emotion_timestamp, mood_intensity, mood_sources, avatar_filename))
+                  emotion_state, emotion_timestamp, mood_intensity, mood_sources, avatar_filename,
+                  audience))
 
             result = cursor.fetchone()
             return result[0] if result else None
 
-    def get_recent_messages(self, email: str, limit: int = 100, source: str = None) -> List[Dict]:
+    def get_recent_messages(self, email: str, limit: int = 100, source: str = None,
+                            viewer_id: str = None) -> List[Dict]:
         """Get recent conversation history (individual messages)
 
         Args:
             email: User email
             limit: Maximum number of messages to retrieve
             source: Filter by message source ('chat', 'sms', 'voice', 'avatar', 'proactive', or None for all)
+            viewer_id: When set, only return messages where audience IS NULL (no restriction)
+                       or viewer_id is in the audience array. Pass the companion_id or user
+                       identifier for the agent building its context window.
 
         Returns:
             List of individual messages in chronological order (oldest first)
         """
         with self._get_connection(user_email=email) as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
+            conditions = ['email = %s']
+            params = [email]
+
             if source:
-                cursor.execute(f'''
-                    SELECT id, sender_name, message_text, timestamp, sentiment_score,
-                           closeness_after, model_used, romance_level, source,
-                           message_type, conversation_id
-                    FROM {T.MESSAGES}
-                    WHERE email = %s AND source = %s
-                    ORDER BY timestamp DESC, id DESC
-                    LIMIT %s
-                ''', (email, source, limit))
-            else:
-                cursor.execute(f'''
-                    SELECT id, sender_name, message_text, timestamp, sentiment_score,
-                           closeness_after, model_used, romance_level, source,
-                           message_type, conversation_id
-                    FROM {T.MESSAGES}
-                    WHERE email = %s
-                    ORDER BY timestamp DESC, id DESC
-                    LIMIT %s
-                ''', (email, limit))
+                conditions.append('source = %s')
+                params.append(source)
+
+            if viewer_id:
+                # audience IS NULL means no restriction; otherwise viewer must be in array
+                conditions.append('(audience IS NULL OR %s = ANY(audience))')
+                params.append(viewer_id)
+
+            where = ' AND '.join(conditions)
+            params.append(limit)
+            cursor.execute(f'''
+                SELECT id, sender_name, message_text, timestamp, sentiment_score,
+                       closeness_after, model_used, romance_level, source,
+                       message_type, conversation_id, audience
+                FROM {T.MESSAGES}
+                WHERE {where}
+                ORDER BY timestamp DESC, id DESC
+                LIMIT %s
+            ''', params)
 
             messages = []
             for row in cursor.fetchall():
@@ -524,7 +535,8 @@ class CompanionDB:
                     'romance_level': row['romance_level'],
                     'source': row['source'],
                     'message_type': row['message_type'],
-                    'conversation_id': row['conversation_id']
+                    'conversation_id': row['conversation_id'],
+                    'audience': row['audience'],
                 })
 
             return list(reversed(messages))  # Return in chronological order

@@ -76,6 +76,105 @@ def _get_all_user_schemas(db) -> list:
         return []
 
 
+@observe_bp.route('/conversations')
+def observe_conversations():
+    """List all conversations with participants, date, and message count.
+
+    Scans all user_* schemas for distinct conversation_ids, then clusters across
+    schemas using union-find on participant overlap so that the same conversation
+    appearing in two schemas (each peer stores a copy) gets merged, while
+    independent simulations that happen to share a conversation_id stay separate.
+    """
+    try:
+        from collections import defaultdict
+        from src.database.connection import get_connection
+        conn = get_connection()
+        schemas = _get_all_user_schemas(None)
+
+        # Collect one entry per (schema, conversation_id) — do NOT pre-merge.
+        raw_entries = []  # list of {id, date, participants, message_count}
+        with conn.cursor() as cur:
+            for schema in schemas:
+                try:
+                    cur.execute(f"""
+                        SELECT conversation_id,
+                               COUNT(*) as msg_count,
+                               MIN(timestamp) as started_at,
+                               array_agg(DISTINCT LOWER(sender_name)) as participants
+                        FROM {schema}.messages
+                        WHERE conversation_id IS NOT NULL
+                        GROUP BY conversation_id
+                    """)
+                    for row in cur.fetchall():
+                        cid, count, started_at, participants = row
+                        raw_entries.append({
+                            'id': int(cid),
+                            'date': started_at.strftime('%Y-%m-%d') if started_at else None,
+                            'participants': sorted(set(p for p in (participants or []) if p)),
+                            'message_count': int(count),
+                        })
+                except Exception:
+                    pass
+
+        # conversation_id is only unique within a simulation run, not globally.
+        # Use union-find: entries with the same conv_id that share any participant
+        # are the same conversation; disjoint participant sets → separate rows.
+        n = len(raw_entries)
+        parent = list(range(n))
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        # Build index: conv_id → list of entry indices
+        by_id = defaultdict(list)
+        for i, e in enumerate(raw_entries):
+            by_id[e['id']].append(i)
+
+        for same_id_indices in by_id.values():
+            for a in same_id_indices:
+                for b in same_id_indices:
+                    if a >= b:
+                        continue
+                    sa = set(raw_entries[a]['participants'])
+                    sb = set(raw_entries[b]['participants'])
+                    if sa & sb:  # any overlap → same conversation
+                        ra, rb = find(a), find(b)
+                        if ra != rb:
+                            parent[ra] = rb
+
+        # Merge entries within each cluster
+        clusters = defaultdict(list)
+        for i in range(n):
+            clusters[find(i)].append(raw_entries[i])
+
+        merged = []
+        for group in clusters.values():
+            parts = set()
+            max_count = 0
+            latest_date = None
+            conv_id = group[0]['id']
+            for e in group:
+                parts |= set(e['participants'])
+                max_count = max(max_count, e['message_count'])
+                if not latest_date or (e.get('date') and e['date'] > latest_date):
+                    latest_date = e.get('date')
+            merged.append({
+                'id': conv_id,
+                'date': latest_date,
+                'participants': sorted(parts),
+                'message_count': max_count,
+            })
+
+        conversations = sorted(merged, key=lambda c: (c['date'] or '', c['id']))
+        return jsonify(conversations)
+    except Exception as e:
+        logger.error(f"observe_conversations error: {e}")
+        return jsonify([])
+
+
 @observe_bp.route('/companions')
 def observe_companions():
     """List all companions that have messages across any user_* schema.
@@ -135,6 +234,23 @@ def observe_messages():
     limit = min(int(request.args.get('limit', 100)), 500)
     offset = int(request.args.get('offset', 0))
 
+    # Accept either conversation_id (single) or conversation_ids (comma-separated)
+    conv_id_list = []
+    raw_ids = request.args.get('conversation_ids')
+    if raw_ids:
+        for piece in raw_ids.split(','):
+            try:
+                conv_id_list.append(int(piece.strip()))
+            except (ValueError, AttributeError):
+                pass
+    else:
+        single = request.args.get('conversation_id')
+        if single:
+            try:
+                conv_id_list.append(int(single))
+            except (ValueError, AttributeError):
+                pass
+
     all_messages = []
     seen = set()  # Deduplicate across schemas by (sender, timestamp, text[:40])
 
@@ -146,24 +262,28 @@ def observe_messages():
         with conn.cursor() as cur:
             for schema in schemas:
                 try:
+                    conditions = []
+                    params = []
+
                     if companion_ids:
                         placeholders = ','.join(['%s'] * len(companion_ids))
-                        query = (
-                            f"SELECT sender_name, message_text, timestamp, sentiment_score "
-                            f"FROM {schema}.messages "
-                            f"WHERE LOWER(sender_name) IN ({placeholders})"
-                        )
-                        params = companion_ids[:]
-                    else:
-                        query = (
-                            f"SELECT sender_name, message_text, timestamp, sentiment_score "
-                            f"FROM {schema}.messages"
-                        )
-                        params = []
+                        conditions.append(f"LOWER(sender_name) IN ({placeholders})")
+                        params.extend(companion_ids)
+
+                    if conv_id_list:
+                        placeholders = ','.join(['%s'] * len(conv_id_list))
+                        conditions.append(f"conversation_id IN ({placeholders})")
+                        params.extend(conv_id_list)
 
                     if since:
-                        query += " AND timestamp > %s" if companion_ids else " WHERE timestamp > %s"
+                        conditions.append("timestamp > %s")
                         params.append(since)
+
+                    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+                    query = (
+                        f"SELECT sender_name, message_text, timestamp, sentiment_score "
+                        f"FROM {schema}.messages {where}"
+                    )
 
                     cur.execute(query, params)
                     for row in cur.fetchall():
@@ -304,22 +424,36 @@ def observe_state():
 
 @observe_bp.route('/facts')
 def observe_facts():
-    """Recent facts for a companion."""
+    """Recent facts for a companion, optionally scoped to a conversation."""
     companion_id = request.args.get('companion_id', _default_companion_id())
     limit = min(int(request.args.get('limit', 20)), 100)
+    conversation_id = request.args.get('conversation_id')
     email = _companion_email(companion_id)
 
     try:
         db = _get_db()
-        result = db.execute(
-            f"""SELECT subject, predicate, object, confidence, importance,
-                      created_at, updated_at
-               FROM {T.FACTS}
-               WHERE user_email = %s AND archived_at IS NULL
-               ORDER BY updated_at DESC LIMIT %s""",
-            (email, limit),
-            user_email=email,
-        )
+        if conversation_id:
+            result = db.execute(
+                f"""SELECT f.subject, f.predicate, f.object, f.confidence, f.importance,
+                          f.created_at, f.updated_at
+                   FROM {T.FACTS} f
+                   JOIN {T.MESSAGES} m ON m.id = f.message_id
+                   WHERE f.user_email = %s AND f.archived_at IS NULL
+                     AND m.conversation_id = %s
+                   ORDER BY f.updated_at DESC LIMIT %s""",
+                (email, int(conversation_id), limit),
+                user_email=email,
+            )
+        else:
+            result = db.execute(
+                f"""SELECT subject, predicate, object, confidence, importance,
+                          created_at, updated_at
+                   FROM {T.FACTS}
+                   WHERE user_email = %s AND archived_at IS NULL
+                   ORDER BY updated_at DESC LIMIT %s""",
+                (email, limit),
+                user_email=email,
+            )
         rows = result.fetchall() or []
         facts = []
         for r in rows:
