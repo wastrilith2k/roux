@@ -26,8 +26,8 @@ services:
     container_name: companion-graphiti-neo4j
     restart: "no"
     ports:
-      - '7475:7474'  # HTTP browser UI
-      - '7688:7687'  # Bolt protocol
+      - '127.0.0.1:7475:7474'  # HTTP browser UI
+      - '127.0.0.1:7688:7687'  # Bolt protocol
     volumes:
       - graphiti_neo4j_data:/data
     environment:
@@ -43,7 +43,7 @@ services:
     container_name: companion-postgres
     restart: "no"
     ports:
-      - '5432:5432'
+      - '127.0.0.1:5432:5432'
     environment:
       POSTGRES_DB: companion
       POSTGRES_USER: companion
@@ -58,7 +58,7 @@ services:
     container_name: companion-redis
     restart: "no"
     ports:
-      - '6379:6379'
+      - '127.0.0.1:6379:6379'
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
@@ -77,7 +77,7 @@ services:
       - redis
       - postgres
     ports:
-      - '5000:5000'
+      - '127.0.0.1:5000:5000'
     environment:
       # LLM Configuration
       FIREWORKS_API_KEY: '${FIREWORKS_API_KEY}'

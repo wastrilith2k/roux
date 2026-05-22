@@ -1,0 +1,174 @@
+# Hetzner deployment — no Caddy (esme-caddy handles routing via network connect)
+# Port conflicts resolved: postgres/redis internal-only, neo4j remapped
+
+services:
+  graphiti-neo4j:
+    image: neo4j:5.26-community
+    container_name: companion-graphiti-neo4j
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:7476:7474'
+      - '127.0.0.1:7689:7687'
+    volumes:
+      - graphiti_neo4j_data:/data
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_GRAPHITI_PASSWORD:-graphiti_password}
+      - NEO4J_server_memory_heap_initial__size=512m
+      - NEO4J_server_memory_heap_max__size=1g
+      - NEO4J_server_memory_pagecache_size=256m
+      - NEO4J_PLUGINS=["apoc"]
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: companion-postgres
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: companion
+      POSTGRES_USER: companion
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-companion_change_me}
+    command: postgres -c max_connections=200
+
+  redis:
+    image: redis:7-alpine
+    container_name: companion-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  agent-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: companion-backend
+    restart: on-failure
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      - graphiti-neo4j
+      - redis
+      - postgres
+    environment:
+      FIREWORKS_API_KEY: '${FIREWORKS_API_KEY}'
+      FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3p1'
+      FIREWORKS_FALLBACK_MODEL: 'accounts/fireworks/models/deepseek-v3p2'
+      DEEPSEEK_API_KEY: '${DEEPSEEK_API_KEY}'
+      ANTHROPIC_API_KEY: '${ANTHROPIC_API_KEY}'
+      OPENAI_API_KEY: '${OPENAI_API_KEY}'
+      OPENROUTER_API_KEY: '${OPENROUTER_API_KEY}'
+      OPENROUTER_MODEL: '${OPENROUTER_MODEL:-}'
+      OPENROUTER_TOOL_MODEL: '${OPENROUTER_TOOL_MODEL:-}'
+      NEO4J_GRAPHITI_URI: bolt://graphiti-neo4j:7687
+      NEO4J_GRAPHITI_USER: neo4j
+      NEO4J_GRAPHITI_PASSWORD: '${NEO4J_GRAPHITI_PASSWORD:-graphiti_password}'
+      ENTITY_EXTRACTOR: 'openai'
+      EMBEDDING_PROVIDER: 'openai'
+      USE_MODULAR_PROMPTS: 'modular'
+      USE_CONVERSATION_PREPROCESSING: 'true'
+      STRIP_EMOTIONAL_FLUFF: 'true'
+      SKIP_CONVERSATION_HISTORY: 'false'
+      USE_CONDENSED_HISTORY: 'true'
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: companion
+      POSTGRES_USER: companion
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-companion_change_me}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      COMPANION_REACH_OUT_INTERVAL: '999999'
+      COMPANION_AUTONOMY_ENABLED: 'false'
+      COMPANION_TELEGRAM_ENABLED: 'false'
+      COMPANION_CODE_EXECUTION_ENABLED: 'false'
+      FLASK_ENV: 'production'
+      SENTRY_DSN: '${SENTRY_DSN:-}'
+    volumes:
+      - app_data:/app/data
+      - ./data/entity_profiles:/app/data/entity_profiles:ro
+      - ./scripts:/app/scripts:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./src:/app/src
+      - ./public:/app/public
+    command: python -m src.web_chat
+    networks:
+      - default          # roux_default (reaches postgres/redis/neo4j)
+      - esme_default      # so esme-caddy can reach companion-backend for demo.getroux.dev
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: companion-celery-worker
+    restart: on-failure
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      - redis
+      - graphiti-neo4j
+      - postgres
+    command: celery -A src.celery_app worker --loglevel=info --concurrency=4 --pool=solo
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: companion
+      POSTGRES_USER: companion
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-companion_change_me}
+      ANTHROPIC_API_KEY: '${ANTHROPIC_API_KEY}'
+      FIREWORKS_API_KEY: '${FIREWORKS_API_KEY}'
+      FIREWORKS_MODEL: 'accounts/fireworks/models/deepseek-v3p1'
+      FIREWORKS_FALLBACK_MODEL: 'accounts/fireworks/models/deepseek-v3p2'
+      DEEPSEEK_API_KEY: '${DEEPSEEK_API_KEY}'
+      OPENAI_API_KEY: '${OPENAI_API_KEY}'
+      OPENROUTER_API_KEY: '${OPENROUTER_API_KEY}'
+      NEO4J_GRAPHITI_URI: bolt://graphiti-neo4j:7687
+      NEO4J_GRAPHITI_USER: neo4j
+      NEO4J_GRAPHITI_PASSWORD: '${NEO4J_GRAPHITI_PASSWORD:-graphiti_password}'
+      ENTITY_EXTRACTOR: 'openai'
+      EMBEDDING_PROVIDER: 'openai'
+    volumes:
+      - app_data:/app/data
+      - ./data/entity_profiles:/app/data/entity_profiles:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./src:/app/src
+      - ./public:/app/public
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: companion-celery-beat
+    restart: on-failure
+    depends_on:
+      - redis
+      - celery-worker
+    command: bash -c "rm -f /app/celerybeat-schedule* && celery -A src.celery_app beat --loglevel=info --schedule /tmp/celerybeat-schedule"
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: companion
+      POSTGRES_USER: companion
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-companion_change_me}
+      TZ: 'America/Los_Angeles'
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./src:/app/src
+      - ./public:/app/public
+
+volumes:
+  app_data:
+  redis_data:
+  postgres_data:
+  graphiti_neo4j_data:
+
+networks:
+  default:              # roux_default (project default)
+  esme_default:         # shared network owned by the esme stack; caddy lives here
+    external: true
