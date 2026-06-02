@@ -90,3 +90,47 @@ def test_retrieval_agent_calls_hybrid_search():
 
     mock_store.search_facts_hybrid.assert_called()
     mock_store.search_facts.assert_not_called()
+
+
+# =============================================================================
+# RRF fusion tests
+# =============================================================================
+
+from src.memory.retrieval_agent import RetrievalAgent
+
+
+def test_rrf_fuse_promotes_items_appearing_in_both_lists():
+    """An item in both fact and graphiti results should have higher RRF score than one in only one list."""
+    fact_results = [
+        {'content': 'alpha', 'fact': 'alpha', 'hybrid_score': 0.9},
+        {'content': 'beta',  'fact': 'beta',  'hybrid_score': 0.8},
+        {'content': 'gamma', 'fact': 'gamma', 'hybrid_score': 0.7},
+    ]
+    graph_results = [
+        {'content': 'gamma', 'fact': 'gamma'},  # appears in both — should rank up
+        {'content': 'delta', 'fact': 'delta'},
+    ]
+    fused = RetrievalAgent._rrf_fuse(fact_results, graph_results, k=60)
+    contents = [r.get('content', r.get('fact', '')) for r in fused]
+    # gamma appears in both lists — must rank above beta (only in facts at position 2)
+    assert 'gamma' in contents
+    assert 'beta' in contents
+    gamma_idx = contents.index('gamma')
+    beta_idx = contents.index('beta')
+    assert gamma_idx < beta_idx, f"gamma (idx {gamma_idx}) should beat beta (idx {beta_idx})"
+
+
+def test_rrf_fuse_deduplicates():
+    fact_results = [{'content': 'same', 'fact': 'same thing'}]
+    graph_results = [{'content': 'same', 'fact': 'same thing'}]
+    fused = RetrievalAgent._rrf_fuse(fact_results, graph_results, k=60)
+    assert len(fused) == 1, f"Expected 1 result, got {len(fused)}"
+
+
+def test_rrf_fuse_includes_all_items():
+    fact_results = [{'content': 'only_in_facts', 'fact': 'only_in_facts'}]
+    graph_results = [{'content': 'only_in_graph', 'fact': 'only_in_graph'}]
+    fused = RetrievalAgent._rrf_fuse(fact_results, graph_results, k=60)
+    contents = [r.get('content', '') for r in fused]
+    assert 'only_in_facts' in contents
+    assert 'only_in_graph' in contents

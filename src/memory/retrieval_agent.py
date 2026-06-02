@@ -164,26 +164,64 @@ class RetrievalAgent:
             limit=limit * 2,  # over-fetch so dedup still meets the limit
         )
 
-        # Deduplicate by normalised content prefix (first 100 chars, lowercased)
-        seen: set = set()
-        unique = []
-        for item in raw:
-            # VerifiedMemory dataclass — use .content attribute
-            key = getattr(item, 'content', '') or ''
-            key = key.lower().strip()[:100]
-            if key not in seen:
-                seen.add(key)
-                unique.append(item)
-
-        # Sort by importance_score descending (None treated as 5 — neutral importance)
-        unique.sort(
-            key=lambda x: getattr(x, "importance_score", None)
-                          or (x.get("importance_score") if isinstance(x, dict) else None)
-                          or 5,
+        # Fuse and deduplicate using Reciprocal Rank Fusion.
+        # raw is treated as a single pre-ranked list; passing an empty second
+        # list keeps the API consistent while RRF handles deduplication by key.
+        fused = self._rrf_fuse(raw, [], k=60)
+        # Re-sort: importance_score is the primary signal; rrf_score breaks ties.
+        fused.sort(
+            key=lambda x: (
+                getattr(x, "importance_score", None)
+                or (x.get("importance_score") if isinstance(x, dict) else None)
+                or 5,
+                x.get("rrf_score", 0) if isinstance(x, dict) else 0,
+            ),
             reverse=True,
         )
-        return unique[:limit]
+        return fused[:limit]
 
+
+    @staticmethod
+    def _rrf_fuse(
+        list_a: list,
+        list_b: list,
+        k: int = 60,
+    ) -> list:
+        """Reciprocal Rank Fusion of two ranked result lists.
+
+        Items appearing in both lists get a boosted score.
+        Returns results sorted by descending RRF score.
+        RRF(d) = sum(1 / (k + rank_i)) for each list where item appears.
+        """
+        scores: dict = {}
+        items: dict = {}
+
+        def _key(item) -> str:
+            if isinstance(item, dict):
+                text = item.get('content') or item.get('fact', '')
+            else:
+                text = getattr(item, 'content', '') or ''
+            return str(text)[:120].lower().strip()
+
+        for rank, item in enumerate(list_a, start=1):
+            key = _key(item)
+            scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank)
+            items.setdefault(key, item)
+
+        for rank, item in enumerate(list_b, start=1):
+            key = _key(item)
+            scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank)
+            items.setdefault(key, item)
+
+        sorted_keys = sorted(scores, key=lambda x: scores[x], reverse=True)
+        result = []
+        for key in sorted_keys:
+            entry = items[key]
+            if isinstance(entry, dict):
+                entry = dict(entry)
+                entry['rrf_score'] = scores[key]
+            result.append(entry)
+        return result
 
     def _search_facts(self, user_email: str, query: str, limit: int = 10) -> list:
         """Search fact store using hybrid BM25+pgvector."""
