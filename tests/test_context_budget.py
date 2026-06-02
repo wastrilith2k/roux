@@ -301,31 +301,35 @@ class TestAssemblePromptBudgetIntegration:
 
 
 class TestSectionPriority:
-    """Verify section priority configuration is sensible."""
+    """Verify section priority configuration is sensible (now tier-based via CoALA)."""
 
     def test_entity_profiles_highest_priority(self):
         """Entity profiles should be among the highest priority (never dropped early)."""
         from src.core.conversation.pipeline import ConversationPipeline
-        assert ConversationPipeline.SECTION_PRIORITY['entity_profiles'] <= 1
+        prio = ConversationPipeline()._section_priority
+        assert prio['entity_profiles'] <= 2  # PERMANENT tier
 
     def test_activities_lowest_priority(self):
         """Activities context should be among the lowest priority (dropped first)."""
         from src.core.conversation.pipeline import ConversationPipeline
-        assert ConversationPipeline.SECTION_PRIORITY['activities_context'] >= 8
+        prio = ConversationPipeline()._section_priority
+        assert prio['activities_context'] >= 6  # EPHEMERAL tier
 
     def test_memories_higher_than_opinions(self):
         """Core memories should have higher priority than opinions."""
         from src.core.conversation.pipeline import ConversationPipeline
-        priorities = ConversationPipeline.SECTION_PRIORITY
-        assert priorities['memories'] < priorities['opinions_context']
+        prio = ConversationPipeline()._section_priority
+        assert prio['memories'] < prio['opinions_context']
 
     def test_all_context_sources_have_priority(self):
         """Every droppable context source that the pipeline uses should have a priority."""
         from src.core.conversation.pipeline import ConversationPipeline
-        priorities = ConversationPipeline.SECTION_PRIORITY
+        prio = ConversationPipeline()._section_priority
 
+        # memory_validation uses the fallback default (ContextTier.EPHEMERAL) since
+        # it is a pipeline-internal section not represented in SECTION_TIERS.
         expected_sources = [
-            'entity_profiles', 'core_memory', 'memory_validation',
+            'entity_profiles', 'core_memory',
             'memories', 'personality', 'relationship_dynamics',
             'relationship_insights', 'relationship_evaluation',
             'scene_state', 'internal_state', 'fertility_context',
@@ -337,4 +341,4 @@ class TestSectionPriority:
         ]
 
         for source in expected_sources:
-            assert source in priorities, f"Missing priority for '{source}'"
+            assert source in prio, f"Missing priority for '{source}'"

@@ -339,16 +339,16 @@ class TestPipelineIntegration:
     """Verify session_summary is included in the pipeline's prompt assembly."""
 
     def test_session_summary_in_section_priority(self):
-        """session_summary should have a priority in ConversationPipeline.SECTION_PRIORITY."""
+        """session_summary should have a priority via the tier-based _section_priority property."""
         with patch('src.config.persona_config.get_persona_config', _fake_persona):
             from src.core.conversation.pipeline import ConversationPipeline
-            assert 'session_summary' in ConversationPipeline.SECTION_PRIORITY
+            assert 'session_summary' in ConversationPipeline()._section_priority
 
     def test_session_summary_priority_is_high(self):
-        """session_summary should have high priority (2) since it's core context."""
+        """session_summary should have DURABLE priority (tier 3) since it is core context."""
         with patch('src.config.persona_config.get_persona_config', _fake_persona):
             from src.core.conversation.pipeline import ConversationPipeline
-            assert ConversationPipeline.SECTION_PRIORITY['session_summary'] == 2
+            assert ConversationPipeline()._section_priority['session_summary'] == 3  # DURABLE
 
 
 # ---------------------------------------------------------------------------

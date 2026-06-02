@@ -36,6 +36,7 @@ class PipelineCancelled(Exception):
     pass
 
 from .context_builder import ContextBuilder, ConversationContext, get_context_builder
+from .context_tiers import SECTION_TIERS, ContextTier
 
 # Memory validation to prevent confabulation (pre-generation)
 from ..memory_validation_agent import (
@@ -707,37 +708,10 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
     # exceed the window (the old code only logged a warning at 75%).
     CONTEXT_BUDGET_FRACTION = float(os.environ.get('COMPANION_CONTEXT_BUDGET_FRACTION', '0.6'))
 
-    # Section priority for budget enforcement.  Lower number = higher priority
-    # (dropped last).  Priority 0 sections are NEVER dropped.
-    SECTION_PRIORITY = {
-        'entity_profiles': 1,
-        'core_memory': 1,
-        'memory_validation': 1,
-        'presence_mode': 1,
-        'derived_scene_context': 2,
-        'memories': 2,
-        'personality': 2,
-        'relationship_dynamics': 3,
-        'relationship_insights': 3,
-        'relationship_evaluation': 3,
-        'scene_state': 3,
-        'internal_state': 3,
-        'graphiti_context': 4,
-        'temporal_context': 5,
-        'biographies': 5,
-        'episode_context': 5,
-        'synthesized_events': 6,
-        'observations_context': 6,
-        'session_summary': 2,
-        'reflections_context': 7,
-        'opinions_context': 7,
-        'curiosity_context': 8,
-        'goals_context': 8,
-        'values_context': 8,
-        'activities_context': 9,
-        'fertility_context': 9,
-        'user_context': 9,
-    }
+    @property
+    def _section_priority(self) -> dict:
+        """Eviction priority from CoALA tiers. Lower value = kept longer."""
+        return {name: tier.value for name, tier in SECTION_TIERS.items()}
 
     def _enforce_context_budget(
         self,
@@ -884,7 +858,7 @@ You disagree when you disagree. You are a partner, not a therapist.
 
         def _add(name, content):
             """Helper to add a droppable section with its configured priority."""
-            priority = self.SECTION_PRIORITY.get(name, 5)
+            priority = self._section_priority.get(name, ContextTier.EPHEMERAL.value)
             droppable.append((name, priority, content))
 
         # Presence mode (in_person vs texting — issue #26)

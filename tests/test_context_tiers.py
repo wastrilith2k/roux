@@ -47,3 +47,15 @@ def test_section_tiers_covers_all_prompt_sections():
     }
     missing = required_sections - set(SECTION_TIERS.keys())
     assert not missing, f"Fields missing from SECTION_TIERS: {missing}"
+
+
+def test_pipeline_section_priority_uses_tiers():
+    """pipeline._section_priority must return tier-based priorities, not the old hardcoded dict."""
+    from src.core.conversation.pipeline import ConversationPipeline
+    p = ConversationPipeline()
+    prio = p._section_priority
+    # core_memory should be PERMANENT (tier 2), user_context should be EPHEMERAL (tier 6)
+    assert prio.get('core_memory') == 2  # ContextTier.PERMANENT
+    assert prio.get('user_context') == 6  # ContextTier.EPHEMERAL
+    # core_memory must rank higher (lower number) than user_context
+    assert prio['core_memory'] < prio['user_context']
