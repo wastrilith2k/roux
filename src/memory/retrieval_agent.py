@@ -174,6 +174,13 @@ class RetrievalAgent:
                 seen.add(key)
                 unique.append(item)
 
+        # Sort by importance_score descending (None treated as 5 — neutral importance)
+        unique.sort(
+            key=lambda x: getattr(x, "importance_score", None)
+                          or (x.get("importance_score") if isinstance(x, dict) else None)
+                          or 5,
+            reverse=True,
+        )
         return unique[:limit]
 
 

@@ -20,3 +20,4 @@ class VerifiedMemory:
     source: str            # 'postgres' | 'graphiti' | 'entity_profile' | 'search_tool'
     timestamp: Optional[str] = None   # When this was recorded
     relevance: float = 0.5            # How relevant to the query (0-1)
+    importance_score: Optional[int] = None  # 1-10 importance rating; None treated as 5
