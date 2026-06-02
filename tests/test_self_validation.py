@@ -50,3 +50,27 @@ def test_critic_works_without_strategy_tips():
                 # Should not raise regardless of tip fetch failure
             except Exception as e:
                 assert False, f"critique() raised unexpectedly: {e}"
+
+
+from src.core.conversation.pipeline import ConversationPipeline
+
+
+def test_emotional_coherence_passes_when_state_empty():
+    """Empty internal_state means no constraint — always passes."""
+    pipeline = ConversationPipeline()
+    assert pipeline._check_emotional_coherence(
+        response="WOW I'M SO EXCITED!!!",
+        internal_state="",
+    ) is True
+
+
+def test_emotional_coherence_passes_on_exception():
+    """Must return True (pass) if the LLM call fails — never block pipeline."""
+    from unittest.mock import patch
+    pipeline = ConversationPipeline()
+    with patch.object(pipeline, '_llm_coherence_check', side_effect=Exception("API down")):
+        result = pipeline._check_emotional_coherence(
+            response="test response",
+            internal_state="exhausted",
+        )
+    assert result is True

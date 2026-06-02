@@ -152,6 +152,10 @@ COMPANION_RESPONSE_CRITIC_ENABLED = os.environ.get('COMPANION_RESPONSE_CRITIC_EN
 # When enabled, replaces the two separate calls above for lower latency
 COMPANION_MESSAGE_ANALYZER_ENABLED = os.environ.get('COMPANION_MESSAGE_ANALYZER_ENABLED', 'true').lower() == 'true'
 
+# Emotional coherence gate: detect tone contradictions between response and internal_state
+EMOTIONAL_COHERENCE_ENABLED = os.environ.get('EMOTIONAL_COHERENCE_ENABLED', 'true').lower() == 'true'
+COHERENCE_MODEL = os.environ.get('COHERENCE_MODEL', 'gpt-4o-mini')
+
 
 class ConversationPipeline:
     """
@@ -182,6 +186,36 @@ class ConversationPipeline:
             from src.core.code_executor import get_code_executor
             self._code_executor = get_code_executor()
         return self._code_executor
+
+    def _check_emotional_coherence(self, response: str, internal_state: str) -> bool:
+        """Return True if response tone is consistent with internal_state.
+
+        Returns True (pass) on any error or if internal_state is empty.
+        Returns False only if the LLM explicitly says the response CONTRADICTS state.
+        """
+        if not EMOTIONAL_COHERENCE_ENABLED or not internal_state or not response:
+            return True
+        try:
+            return self._llm_coherence_check(response=response, internal_state=internal_state)
+        except Exception as e:
+            logger.warning(f"emotional coherence check failed: {e}")
+            return True
+
+    def _llm_coherence_check(self, response: str, internal_state: str) -> bool:
+        """Ask a fast model if response tone contradicts internal_state."""
+        from src.llm.provider_factory import generate_sync
+        prompt = (
+            f"Companion internal state: {internal_state}\n"
+            f"Companion response: {response[:500]}\n\n"
+            "Does the response tone CONTRADICT the internal state "
+            "(e.g. highly energetic when exhausted, dismissive when happy)? "
+            "Answer only YES or NO."
+        )
+        answer = generate_sync(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=10,
+        ).strip().upper()
+        return not answer.startswith('YES')
 
     def _load_cognitive_prompt(self):
         """Load the cognitive flow prompt that guides the companion's responses."""
@@ -649,6 +683,19 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                             logger.warning(f"Response critique failed: {e}")
 
                     break
+
+            # Step 4c: Emotional coherence gate (single regeneration if incoherent)
+            if context and context.internal_state and EMOTIONAL_COHERENCE_ENABLED:
+                if not self._check_emotional_coherence(response, context.internal_state):
+                    logger.info("Emotional coherence failed — regenerating response once")
+                    try:
+                        regen, _regen_model = self._call_llm(
+                            full_prompt, user_message, conversation_turns
+                        )
+                        if regen and regen.strip():
+                            response = regen
+                    except Exception as _regen_err:
+                        logger.warning(f"Emotional coherence regeneration failed: {_regen_err}")
 
             # Close LLM profiling stage
             if _llm_stage:
