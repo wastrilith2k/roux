@@ -32,6 +32,8 @@ SECTION_TIERS: dict[str, ContextTier] = {
     'internal_state':         ContextTier.DURABLE,
     'session_summary':        ContextTier.DURABLE,
     'temporal_context':       ContextTier.DURABLE,
+    'continuity_context':     ContextTier.DURABLE,
+    'location':               ContextTier.DURABLE,
 
     # Distilled episodic — synthesized history, prefer over raw
     'biographies':            ContextTier.DISTILLED_EPISODIC,
@@ -40,6 +42,8 @@ SECTION_TIERS: dict[str, ContextTier] = {
 
     # Raw episodic — matched episodes, fallback
     'episode_context':        ContextTier.RAW_EPISODIC,
+    'conversation_history':   ContextTier.RAW_EPISODIC,
+    'conversation_turns':     ContextTier.RAW_EPISODIC,
 
     # Ephemeral — simulated/inferred state, drop first
     'reflections_context':    ContextTier.EPHEMERAL,
@@ -50,4 +54,5 @@ SECTION_TIERS: dict[str, ContextTier] = {
     'activities_context':     ContextTier.EPHEMERAL,
     'fertility_context':      ContextTier.EPHEMERAL,
     'user_context':           ContextTier.EPHEMERAL,
+    'schedule':               ContextTier.EPHEMERAL,
 }

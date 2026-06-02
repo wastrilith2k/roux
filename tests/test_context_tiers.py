@@ -30,3 +30,20 @@ def test_permanent_and_procedural_have_lowest_values():
 def test_distilled_lower_than_raw():
     assert SECTION_TIERS['biographies'] < SECTION_TIERS['episode_context']
     assert SECTION_TIERS['synthesized_events'] < SECTION_TIERS['episode_context']
+
+def test_section_tiers_covers_all_prompt_sections():
+    """All ConversationContext string fields used as prompt sections must have a tier."""
+    # These are the known prompt-injectable string fields (not metadata or list fields)
+    required_sections = {
+        'entity_profiles', 'personality', 'memories', 'biographies',
+        'conversation_history', 'continuity_context', 'relationship_insights',
+        'schedule', 'location', 'scene_state', 'internal_state', 'user_context',
+        'values_context', 'activities_context', 'temporal_context',
+        'graphiti_context', 'synthesized_events', 'episode_context',
+        'core_memory', 'reflections_context', 'opinions_context',
+        'curiosity_context', 'goals_context', 'fertility_context',
+        'observations_context', 'session_summary', 'relationship_dynamics',
+        'relationship_evaluation', 'presence_mode', 'derived_scene_context',
+    }
+    missing = required_sections - set(SECTION_TIERS.keys())
+    assert not missing, f"Fields missing from SECTION_TIERS: {missing}"
