@@ -843,6 +843,42 @@ def get_entity_relationships(entity_name: str, limit: int = 50, group_id: Option
         return []
 
 
+
+def expand_entity_hops(
+    entity_name: str,
+    hops: int = 2,
+    group_id: Optional[str] = None,
+    limit: int = 20,
+) -> List[str]:
+    """Return entity names reachable within `hops` steps from entity_name.
+
+    Uses Neo4j variable-length path query. Returns empty list if driver
+    is unavailable or query fails -- never raises.
+    """
+    driver = _get_graphiti_neo4j_driver()
+    if not driver:
+        return []
+
+    try:
+        with driver.session() as session:
+            group_filter = "AND start.group_id = $group_id " if group_id else ""
+            cypher = (
+                "MATCH (start {name: $name}) "
+                + group_filter
+                + "MATCH (start)-[*1.." + str(hops) + "]-(connected) "
+                + "WHERE connected.name IS NOT NULL AND connected.name <> $name "
+                + "RETURN DISTINCT connected.name AS name, "
+                + "min(length(shortestPath((start)-[*]-(connected)))) AS distance "
+                + "ORDER BY distance "
+                + "LIMIT " + str(limit)
+            )
+            results = session.run(cypher, name=entity_name, group_id=group_id)
+            return [row["name"] for row in results]
+    except Exception as e:
+        logger.warning(f"expand_entity_hops failed for {entity_name}: {e}")
+        return []
+
+
 # =============================================================================
 # Convenience wrapper class + singleton accessor
 # =============================================================================
