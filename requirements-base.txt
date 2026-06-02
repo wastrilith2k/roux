@@ -12,6 +12,7 @@ langchain-mcp-adapters
 mcp
 textblob
 nltk
+python-frontmatter>=1.0.0  # Markdown entity profiles with YAML front-matter
 requests
 urllib3<2.0,>=1.26.0  # Pin to 1.x to avoid SSL RecursionError in 2.x
 pandas
