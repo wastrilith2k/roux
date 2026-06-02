@@ -198,7 +198,8 @@ CREATE TABLE IF NOT EXISTS {s}.{T.MESSAGES} (
     avatar_filename TEXT,
     embedding JSONB,
     embedding_vec VECTOR(1536),
-    audience TEXT[]
+    audience TEXT[],
+    quality_score FLOAT
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_email ON {s}.{T.MESSAGES}(email);

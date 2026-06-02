@@ -432,7 +432,8 @@ class CompanionDB:
                      message_type: str = 'normal', conversation_id: int = None,
                      emotion_state: str = None, emotion_timestamp = None,
                      mood_intensity: float = None, mood_sources: str = None,
-                     avatar_filename: str = None, audience: list = None):
+                     avatar_filename: str = None, audience: list = None,
+                     quality_score: float = None):
         """Store a single message (user or companion)
 
         Args:
@@ -454,6 +455,7 @@ class CompanionDB:
             audience: List of companion_ids / user identifiers who can see this message.
                       None means no restriction (visible to all). When set, only agents in
                       the list will include this message in their context window.
+            quality_score: Optional quality score for the generated response (0.0-1.0).
 
         Returns:
             The ID of the inserted message
@@ -470,13 +472,14 @@ class CompanionDB:
                                      sentiment_score, closeness_after, model_used,
                                      romance_level, source, message_type, conversation_id,
                                      emotion_state, emotion_timestamp, mood_intensity,
-                                     mood_sources, avatar_filename, audience)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                     mood_sources, avatar_filename, audience,
+                                     quality_score)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             ''', (email, sender_name, message_text, now_pacific_naive(),
                   sentiment, closeness, model, romance_level, source, message_type, conversation_id,
                   emotion_state, emotion_timestamp, mood_intensity, mood_sources, avatar_filename,
-                  audience))
+                  audience, quality_score))
 
             result = cursor.fetchone()
             return result[0] if result else None

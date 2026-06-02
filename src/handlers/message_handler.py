@@ -175,7 +175,8 @@ class MessageProcessor:
                         message_text=msg,
                         sentiment=0.5,
                         closeness=closeness,
-                        model=model_used  # Track which model generated this response
+                        model=model_used,  # Track which model generated this response
+                        quality_score=result.quality_score
                     )
                     if msg_id:
                         companion_messages_saved.append((msg_id, msg))
