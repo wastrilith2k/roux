@@ -14,63 +14,44 @@ def test_retrieval_agent_has_search_verified():
 
 def test_search_verified_returns_list():
     agent = get_retrieval_agent()
-    # Mock the internal MemoryRetriever to avoid needing a real DB
-    mock_retriever = MagicMock()
-    mock_retriever.search.return_value = []
-    with patch.object(agent, '_get_memory_retriever', return_value=mock_retriever):
+    with patch.object(agent, '_search_facts', return_value=[]), \
+         patch.object(agent, '_search_graphiti', return_value=[]):
         results = agent.search_verified(user_email="test@example.com", query="test", limit=5)
     assert isinstance(results, list)
 
 
 def test_search_verified_deduplicates_results():
     """Duplicate content entries must be collapsed to one."""
-    from src.core.verified_memory import VerifiedMemory
-
     agent = get_retrieval_agent()
-    duplicate = VerifiedMemory(content="same content here", source="postgres", relevance=0.8)
-    mock_retriever = MagicMock()
-    mock_retriever.search.return_value = [duplicate, duplicate]
-    with patch.object(agent, '_get_memory_retriever', return_value=mock_retriever):
+    duplicate = {'content': 'same content here', 'fact': 'same content here'}
+    with patch.object(agent, '_search_facts', return_value=[duplicate, duplicate]), \
+         patch.object(agent, '_search_graphiti', return_value=[]):
         results = agent.search_verified(user_email="test@example.com", query="test", limit=10)
     assert len(results) == 1
 
 
 def test_search_verified_respects_limit():
     """Result list must not exceed the requested limit."""
-    from src.core.verified_memory import VerifiedMemory
-
     agent = get_retrieval_agent()
-    many = [
-        VerifiedMemory(content=f"memory {i}", source="postgres", relevance=0.5)
-        for i in range(20)
-    ]
-    mock_retriever = MagicMock()
-    mock_retriever.search.return_value = many
-    with patch.object(agent, '_get_memory_retriever', return_value=mock_retriever):
+    many = [{'content': f'memory {i}', 'fact': f'memory {i}'} for i in range(20)]
+    with patch.object(agent, '_search_facts', return_value=many), \
+         patch.object(agent, '_search_graphiti', return_value=[]):
         results = agent.search_verified(user_email="test@example.com", query="test", limit=5)
     assert len(results) <= 5
 
 
 def test_search_verified_orders_by_importance():
     """Higher importance facts should appear earlier in results."""
-    from src.core.verified_memory import VerifiedMemory
-
     agent = get_retrieval_agent()
-    # Low importance fact first in the raw list — without sorting it would stay first
-    low = VerifiedMemory(content="low importance fact", source="postgres", relevance=0.5,
-                         importance_score=2)
-    high = VerifiedMemory(content="high importance fact", source="postgres", relevance=0.5,
-                          importance_score=9)
-    mock_retriever = MagicMock()
-    mock_retriever.search.return_value = [low, high]
-    with patch.object(agent, '_get_memory_retriever', return_value=mock_retriever):
+    low  = {'content': 'low importance fact',  'fact': 'low importance fact',  'importance_score': 2}
+    high = {'content': 'high importance fact', 'fact': 'high importance fact', 'importance_score': 9}
+    with patch.object(agent, '_search_facts', return_value=[low, high]), \
+         patch.object(agent, '_search_graphiti', return_value=[]):
         results = agent.search_verified(user_email="t@t.com", query="test", limit=10)
     assert len(results) >= 2
-    # High importance fact should appear before low importance fact
-    contents = [getattr(r, 'content', r.get('content', '') if isinstance(r, dict) else '')
-                for r in results]
+    contents = [r.get('content', '') for r in results]
     high_idx = next(i for i, c in enumerate(contents) if 'high' in c)
-    low_idx = next(i for i, c in enumerate(contents) if 'low' in c)
+    low_idx  = next(i for i, c in enumerate(contents) if 'low' in c)
     assert high_idx < low_idx, (
         f"High importance (idx {high_idx}) should rank before low (idx {low_idx})"
     )
@@ -82,14 +63,27 @@ def test_retrieval_agent_calls_hybrid_search():
     mock_store = MagicMock()
     mock_store.search_facts_hybrid.return_value = []
 
-    with patch('src.memory.retrieval_agent.get_fact_store', return_value=mock_store):
-        try:
-            agent._search_facts(user_email='t@t.com', query='test query', limit=10)
-        except Exception:
-            pass  # May fail due to DB, but we just need to check what was called
+    with patch('src.memory.retrieval_agent.get_fact_store', return_value=mock_store), \
+         patch.object(agent, '_search_graphiti', return_value=[]):
+        agent._search_facts(user_email='t@t.com', query='test query', limit=10)
 
     mock_store.search_facts_hybrid.assert_called()
     mock_store.search_facts.assert_not_called()
+
+
+def test_search_verified_fuses_both_sources():
+    """search_verified must call both _search_facts and _search_graphiti."""
+    agent = get_retrieval_agent()
+    with patch.object(agent, '_search_facts',
+                      return_value=[{'content': 'fact1', 'fact': 'fact1'}]) as mock_facts, \
+         patch.object(agent, '_search_graphiti',
+                      return_value=[{'content': 'graph1', 'fact': 'graph1'}]) as mock_graph:
+        results = agent.search_verified(user_email='t@t.com', query='test', limit=10)
+    mock_facts.assert_called_once()
+    mock_graph.assert_called_once()
+    contents = [r.get('content', r.get('fact', '')) for r in results]
+    assert 'fact1' in contents
+    assert 'graph1' in contents
 
 
 # =============================================================================

@@ -137,49 +137,35 @@ class RetrievalAgent:
         search_terms: Optional[List[str]] = None,
         query_type: str = 'specific_event',
     ) -> list:
-        """Unified replacement for legacy MemoryRetriever.search().
-
-        Delegates to MemoryRetriever which searches PostgreSQL conversation
-        history, entity profiles, and any remaining knowledge-graph backends.
-        Results are deduplicated by content and trimmed to *limit*.
+        """Unified retrieval: fuses fact store + Graphiti via RRF.
 
         Args:
             user_email: User identifier for database filtering.
             query: Primary search query string.
             limit: Maximum number of results to return.
-            search_terms: Optional list of explicit terms; defaults to [query].
-            query_type: Passed through to MemoryRetriever strategy selector.
-                        One of: specific_event | emotional_vague | factual.
+            search_terms: Accepted for API compatibility; unused (query is used
+                          directly so both backends receive the same string).
+            query_type: Accepted for API compatibility; unused.
 
         Returns:
             List of VerifiedMemory dataclass instances (or dicts for
-            forward-compatibility), deduplicated and ranked by relevance.
+            forward-compatibility), deduplicated and ranked by fused score.
         """
-        terms = search_terms or [query]
-        retriever = self._get_memory_retriever()
-        raw = retriever.search(
-            search_terms=terms,
-            user_email=user_email,
-            query_type=query_type,
-            limit=limit * 2,  # over-fetch so dedup still meets the limit
-        )
+        facts = self._search_facts(user_email=user_email, query=query, limit=limit)
+        graph = self._search_graphiti(user_email=user_email, query=query, limit=limit)
 
-        # Fuse and deduplicate using Reciprocal Rank Fusion.
-        # raw is treated as a single pre-ranked list; passing an empty second
-        # list keeps the API consistent while RRF handles deduplication by key.
-        fused = self._rrf_fuse(raw, [], k=60)
+        fused = self._rrf_fuse(facts, graph, k=60)
         # Re-sort: importance_score is the primary signal; rrf_score breaks ties.
         fused.sort(
             key=lambda x: (
-                getattr(x, "importance_score", None)
-                or (x.get("importance_score") if isinstance(x, dict) else None)
+                getattr(x, 'importance_score', None)
+                or (x.get('importance_score') if isinstance(x, dict) else None)
                 or 5,
-                x.get("rrf_score", 0) if isinstance(x, dict) else 0,
+                x.get('rrf_score', 0) if isinstance(x, dict) else 0,
             ),
             reverse=True,
         )
         return fused[:limit]
-
 
     @staticmethod
     def _rrf_fuse(
@@ -233,6 +219,23 @@ class RetrievalAgent:
             vector_weight=0.6,
             user_email=user_email,
         )
+
+    def _search_graphiti(self, user_email: str, query: str, limit: int = 10) -> list:
+        """Search Graphiti knowledge graph.
+
+        Derives the group_id from the local-part of user_email so each user's
+        graph partition is queried independently.  Returns an empty list on any
+        failure so the caller can always proceed with whatever fact results are
+        available.
+        """
+        try:
+            from src.memory.graphiti_search import search_graphiti
+            group_id = user_email.split('@')[0] if user_email else None
+            results = search_graphiti(query=query, limit=limit, group_id=group_id)
+            return results if isinstance(results, list) else []
+        except Exception as e:
+            logger.warning(f"graphiti search failed: {e}")
+            return []
 
     def analyze_query(
         self,
