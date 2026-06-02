@@ -1706,6 +1706,7 @@ Just write the message itself, nothing else.
             if tool_code:
                 logger.info(f"Executing tool action: {decision.tool_action}")
                 result = self.code_executor.execute(tool_code)
+                result = self._compress_tool_result(tool_name=decision.tool_action, raw=result) if result else result
                 tool_calls_made.append({
                     "tool": decision.tool_action,
                     "code": tool_code[:200],
@@ -1850,6 +1851,7 @@ Just write the message itself, nothing else.
                     logger.debug(f"Executing code: {code[:100]}...")
 
                     result = self.code_executor.execute(code)
+                    result = self._compress_tool_result(tool_name=tool_name, raw=result) if result else result
 
                     tool_calls_made.append({
                         "tool": tool_name,
@@ -1885,6 +1887,44 @@ Just write the message itself, nothing else.
 
         logger.warning(f"Hit max tool calls ({MAX_TOOL_CALLS})")
         return "i'm not able to check right now, can you ask me again in a bit?", "gpt-4o-mini", tool_calls_made
+
+    _TOOL_RESULT_CHAR_LIMIT = int(os.environ.get('TOOL_RESULT_CHAR_LIMIT', '800'))
+    _TOOL_COMPRESS_MODEL = os.environ.get('TOOL_COMPRESS_MODEL', 'gpt-4o-mini')
+
+    def _compress_tool_result(self, tool_name: str, raw: str) -> str:
+        """Cap a tool result to _TOOL_RESULT_CHAR_LIMIT chars.
+
+        Returns original if already short. Falls back to hard truncation
+        with '[truncated]' marker if LLM compression fails.
+        """
+        if len(raw) <= self._TOOL_RESULT_CHAR_LIMIT:
+            return raw
+        try:
+            return self._llm_compress(tool_name=tool_name, raw=raw)
+        except Exception as e:
+            logger.warning(f"tool result compression failed for {tool_name}: {e}")
+            return raw[:self._TOOL_RESULT_CHAR_LIMIT] + '...[truncated]'
+
+    def _llm_compress(self, tool_name: str, raw: str) -> str:
+        """Use a cheap model to summarise a tool result to ≤200 tokens."""
+        from openai import OpenAI
+        client = OpenAI()
+        resp = client.chat.completions.create(
+            model=self._TOOL_COMPRESS_MODEL,
+            max_tokens=200,
+            messages=[
+                {
+                    'role': 'system',
+                    'content': (
+                        f'Summarise this {tool_name} result in ≤200 tokens. '
+                        'Preserve all specific names, dates, times, and numbers. '
+                        'Return only the summary, nothing else.'
+                    ),
+                },
+                {'role': 'user', 'content': raw[:4000]},
+            ],
+        )
+        return resp.choices[0].message.content.strip()
 
     _TOPIC_SHIFT_THRESHOLD = float(os.environ.get('TOPIC_SHIFT_COSINE_THRESHOLD', '0.45'))
 
