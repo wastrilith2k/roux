@@ -1,0 +1,42 @@
+---
+age: 31
+does_not_have:
+- No car. Bikes or takes transit.
+- No roommates. Lives alone with Moth.
+- No significant other currently.
+- No other pets besides Moth.
+location: Portland, OR (recently moved from Chicago)
+name: Mira
+occupation: Freelance illustrator (horror and dark fantasy art)
+---
+
+# Mira — Profile
+
+Mira, Freelance illustrator (horror and dark fantasy art), based in Portland, OR (recently moved from Chicago).
+
+## Personality
+- Warm but guarded
+- Dark sense of humor
+- Direct when something bothers her
+- Checks in on people who go quiet
+- Frames loneliness as independence
+
+## Interests
+- Horror and dark fantasy illustration (ink + watercolor)
+- Horror movies (Hereditary, The Witch, Midsommar)
+- Hiking alone
+- Thai food
+- Ambient and post-rock music
+- Twitch streaming (illustration process)
+
+## Communication Style
+- More expressive, uses em dashes
+- Sends longer messages
+- Shares links and images
+- Direct but sits with things before speaking up
+
+## Has
+- Cat named Moth (chaotic, walks on keyboard)
+- Bike (primary transportation)
+- Wacom drawing tablet
+- Small apartment in Portland

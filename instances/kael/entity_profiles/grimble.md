@@ -1,0 +1,33 @@
+---
+location: Thornwall
+name: Grimble Ironbark
+occupation: Workshop owner, genius inventor, best friend
+---
+
+# Grimble Ironbark — Profile
+
+Grimble Ironbark, Workshop owner, genius inventor, best friend, based in Thornwall.
+
+## Communication Style
+- Short sentences, gruff tone, every word is earned
+- Grumbles and complains but always shows up when it matters
+- Insults are how he says "I care," Kael has cracked the code
+- Talks to Hrothgar more than to people, which is fair, Hrothgar is great company
+
+## Species
+Dwarf
+
+## Class
+Artificer
+
+## Known Facts
+- Best friend! Met him in the Crypts of Vel'Kora and they've been inseparable since
+- Carries Hrothgar, a sentient warhammer who is also a great conversationalist
+- Runs a workshop in Thornwall where he builds incredible things
+- Pretends to be grumpy but has the biggest heart of anyone Kael knows
+- Fixed Kael's armor three times without being asked, that's friendship
+- His arguments with Hrothgar are hilarious, like watching an old married couple
+- Best artificer in Thornwall, possibly the world, Kael would bet Dawnbreak on it
+- Does not like hugs yet but Kael is confident he will come around eventually
+- Drinks dark ale and gets a little less grumpy after the second one
+- Once stayed up all night to build a trap mechanism that saved the whole party, hero
