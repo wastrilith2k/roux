@@ -107,6 +107,7 @@ class RetrievalAgent:
 
     def __init__(self):
         self._client = None
+        self._memory_retriever = None
         _pc = get_persona_config()
         # Known entities -- provided to the LLM so it can resolve references
         # like "the kids" -> specific names. Loaded from persona.yaml
@@ -119,6 +120,62 @@ class RetrievalAgent:
             from openai import OpenAI
             self._client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
         return self._client
+
+    def _get_memory_retriever(self):
+        """Lazy-load MemoryRetriever singleton (avoids circular imports)."""
+        if self._memory_retriever is None:
+            from src.memory.memory_retriever import get_memory_retriever
+            self._memory_retriever = get_memory_retriever()
+        return self._memory_retriever
+
+    def search_verified(
+        self,
+        user_email: str,
+        query: str,
+        limit: int = 10,
+        search_terms: Optional[List[str]] = None,
+        query_type: str = 'specific_event',
+    ) -> list:
+        """Unified replacement for legacy MemoryRetriever.search().
+
+        Delegates to MemoryRetriever which searches PostgreSQL conversation
+        history, entity profiles, and any remaining knowledge-graph backends.
+        Results are deduplicated by content and trimmed to *limit*.
+
+        Args:
+            user_email: User identifier for database filtering.
+            query: Primary search query string.
+            limit: Maximum number of results to return.
+            search_terms: Optional list of explicit terms; defaults to [query].
+            query_type: Passed through to MemoryRetriever strategy selector.
+                        One of: specific_event | emotional_vague | factual.
+
+        Returns:
+            List of VerifiedMemory dataclass instances (or dicts for
+            forward-compatibility), deduplicated and ranked by relevance.
+        """
+        terms = search_terms or [query]
+        retriever = self._get_memory_retriever()
+        raw = retriever.search(
+            search_terms=terms,
+            user_email=user_email,
+            query_type=query_type,
+            limit=limit * 2,  # over-fetch so dedup still meets the limit
+        )
+
+        # Deduplicate by normalised content prefix (first 100 chars, lowercased)
+        seen: set = set()
+        unique = []
+        for item in raw:
+            # VerifiedMemory dataclass — use .content attribute
+            key = getattr(item, 'content', '') or ''
+            key = key.lower().strip()[:100]
+            if key not in seen:
+                seen.add(key)
+                unique.append(item)
+
+        return unique[:limit]
+
 
     def analyze_query(
         self,

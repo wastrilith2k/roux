@@ -393,7 +393,7 @@ class TestMemoryValidationAgentIntegration:
     def test_validate_calls_search_via_tool(self):
         """When a memory query is detected, the agent uses _search_via_tool for supplementary results."""
         from src.core.memory_validation_agent import MemoryValidationAgent
-        from src.core.memory_retriever import VerifiedMemory
+        from src.core.verified_memory import VerifiedMemory
 
         agent = MagicMock(spec=MemoryValidationAgent)
         agent._search_via_tool = MemoryValidationAgent._search_via_tool.__get__(agent)
@@ -446,7 +446,7 @@ class TestMemoryValidationAgentIntegration:
     def test_format_records_handles_search_tool_source(self):
         """_format_records properly tags records from the search_tool source."""
         from src.core.memory_validation_agent import MemoryValidationAgent
-        from src.core.memory_retriever import VerifiedMemory
+        from src.core.verified_memory import VerifiedMemory
 
         agent = MemoryValidationAgent.__new__(MemoryValidationAgent)
         records = [
