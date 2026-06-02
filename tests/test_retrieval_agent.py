@@ -74,3 +74,19 @@ def test_search_verified_orders_by_importance():
     assert high_idx < low_idx, (
         f"High importance (idx {high_idx}) should rank before low (idx {low_idx})"
     )
+
+
+def test_retrieval_agent_calls_hybrid_search():
+    """_search_facts must call search_facts_hybrid, not plain search_facts."""
+    agent = get_retrieval_agent()
+    mock_store = MagicMock()
+    mock_store.search_facts_hybrid.return_value = []
+
+    with patch('src.memory.retrieval_agent.get_fact_store', return_value=mock_store):
+        try:
+            agent._search_facts(user_email='t@t.com', query='test query', limit=10)
+        except Exception:
+            pass  # May fail due to DB, but we just need to check what was called
+
+    mock_store.search_facts_hybrid.assert_called()
+    mock_store.search_facts.assert_not_called()

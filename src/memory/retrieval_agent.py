@@ -36,6 +36,7 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict, field
 from zoneinfo import ZoneInfo
 from src.config.persona_config import get_persona_config
+from src.memory.fact_store import get_fact_store
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +184,17 @@ class RetrievalAgent:
         )
         return unique[:limit]
 
+
+    def _search_facts(self, user_email: str, query: str, limit: int = 10) -> list:
+        """Search fact store using hybrid BM25+pgvector."""
+        store = get_fact_store()
+        return store.search_facts_hybrid(
+            query=query,
+            limit=limit,
+            text_weight=0.4,
+            vector_weight=0.6,
+            user_email=user_email,
+        )
 
     def analyze_query(
         self,
