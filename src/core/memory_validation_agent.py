@@ -31,11 +31,8 @@ from .memory_query_classifier import (
     MemoryQueryResult,
     get_memory_query_classifier
 )
-from .memory_retriever import (
-    MemoryRetriever,
-    VerifiedMemory,
-    get_memory_retriever
-)
+from .verified_memory import VerifiedMemory
+from src.memory.retrieval_agent import get_retrieval_agent
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +60,7 @@ class MemoryValidationAgent:
 
     def __init__(self):
         self.classifier = get_memory_query_classifier()
-        self.retriever = get_memory_retriever()
+        self.retriever = get_retrieval_agent()
 
     def validate(
         self,
@@ -99,11 +96,12 @@ class MemoryValidationAgent:
         )
 
         # 2. Retrieve verified records (existing retriever + search_memory tool)
-        records = self.retriever.search(
-            search_terms=classification.search_terms,
+        records = self.retriever.search_verified(
             user_email=user_email,
+            query=" ".join(classification.search_terms),
+            limit=10,
+            search_terms=classification.search_terms,
             query_type=classification.query_type,
-            limit=10
         )
 
         # 2b. Supplement with search_memory tool results for broader coverage

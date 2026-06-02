@@ -36,6 +36,7 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict, field
 from zoneinfo import ZoneInfo
 from src.config.persona_config import get_persona_config
+from src.memory.fact_store import get_fact_store
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,7 @@ class RetrievalAgent:
 
     def __init__(self):
         self._client = None
+        self._memory_retriever = None
         _pc = get_persona_config()
         # Known entities -- provided to the LLM so it can resolve references
         # like "the kids" -> specific names. Loaded from persona.yaml
@@ -119,6 +121,121 @@ class RetrievalAgent:
             from openai import OpenAI
             self._client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
         return self._client
+
+    def _get_memory_retriever(self):
+        """Lazy-load MemoryRetriever singleton (avoids circular imports)."""
+        if self._memory_retriever is None:
+            from src.memory.memory_retriever import get_memory_retriever
+            self._memory_retriever = get_memory_retriever()
+        return self._memory_retriever
+
+    def search_verified(
+        self,
+        user_email: str,
+        query: str,
+        limit: int = 10,
+        search_terms: Optional[List[str]] = None,
+        query_type: str = 'specific_event',
+    ) -> list:
+        """Unified retrieval: fuses fact store + Graphiti via RRF.
+
+        Args:
+            user_email: User identifier for database filtering.
+            query: Primary search query string.
+            limit: Maximum number of results to return.
+            search_terms: Accepted for API compatibility; unused (query is used
+                          directly so both backends receive the same string).
+            query_type: Accepted for API compatibility; unused.
+
+        Returns:
+            List of VerifiedMemory dataclass instances (or dicts for
+            forward-compatibility), deduplicated and ranked by fused score.
+        """
+        facts = self._search_facts(user_email=user_email, query=query, limit=limit)
+        graph = self._search_graphiti(user_email=user_email, query=query, limit=limit)
+
+        fused = self._rrf_fuse(facts, graph, k=60)
+        # Re-sort: importance_score is the primary signal; rrf_score breaks ties.
+        fused.sort(
+            key=lambda x: (
+                getattr(x, 'importance_score', None)
+                or (x.get('importance_score') if isinstance(x, dict) else None)
+                or 5,
+                x.get('rrf_score', 0) if isinstance(x, dict) else 0,
+            ),
+            reverse=True,
+        )
+        return fused[:limit]
+
+    @staticmethod
+    def _rrf_fuse(
+        list_a: list,
+        list_b: list,
+        k: int = 60,
+    ) -> list:
+        """Reciprocal Rank Fusion of two ranked result lists.
+
+        Items appearing in both lists get a boosted score.
+        Returns results sorted by descending RRF score.
+        RRF(d) = sum(1 / (k + rank_i)) for each list where item appears.
+        """
+        scores: dict = {}
+        items: dict = {}
+
+        def _key(item) -> str:
+            if isinstance(item, dict):
+                text = item.get('content') or item.get('fact', '')
+            else:
+                text = getattr(item, 'content', '') or ''
+            return str(text)[:120].lower().strip()
+
+        for rank, item in enumerate(list_a, start=1):
+            key = _key(item)
+            scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank)
+            items.setdefault(key, item)
+
+        for rank, item in enumerate(list_b, start=1):
+            key = _key(item)
+            scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank)
+            items.setdefault(key, item)
+
+        sorted_keys = sorted(scores, key=lambda x: scores[x], reverse=True)
+        result = []
+        for key in sorted_keys:
+            entry = items[key]
+            if isinstance(entry, dict):
+                entry = dict(entry)
+                entry['rrf_score'] = scores[key]
+            result.append(entry)
+        return result
+
+    def _search_facts(self, user_email: str, query: str, limit: int = 10) -> list:
+        """Search fact store using hybrid BM25+pgvector."""
+        store = get_fact_store()
+        return store.search_facts_hybrid(
+            query=query,
+            limit=limit,
+            text_weight=0.4,
+            vector_weight=0.6,
+            user_email=user_email,
+        )
+
+    def _search_graphiti(self, user_email: str, query: str, limit: int = 10) -> list:
+        """Search Graphiti knowledge graph.
+
+        Derives the group_id from the local-part of user_email so each user's
+        graph partition is queried independently.  Returns an empty list on any
+        failure so the caller can always proceed with whatever fact results are
+        available.
+        """
+        try:
+            from src.memory.graphiti_search import search_graphiti
+            group_id = user_email.split('@')[0] if user_email else None
+            results = search_graphiti(query=query, limit=limit, group_id=group_id)
+            return results if isinstance(results, list) else []
+        except Exception as e:
+            logger.warning(f"graphiti search failed: {e}")
+            return []
 
     def analyze_query(
         self,

@@ -225,7 +225,7 @@ class TestMemoryValidationProvenance:
 
     def test_postgres_source_uses_provenance_tag(self):
         from src.core.memory_validation_agent import MemoryValidationAgent
-        from src.core.memory_retriever import VerifiedMemory
+        from src.core.verified_memory import VerifiedMemory
 
         agent = MemoryValidationAgent.__new__(MemoryValidationAgent)
         records = [VerifiedMemory(content="We talked about work.", source='postgres', relevance=0.9)]
@@ -236,7 +236,7 @@ class TestMemoryValidationProvenance:
 
     def test_graphiti_source_uses_provenance_tag(self):
         from src.core.memory_validation_agent import MemoryValidationAgent
-        from src.core.memory_retriever import VerifiedMemory
+        from src.core.verified_memory import VerifiedMemory
 
         agent = MemoryValidationAgent.__new__(MemoryValidationAgent)
         records = [VerifiedMemory(content="James is a software engineer.", source='graphiti', relevance=0.8)]
@@ -247,7 +247,7 @@ class TestMemoryValidationProvenance:
 
     def test_entity_profile_source_uses_provenance_tag(self):
         from src.core.memory_validation_agent import MemoryValidationAgent
-        from src.core.memory_retriever import VerifiedMemory
+        from src.core.verified_memory import VerifiedMemory
 
         agent = MemoryValidationAgent.__new__(MemoryValidationAgent)
         records = [VerifiedMemory(content="Jesse is James's son.", source='entity_profile', relevance=1.0)]
@@ -258,7 +258,7 @@ class TestMemoryValidationProvenance:
 
     def test_search_tool_source_uses_provenance_tag(self):
         from src.core.memory_validation_agent import MemoryValidationAgent
-        from src.core.memory_retriever import VerifiedMemory
+        from src.core.verified_memory import VerifiedMemory
 
         agent = MemoryValidationAgent.__new__(MemoryValidationAgent)
         records = [VerifiedMemory(content="Some search result.", source='search_tool', relevance=0.6)]

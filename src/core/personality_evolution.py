@@ -23,6 +23,7 @@ NOTE: Contains a hardcoded prompt with companion-specific details for the
 """
 
 import json
+import os
 from datetime import datetime
 from typing import Dict, List, Optional
 from collections import deque
@@ -33,7 +34,6 @@ try:
     from db import get_db
 except ImportError:
     import sys
-    import os
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
     from database.db import get_db
 
@@ -54,6 +54,9 @@ class EvolvingPersonality:
     - intellectual_curiosity: How often explores ideas
     - spontaneity: Predictable vs surprising
     """
+
+    _DRIFT_THRESHOLD = float(os.environ.get('PERSONALITY_DRIFT_THRESHOLD', '0.15'))
+    _DRIFT_WINDOW_DAYS = int(os.environ.get('PERSONALITY_DRIFT_WINDOW_DAYS', '7'))
 
     def __init__(self, user_id: str):
         self.user_id = user_id
@@ -81,6 +84,15 @@ class EvolvingPersonality:
 
         # Load persisted personality
         self._load_personality()
+
+        # Load identity anchor from persona config
+        self.core_traits: list = []
+        try:
+            from src.config.persona_config import get_persona_config
+            cfg = get_persona_config()
+            self.core_traits = cfg.core_traits or []
+        except Exception:
+            pass
 
     def evolve_based_on_interaction(self, interaction_type: str, user_response_quality: str) -> Dict:
         """
@@ -113,6 +125,15 @@ class EvolvingPersonality:
             'timestamp': clock_now().isoformat()
         })
 
+        # Check for excessive drift before applying updates
+        _drifting = self.check_drift()
+
+        def _dampen(dimension: str, raw_delta: float) -> float:
+            """Dampen delta to 20% if this dimension is drifting excessively."""
+            if dimension in _drifting:
+                return raw_delta * 0.2
+            return raw_delta
+
         # Calculate adjustments based on signal strength
         # - Strong signal (very positive/very negative): 0.03 (3%)
         # - Normal signal (positive/negative): 0.02 (2%)
@@ -133,7 +154,7 @@ class EvolvingPersonality:
         if user_response_quality == 'positive':
             if interaction_type == 'playful_teasing':
                 old_value = self.dimensions['playfulness']
-                self.dimensions['playfulness'] += adjustment
+                self.dimensions['playfulness'] += _dampen('playfulness', adjustment)
                 evolution_changes.append({
                     'dimension': 'playfulness',
                     'delta': +adjustment,
@@ -142,7 +163,7 @@ class EvolvingPersonality:
 
             elif interaction_type == 'direct_honesty':
                 old_value = self.dimensions['directness']
-                self.dimensions['directness'] += adjustment
+                self.dimensions['directness'] += _dampen('directness', adjustment)
                 evolution_changes.append({
                     'dimension': 'directness',
                     'delta': +adjustment,
@@ -151,7 +172,7 @@ class EvolvingPersonality:
 
             elif interaction_type == 'vulnerable_sharing':
                 old_value = self.dimensions['vulnerability']
-                self.dimensions['vulnerability'] += adjustment
+                self.dimensions['vulnerability'] += _dampen('vulnerability', adjustment)
                 evolution_changes.append({
                     'dimension': 'vulnerability',
                     'delta': +adjustment,
@@ -160,7 +181,7 @@ class EvolvingPersonality:
 
             elif interaction_type == 'philosophical_musing':
                 old_value = self.dimensions['philosophical_tendency']
-                self.dimensions['philosophical_tendency'] += adjustment
+                self.dimensions['philosophical_tendency'] += _dampen('philosophical_tendency', adjustment)
                 evolution_changes.append({
                     'dimension': 'philosophical_tendency',
                     'delta': +adjustment,
@@ -169,7 +190,7 @@ class EvolvingPersonality:
 
             elif interaction_type == 'gentle_challenge':
                 old_value = self.dimensions['challenge_frequency']
-                self.dimensions['challenge_frequency'] += adjustment
+                self.dimensions['challenge_frequency'] += _dampen('challenge_frequency', adjustment)
                 evolution_changes.append({
                     'dimension': 'challenge_frequency',
                     'delta': +adjustment,
@@ -178,7 +199,7 @@ class EvolvingPersonality:
 
             elif interaction_type == 'pure_support':
                 old_value = self.dimensions['supportive_vs_tough_love']
-                self.dimensions['supportive_vs_tough_love'] -= adjustment  # Lower = more supportive
+                self.dimensions['supportive_vs_tough_love'] -= _dampen('supportive_vs_tough_love', adjustment)  # Lower = more supportive
                 evolution_changes.append({
                     'dimension': 'supportive_vs_tough_love',
                     'delta': -adjustment,
@@ -187,7 +208,7 @@ class EvolvingPersonality:
 
             elif interaction_type == 'intellectual_curiosity':
                 old_value = self.dimensions['intellectual_curiosity']
-                self.dimensions['intellectual_curiosity'] += adjustment
+                self.dimensions['intellectual_curiosity'] += _dampen('intellectual_curiosity', adjustment)
                 evolution_changes.append({
                     'dimension': 'intellectual_curiosity',
                     'delta': +adjustment,
@@ -196,7 +217,7 @@ class EvolvingPersonality:
 
             elif interaction_type == 'spontaneous_pivot':
                 old_value = self.dimensions['spontaneity']
-                self.dimensions['spontaneity'] += adjustment
+                self.dimensions['spontaneity'] += _dampen('spontaneity', adjustment)
                 evolution_changes.append({
                     'dimension': 'spontaneity',
                     'delta': +adjustment,
@@ -207,7 +228,7 @@ class EvolvingPersonality:
         elif user_response_quality == 'negative':
             if interaction_type == 'playful_teasing':
                 old_value = self.dimensions['playfulness']
-                self.dimensions['playfulness'] -= adjustment
+                self.dimensions['playfulness'] -= _dampen('playfulness', adjustment)
                 evolution_changes.append({
                     'dimension': 'playfulness',
                     'delta': -adjustment,
@@ -216,7 +237,7 @@ class EvolvingPersonality:
 
             elif interaction_type == 'direct_honesty':
                 old_value = self.dimensions['directness']
-                self.dimensions['directness'] -= adjustment
+                self.dimensions['directness'] -= _dampen('directness', adjustment)
                 evolution_changes.append({
                     'dimension': 'directness',
                     'delta': -adjustment,
@@ -225,7 +246,7 @@ class EvolvingPersonality:
 
             elif interaction_type == 'vulnerable_sharing':
                 old_value = self.dimensions['vulnerability']
-                self.dimensions['vulnerability'] -= adjustment
+                self.dimensions['vulnerability'] -= _dampen('vulnerability', adjustment)
                 evolution_changes.append({
                     'dimension': 'vulnerability',
                     'delta': -adjustment,
@@ -234,7 +255,7 @@ class EvolvingPersonality:
 
             elif interaction_type == 'philosophical_musing':
                 old_value = self.dimensions['philosophical_tendency']
-                self.dimensions['philosophical_tendency'] -= adjustment
+                self.dimensions['philosophical_tendency'] -= _dampen('philosophical_tendency', adjustment)
                 evolution_changes.append({
                     'dimension': 'philosophical_tendency',
                     'delta': -adjustment,
@@ -243,7 +264,7 @@ class EvolvingPersonality:
 
             elif interaction_type == 'gentle_challenge':
                 old_value = self.dimensions['challenge_frequency']
-                self.dimensions['challenge_frequency'] -= adjustment
+                self.dimensions['challenge_frequency'] -= _dampen('challenge_frequency', adjustment)
                 evolution_changes.append({
                     'dimension': 'challenge_frequency',
                     'delta': -adjustment,
@@ -266,6 +287,57 @@ class EvolvingPersonality:
             'changes': evolution_changes,
             'current_dimensions': self.dimensions.copy()
         }
+
+    def check_drift(
+        self,
+        recent_history: list | None = None,
+        window_days: int | None = None,
+        threshold: float | None = None,
+    ) -> dict:
+        """Return {dimension: total_delta} for any dimension exceeding threshold in window.
+
+        Empty dict means no excessive drift.
+        """
+        if window_days is None:
+            window_days = self._DRIFT_WINDOW_DAYS
+        if threshold is None:
+            threshold = self._DRIFT_THRESHOLD
+        if recent_history is None:
+            recent_history = self._get_recent_evolution_history(window_days=window_days)
+
+        totals: dict[str, float] = {}
+        for entry in recent_history:
+            dim = entry.get('dimension', '')
+            delta = abs(entry.get('delta', 0.0))
+            days_ago = entry.get('days_ago', 0)
+            if days_ago <= window_days:
+                totals[dim] = totals.get(dim, 0.0) + delta
+
+        return {dim: total for dim, total in totals.items() if total > threshold}
+
+    def _get_recent_evolution_history(self, window_days: int = 7) -> list:
+        """Load evolution_history entries from the past window_days.
+
+        Timestamps are ISO strings (from clock_now().isoformat()).
+        """
+        from datetime import timedelta, timezone
+        cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
+        recent = []
+        for entry in self.evolution_history:
+            ts_str = entry.get('timestamp', '')
+            if not ts_str:
+                continue
+            try:
+                ts = datetime.fromisoformat(ts_str)
+                # Ensure timezone-aware comparison
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                days_ago = (datetime.now(timezone.utc) - ts).days
+                if ts >= cutoff:
+                    recent.append({**entry, 'days_ago': days_ago})
+            except (ValueError, TypeError):
+                pass
+        return recent
 
     def log_evolution(self, dimension: str, delta: float, reason: str):
         """Record a personality evolution event"""
@@ -434,6 +506,11 @@ Based on {interaction_count} interactions, your personality with this user has e
             prompt += "\nADAPT YOUR RESPONSES:\n"
             for g in notable_guidance:
                 prompt += f"- {g}\n"
+
+        if self.core_traits:
+            prompt += "\nCore traits (constant, these never change):\n"
+            for trait in self.core_traits:
+                prompt += f"  - {trait}\n"
 
         prompt += f"\nIMPORTANT: You're supportive but honest. If {_user} admits to problematic behavior, don't just validate — ask what happened, express concern, hold them gently accountable. Real care includes honesty.\n"
 

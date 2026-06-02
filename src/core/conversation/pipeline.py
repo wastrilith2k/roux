@@ -36,6 +36,7 @@ class PipelineCancelled(Exception):
     pass
 
 from .context_builder import ContextBuilder, ConversationContext, get_context_builder
+from .context_tiers import SECTION_TIERS, ContextTier
 
 # Memory validation to prevent confabulation (pre-generation)
 from ..memory_validation_agent import (
@@ -127,6 +128,10 @@ from .pipeline_profiler import (
     PROFILING_ENABLED,
 )
 
+# Mid-conversation memory paging — topic shift detection
+from src.memory.embeddings import get_embedding
+from src.memory.retrieval_agent import get_retrieval_agent
+
 # ---------------------------------------------------------------------------
 # Feature flags — toggle pipeline steps via environment variables
 # ---------------------------------------------------------------------------
@@ -146,6 +151,10 @@ COMPANION_RESPONSE_CRITIC_ENABLED = os.environ.get('COMPANION_RESPONSE_CRITIC_EN
 # Message analyzer: merged mode detection + inner monologue in a single LLM call
 # When enabled, replaces the two separate calls above for lower latency
 COMPANION_MESSAGE_ANALYZER_ENABLED = os.environ.get('COMPANION_MESSAGE_ANALYZER_ENABLED', 'true').lower() == 'true'
+
+# Emotional coherence gate: detect tone contradictions between response and internal_state
+EMOTIONAL_COHERENCE_ENABLED = os.environ.get('EMOTIONAL_COHERENCE_ENABLED', 'true').lower() == 'true'
+COHERENCE_MODEL = os.environ.get('COHERENCE_MODEL', 'gpt-4o-mini')
 
 
 class ConversationPipeline:
@@ -177,6 +186,36 @@ class ConversationPipeline:
             from src.core.code_executor import get_code_executor
             self._code_executor = get_code_executor()
         return self._code_executor
+
+    def _check_emotional_coherence(self, response: str, internal_state: str) -> bool:
+        """Return True if response tone is consistent with internal_state.
+
+        Returns True (pass) on any error or if internal_state is empty.
+        Returns False only if the LLM explicitly says the response CONTRADICTS state.
+        """
+        if not EMOTIONAL_COHERENCE_ENABLED or not internal_state or not response:
+            return True
+        try:
+            return self._llm_coherence_check(response=response, internal_state=internal_state)
+        except Exception as e:
+            logger.warning(f"emotional coherence check failed: {e}")
+            return True
+
+    def _llm_coherence_check(self, response: str, internal_state: str) -> bool:
+        """Ask a fast model if response tone contradicts internal_state."""
+        from src.llm.provider_factory import generate_sync
+        prompt = (
+            f"Companion internal state: {internal_state}\n"
+            f"Companion response: {response[:500]}\n\n"
+            "Does the response tone CONTRADICT the internal state "
+            "(e.g. highly energetic when exhausted, dismissive when happy)? "
+            "Answer only YES or NO."
+        )
+        answer = generate_sync(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=10,
+        ).strip().upper()
+        return not answer.startswith('YES')
 
     def _load_cognitive_prompt(self):
         """Load the cognitive flow prompt that guides the companion's responses."""
@@ -359,6 +398,15 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                         user_message=user_message,
                         closeness_score=closeness_score
                     )
+
+            # Step 1.05: Mid-conversation memory paging on topic shift
+            # If the topic diverges significantly from what was used to build context,
+            # page in fresh memories for the new topic without a full context rebuild.
+            if context and context.conversation_history:
+                prior = context.conversation_history.split('\n')[-1][:300]
+                if self._detect_topic_shift(prior, user_message):
+                    logger.info("Topic shift detected — paging in fresh memory")
+                    self._page_in_memory(context, user_email, user_message)
 
             # Step 1.1: Schedule interruption detection
             # If user starts chatting during a scheduled event, check if the
@@ -636,6 +684,19 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
 
                     break
 
+            # Step 4c: Emotional coherence gate (single regeneration if incoherent)
+            if context and context.internal_state and EMOTIONAL_COHERENCE_ENABLED:
+                if not self._check_emotional_coherence(response, context.internal_state):
+                    logger.info("Emotional coherence failed — regenerating response once")
+                    try:
+                        regen, _regen_model = self._call_llm(
+                            full_prompt, user_message, conversation_turns
+                        )
+                        if regen and regen.strip():
+                            response = regen
+                    except Exception as _regen_err:
+                        logger.warning(f"Emotional coherence regeneration failed: {_regen_err}")
+
             # Close LLM profiling stage
             if _llm_stage:
                 _llm_stage.__exit__(None, None, None)
@@ -707,37 +768,10 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
     # exceed the window (the old code only logged a warning at 75%).
     CONTEXT_BUDGET_FRACTION = float(os.environ.get('COMPANION_CONTEXT_BUDGET_FRACTION', '0.6'))
 
-    # Section priority for budget enforcement.  Lower number = higher priority
-    # (dropped last).  Priority 0 sections are NEVER dropped.
-    SECTION_PRIORITY = {
-        'entity_profiles': 1,
-        'core_memory': 1,
-        'memory_validation': 1,
-        'presence_mode': 1,
-        'derived_scene_context': 2,
-        'memories': 2,
-        'personality': 2,
-        'relationship_dynamics': 3,
-        'relationship_insights': 3,
-        'relationship_evaluation': 3,
-        'scene_state': 3,
-        'internal_state': 3,
-        'graphiti_context': 4,
-        'temporal_context': 5,
-        'biographies': 5,
-        'episode_context': 5,
-        'synthesized_events': 6,
-        'observations_context': 6,
-        'session_summary': 2,
-        'reflections_context': 7,
-        'opinions_context': 7,
-        'curiosity_context': 8,
-        'goals_context': 8,
-        'values_context': 8,
-        'activities_context': 9,
-        'fertility_context': 9,
-        'user_context': 9,
-    }
+    @property
+    def _section_priority(self) -> dict:
+        """Eviction priority from CoALA tiers. Lower value = kept longer."""
+        return {name: tier.value for name, tier in SECTION_TIERS.items()}
 
     def _enforce_context_budget(
         self,
@@ -884,7 +918,7 @@ You disagree when you disagree. You are a partner, not a therapist.
 
         def _add(name, content):
             """Helper to add a droppable section with its configured priority."""
-            priority = self.SECTION_PRIORITY.get(name, 5)
+            priority = self._section_priority.get(name, ContextTier.EPHEMERAL.value)
             droppable.append((name, priority, content))
 
         # Presence mode (in_person vs texting — issue #26)
@@ -1719,6 +1753,7 @@ Just write the message itself, nothing else.
             if tool_code:
                 logger.info(f"Executing tool action: {decision.tool_action}")
                 result = self.code_executor.execute(tool_code)
+                result = self._compress_tool_result(tool_name=decision.tool_action, raw=result) if result else result
                 tool_calls_made.append({
                     "tool": decision.tool_action,
                     "code": tool_code[:200],
@@ -1863,6 +1898,7 @@ Just write the message itself, nothing else.
                     logger.debug(f"Executing code: {code[:100]}...")
 
                     result = self.code_executor.execute(code)
+                    result = self._compress_tool_result(tool_name=tool_name, raw=result) if result else result
 
                     tool_calls_made.append({
                         "tool": tool_name,
@@ -1898,6 +1934,91 @@ Just write the message itself, nothing else.
 
         logger.warning(f"Hit max tool calls ({MAX_TOOL_CALLS})")
         return "i'm not able to check right now, can you ask me again in a bit?", "gpt-4o-mini", tool_calls_made
+
+    _TOOL_RESULT_CHAR_LIMIT = int(os.environ.get('TOOL_RESULT_CHAR_LIMIT', '800'))
+    _TOOL_COMPRESS_MODEL = os.environ.get('TOOL_COMPRESS_MODEL', 'gpt-4o-mini')
+
+    def _compress_tool_result(self, tool_name: str, raw: str) -> str:
+        """Cap a tool result to _TOOL_RESULT_CHAR_LIMIT chars.
+
+        Returns original if already short. Falls back to hard truncation
+        with '[truncated]' marker if LLM compression fails.
+        """
+        if len(raw) <= self._TOOL_RESULT_CHAR_LIMIT:
+            return raw
+        try:
+            return self._llm_compress(tool_name=tool_name, raw=raw)
+        except Exception as e:
+            logger.warning(f"tool result compression failed for {tool_name}: {e}")
+            return raw[:self._TOOL_RESULT_CHAR_LIMIT] + '...[truncated]'
+
+    def _llm_compress(self, tool_name: str, raw: str) -> str:
+        """Use a cheap model to summarise a tool result to ≤200 tokens."""
+        from openai import OpenAI
+        client = OpenAI()
+        resp = client.chat.completions.create(
+            model=self._TOOL_COMPRESS_MODEL,
+            max_tokens=200,
+            messages=[
+                {
+                    'role': 'system',
+                    'content': (
+                        f'Summarise this {tool_name} result in ≤200 tokens. '
+                        'Preserve all specific names, dates, times, and numbers. '
+                        'Return only the summary, nothing else.'
+                    ),
+                },
+                {'role': 'user', 'content': raw[:4000]},
+            ],
+        )
+        return resp.choices[0].message.content.strip()
+
+    _TOPIC_SHIFT_THRESHOLD = float(os.environ.get('TOPIC_SHIFT_COSINE_THRESHOLD', '0.45'))
+
+    def _detect_topic_shift(self, prior_context_summary: str, new_message: str) -> bool:
+        """Return True if new_message diverges significantly from prior topic.
+
+        Uses cosine similarity between embeddings. Returns False on any failure
+        so paging is never triggered by an error.
+        """
+        if not prior_context_summary or not new_message:
+            return False
+        try:
+            import numpy as np
+            emb_prior = np.array(get_embedding(prior_context_summary[:500]))
+            emb_new = np.array(get_embedding(new_message[:500]))
+            norm = np.linalg.norm(emb_prior) * np.linalg.norm(emb_new)
+            if norm == 0:
+                return False
+            cos_sim = float(np.dot(emb_prior, emb_new) / norm)
+            return cos_sim < self._TOPIC_SHIFT_THRESHOLD
+        except Exception:
+            return False
+
+    def _page_in_memory(self, context, user_email: str, new_message: str) -> None:
+        """Patch context with fresh retrieval for a new topic. Mutates context in place.
+
+        Only updates memories and graphiti_context fields. Never raises.
+        """
+        try:
+            from src.memory.graphiti_search import get_graphiti_context
+            agent = get_retrieval_agent()
+            fresh_facts = agent.search_verified(
+                user_email=user_email,
+                query=new_message,
+                limit=8,
+            )
+            if fresh_facts:
+                fresh_text = '\n'.join(
+                    f"- {f.get('fact') or f.get('content', '')}" for f in fresh_facts
+                )
+                context.memories = f"[TOPIC SHIFT — FRESH RETRIEVAL]\n{fresh_text}"
+            group_id = user_email.split('@')[0] if user_email else None
+            fresh_graph = get_graphiti_context(query=new_message, limit=8, group_id=group_id)
+            if fresh_graph:
+                context.graphiti_context = fresh_graph
+        except Exception as e:
+            logger.warning(f"mid-conv memory paging failed: {e}")
 
     def _check_multitaskable(self, activity_summary: str) -> bool:
         """Quick LLM check: can someone chat while doing this activity?"""

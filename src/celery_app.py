@@ -112,6 +112,7 @@ celery_app.conf.update(
         'src.tasks.graphiti_pruning_task',  # Neo4j episode/edge lifecycle (monthly)
         'src.tasks.episodic_consolidation_task',  # Episodic-to-semantic consolidation (daily)
         'src.tasks.sleep_time_consolidation_task',  # Sleep-time memory maintenance (every 3h)
+        'src.tasks.semantic_lifting_task',  # Semantic fact lifting — generalise high-importance facts (weekly)
     ]
 )
 
@@ -272,6 +273,12 @@ celery_app.conf.beat_schedule = {
     'sleep-time-consolidation': {
         'task': 'src.tasks.sleep_time_consolidation_task.consolidate',
         'schedule': crontab(minute=0, hour='*/3'),  # Every 3 hours
+
+    },
+    # Semantic lifting - generalise high-importance facts into inferred_preference rules
+    'semantic-lifting-weekly': {
+        'task': 'src.tasks.semantic_lifting_task.run_semantic_lifting',
+        'schedule': crontab(hour=4, minute=30, day_of_week='wednesday'),  # Wednesday 4:30 AM Pacific
 
     },
 }

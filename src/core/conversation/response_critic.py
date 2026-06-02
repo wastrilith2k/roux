@@ -30,6 +30,18 @@ logger = logging.getLogger(__name__)
 COMPANION_RESPONSE_CRITIC_ENABLED = os.environ.get('COMPANION_RESPONSE_CRITIC_ENABLED', 'true').lower() == 'true'
 COMPANION_QUALITY_THRESHOLD = int(os.environ.get('COMPANION_QUALITY_THRESHOLD', '4'))
 
+# Module-level imports — lazy-safe with fallbacks so tests can patch these names
+try:
+    from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
+except ImportError:
+    generate_sync = None  # type: ignore[assignment]
+    get_resilient_provider_chain = None  # type: ignore[assignment]
+
+try:
+    from src.memory.strategy_tips import get_strategy_tip_store
+except ImportError:
+    get_strategy_tip_store = None  # type: ignore[assignment]
+
 
 # ---------------------------------------------------------------------------
 # Critique result
@@ -48,6 +60,19 @@ class QualityCritique:
 
 
 # ---------------------------------------------------------------------------
+# Strategy tips helper
+# ---------------------------------------------------------------------------
+
+def _get_strategy_tips(user_email: str, message: str, limit: int = 3) -> list:
+    """Fetch relevant strategy tips for the user. Returns empty list on any failure."""
+    try:
+        store = get_strategy_tip_store(user_email=user_email)
+        return store.retrieve_relevant_tips(query_text=message, limit=limit)
+    except Exception:
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Critic — evaluates response quality via a fast LLM call
 # ---------------------------------------------------------------------------
 
@@ -59,19 +84,34 @@ class ResponseCritic:
         response: str,
         user_message: str,
         recent_companion_messages: List[str] = None,
-        mode: Optional[str] = None
+        mode: Optional[str] = None,
+        user_email: Optional[str] = None,
     ) -> QualityCritique:
         """Score a generated response for quality. Returns passing defaults on failure."""
         start = time.time()
 
         try:
-            from src.llm.provider_factory import generate_sync, get_resilient_provider_chain
+            # Resolve LLM callables — prefer module-level imports, fall back to lazy import
+            _generate_sync = generate_sync
+            _get_chain = get_resilient_provider_chain
+            if _generate_sync is None or _get_chain is None:
+                from src.llm.provider_factory import generate_sync as _gs, get_resilient_provider_chain as _gc
+                _generate_sync = _gs
+                _get_chain = _gc
 
             # Build recent messages context for repetition detection
             recent_context = ""
             if recent_companion_messages:
                 for i, msg in enumerate(recent_companion_messages[:3]):
                     recent_context += f"Companion's message {i+1} ago: {msg[:150]}\n"
+
+            # Fetch strategy tips for this user (procedural memory)
+            tips_section = ''
+            if user_email:
+                tips = _get_strategy_tips(user_email=user_email, message=user_message)
+                if tips:
+                    tip_lines = '\n'.join(f"- {t.content}" for t in tips)
+                    tips_section = f"\nKnown communication patterns for this user:\n{tip_lines}\n"
 
             prompt = f"""Evaluate this response from the companion (a person, not an AI) to the user.
 
@@ -80,8 +120,7 @@ User said: {user_message}
 Companion's response: {response}
 
 {f"Conversation mode: {mode}" if mode else ""}
-{f"Companion's recent messages for repetition check:\\n{recent_context}" if recent_context else ""}
-
+{f"Companion's recent messages for repetition check:\\n{recent_context}" if recent_context else ""}{tips_section}
 Rate 1-10 and answer yes/no for each:
 1. SCORE: Overall quality (1=terrible, 10=perfect)
 2. GENERIC: Does this sound like a generic chatbot? (yes/no)
@@ -98,8 +137,8 @@ REGISTER: yes/no
 REPETITIVE: yes/no
 SUGGESTION: ..."""
 
-            chain = get_resilient_provider_chain()
-            result = generate_sync(
+            chain = _get_chain()
+            result = _generate_sync(
                 messages=[
                     {"role": "system", "content": "Evaluate response quality. Be brief and honest."},
                     {"role": "user", "content": prompt}

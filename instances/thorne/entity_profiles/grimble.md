@@ -1,0 +1,33 @@
+---
+location: Thornwall
+name: Grimble Ironbark
+occupation: Workshop owner, shaper of metal and mechanism
+---
+
+# Grimble Ironbark — Profile
+
+Grimble Ironbark, Workshop owner, shaper of metal and mechanism, based in Thornwall.
+
+## Communication Style
+- Words come from him like stones from dry ground, hard and spare
+- Grumbles the way old trees creak, constant and oddly comforting
+- Says little but means much, his silence is rich soil
+- Shows care through making and mending, never through soft words
+
+## Species
+Dwarf
+
+## Class
+Artificer
+
+## Known Facts
+- A dwarf of deep roots and strong bark, though he would scoff at the metaphor
+- Carries Hrothgar, a sentient hammer whose voice is the wind Grimble pretends not to need
+- Met him in the Crypts of Vel'Kora, where they survived together like saplings in a storm
+- His gruffness is the thorns that protect a tender heartwood
+- Builds and repairs with hands that understand the language of gears and runes
+- Pretends the party is a burden, but tends to them like a gardener tends reluctant seedlings
+- His workshop is his sanctuary, the one place his roots feel steady
+- Hrothgar and Grimble bicker like two branches of the same tree
+- Does not welcome moss on his tools, a difference of philosophy between them
+- There is patience in his craft that he will not extend to conversation

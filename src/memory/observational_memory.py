@@ -23,7 +23,7 @@ HOW it fits:
   - context_builder calls Manager.get_relevant_observations() to inject
     recent observations + topic-matched older ones into the prompt.
 
-Feature flag: OBSERVATIONAL_MEMORY_ENABLED (default: false)
+Feature flag: OBSERVATIONAL_MEMORY_ENABLED (default: true)
 """
 
 import json
@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 # =============================================================================
 
-OBSERVATIONAL_MEMORY_ENABLED = os.environ.get('OBSERVATIONAL_MEMORY_ENABLED', 'false').lower() == 'true'
+OBSERVATIONAL_MEMORY_ENABLED = os.environ.get('OBSERVATIONAL_MEMORY_ENABLED', 'true').lower() == 'true'
 
 # Thresholds that trigger observation. Both must be exceeded.
 OBSERVER_TOKEN_THRESHOLD = int(os.environ.get('OBSERVER_TOKEN_THRESHOLD', '30000'))
@@ -672,7 +672,7 @@ class ObservationManager:
 
     def is_enabled(self) -> bool:
         """Check if observational memory is enabled."""
-        return os.environ.get('OBSERVATIONAL_MEMORY_ENABLED', 'false').lower() == 'true'
+        return os.environ.get('OBSERVATIONAL_MEMORY_ENABLED', 'true').lower() == 'true'
 
     def get_relevant_observations(
         self,

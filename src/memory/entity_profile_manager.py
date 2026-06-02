@@ -41,6 +41,12 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 
+try:
+    import frontmatter as _fm
+    _FRONTMATTER_AVAILABLE = True
+except ImportError:
+    _FRONTMATTER_AVAILABLE = False
+
 from src.core.clock import now as clock_now
 
 logger = logging.getLogger(__name__)
@@ -65,23 +71,37 @@ class EntityProfileManager:
         return self._get_companion_name().lower()
 
     def get_profile(self, entity_id: str) -> Optional[Dict[str, Any]]:
-        """Load an entity profile from YAML."""
+        """Load an entity profile from .md (front-matter) or .yaml (fallback)."""
         if entity_id in self._cache:
             return self._cache[entity_id]
 
-        file_path = self.profiles_dir / f"{entity_id.lower()}.yaml"
-        if not file_path.exists():
-            logger.warning(f"Profile not found: {entity_id}")
-            return None
+        entity_id_lower = entity_id.lower()
 
-        try:
-            with open(file_path, 'r') as f:
-                profile = yaml.safe_load(f)
-                self._cache[entity_id] = profile
-                return profile
-        except Exception as e:
-            logger.error(f"Error loading profile {entity_id}: {e}")
-            return None
+        # Try .md first (front-matter dict)
+        if _FRONTMATTER_AVAILABLE:
+            md_path = self.profiles_dir / f"{entity_id_lower}.md"
+            if md_path.exists():
+                try:
+                    post = _fm.load(str(md_path))
+                    profile = dict(post.metadata)
+                    self._cache[entity_id] = profile
+                    return profile
+                except Exception as e:
+                    logger.warning(f"Failed to parse markdown profile {md_path}: {e}")
+
+        # Fallback to .yaml
+        yaml_path = self.profiles_dir / f"{entity_id_lower}.yaml"
+        if yaml_path.exists():
+            try:
+                with open(yaml_path, 'r') as f:
+                    profile = yaml.safe_load(f)
+                    self._cache[entity_id] = profile
+                    return profile
+            except Exception as e:
+                logger.warning(f"Failed to load YAML profile {yaml_path}: {e}")
+
+        logger.warning(f"Profile not found: {entity_id}")
+        return None
 
     def list_profiles(self) -> List[str]:
         """List all available entity profile IDs."""
@@ -268,6 +288,28 @@ class EntityProfileManager:
     # =========================================================================
 
     def get_grounding_context(self) -> str:
+        """
+        Generate the "KNOWN ENTITIES" block for LLM prompts.
+
+        Prefers Markdown body from .md profiles (richer narrative format).
+        Falls back to structured YAML-based summary generation.
+        """
+        # Try .md files first — return their Markdown bodies
+        if _FRONTMATTER_AVAILABLE:
+            md_bodies = []
+            for md_file in sorted(self.profiles_dir.glob("*.md")):
+                try:
+                    post = _fm.load(str(md_file))
+                    if post.content.strip():
+                        md_bodies.append(post.content.strip())
+                except Exception:
+                    pass
+            if md_bodies:
+                return '\n\n---\n\n'.join(md_bodies)
+        # Fall through to YAML-based implementation
+        return self._get_grounding_context_legacy()
+
+    def _get_grounding_context_legacy(self) -> str:
         """
         Generate the "KNOWN ENTITIES" block for LLM prompts.
 
