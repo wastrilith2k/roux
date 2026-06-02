@@ -85,6 +85,15 @@ class EvolvingPersonality:
         # Load persisted personality
         self._load_personality()
 
+        # Load identity anchor from persona config
+        self.core_traits: list = []
+        try:
+            from src.config.persona_config import get_persona_config
+            cfg = get_persona_config()
+            self.core_traits = cfg.core_traits or []
+        except Exception:
+            pass
+
     def evolve_based_on_interaction(self, interaction_type: str, user_response_quality: str) -> Dict:
         """
         Learn from each interaction.
@@ -497,6 +506,11 @@ Based on {interaction_count} interactions, your personality with this user has e
             prompt += "\nADAPT YOUR RESPONSES:\n"
             for g in notable_guidance:
                 prompt += f"- {g}\n"
+
+        if self.core_traits:
+            prompt += "\nCore traits (constant, these never change):\n"
+            for trait in self.core_traits:
+                prompt += f"  - {trait}\n"
 
         prompt += f"\nIMPORTANT: You're supportive but honest. If {_user} admits to problematic behavior, don't just validate — ask what happened, express concern, hold them gently accountable. Real care includes honesty.\n"
 

@@ -82,6 +82,7 @@ class PersonaConfig:
     work_names: List[str] = field(default_factory=list)
     semantic_patterns: Dict[str, List[str]] = field(default_factory=dict)
     invalid_fact_patterns: List[List[str]] = field(default_factory=list)
+    core_traits: List[str] = field(default_factory=list)
 
     @property
     def companion_pronouns(self) -> Dict[str, str]:
@@ -255,6 +256,7 @@ def _load_config(companion_id: str = None) -> PersonaConfig:
         work_names=known_entities.get('work_names', []) or [],
         semantic_patterns=semantic_patterns_raw,
         invalid_fact_patterns=invalid_fact_patterns_raw,
+        core_traits=data.get("core_traits", []) or [],
     )
 
     # --- Env-var overrides (highest priority) ---
