@@ -128,6 +128,10 @@ from .pipeline_profiler import (
     PROFILING_ENABLED,
 )
 
+# Mid-conversation memory paging — topic shift detection
+from src.memory.embeddings import get_embedding
+from src.memory.retrieval_agent import get_retrieval_agent
+
 # ---------------------------------------------------------------------------
 # Feature flags — toggle pipeline steps via environment variables
 # ---------------------------------------------------------------------------
@@ -360,6 +364,15 @@ You are {name}. Not an assistant, not a chatbot - a person having a conversation
                         user_message=user_message,
                         closeness_score=closeness_score
                     )
+
+            # Step 1.05: Mid-conversation memory paging on topic shift
+            # If the topic diverges significantly from what was used to build context,
+            # page in fresh memories for the new topic without a full context rebuild.
+            if context and context.conversation_history:
+                prior = context.conversation_history.split('\n')[-1][:300]
+                if self._detect_topic_shift(prior, user_message):
+                    logger.info("Topic shift detected — paging in fresh memory")
+                    self._page_in_memory(context, user_email, user_message)
 
             # Step 1.1: Schedule interruption detection
             # If user starts chatting during a scheduled event, check if the
@@ -1872,6 +1885,53 @@ Just write the message itself, nothing else.
 
         logger.warning(f"Hit max tool calls ({MAX_TOOL_CALLS})")
         return "i'm not able to check right now, can you ask me again in a bit?", "gpt-4o-mini", tool_calls_made
+
+    _TOPIC_SHIFT_THRESHOLD = float(os.environ.get('TOPIC_SHIFT_COSINE_THRESHOLD', '0.45'))
+
+    def _detect_topic_shift(self, prior_context_summary: str, new_message: str) -> bool:
+        """Return True if new_message diverges significantly from prior topic.
+
+        Uses cosine similarity between embeddings. Returns False on any failure
+        so paging is never triggered by an error.
+        """
+        if not prior_context_summary or not new_message:
+            return False
+        try:
+            import numpy as np
+            emb_prior = np.array(get_embedding(prior_context_summary[:500]))
+            emb_new = np.array(get_embedding(new_message[:500]))
+            norm = np.linalg.norm(emb_prior) * np.linalg.norm(emb_new)
+            if norm == 0:
+                return False
+            cos_sim = float(np.dot(emb_prior, emb_new) / norm)
+            return cos_sim < self._TOPIC_SHIFT_THRESHOLD
+        except Exception:
+            return False
+
+    def _page_in_memory(self, context, user_email: str, new_message: str) -> None:
+        """Patch context with fresh retrieval for a new topic. Mutates context in place.
+
+        Only updates memories and graphiti_context fields. Never raises.
+        """
+        try:
+            from src.memory.graphiti_search import get_graphiti_context
+            agent = get_retrieval_agent()
+            fresh_facts = agent.search_verified(
+                user_email=user_email,
+                query=new_message,
+                limit=8,
+            )
+            if fresh_facts:
+                fresh_text = '\n'.join(
+                    f"- {f.get('fact') or f.get('content', '')}" for f in fresh_facts
+                )
+                context.memories = f"[TOPIC SHIFT — FRESH RETRIEVAL]\n{fresh_text}"
+            group_id = user_email.split('@')[0] if user_email else None
+            fresh_graph = get_graphiti_context(query=new_message, limit=8, group_id=group_id)
+            if fresh_graph:
+                context.graphiti_context = fresh_graph
+        except Exception as e:
+            logger.warning(f"mid-conv memory paging failed: {e}")
 
     def _check_multitaskable(self, activity_summary: str) -> bool:
         """Quick LLM check: can someone chat while doing this activity?"""
